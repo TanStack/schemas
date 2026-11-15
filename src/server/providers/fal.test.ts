@@ -90,7 +90,7 @@ describe('fetchPageWithRetry', () => {
     fetchMock.mockImplementation(() => Promise.resolve(errorResponse(429)))
     await expect(
       withTimersFlushed(fetchPageWithRetry('https://x', 'key', 3)),
-    ).rejects.toThrow('fal models fetch failed after 3 attempts: 429')
+    ).rejects.toThrow('fetch failed after 3 attempts: https://x → 429')
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 import listing from '../fixtures/replicate-models.json'
@@ -657,6 +657,68 @@ describe('replicate catalog walk', () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+
+  describe('a 502 on a later page', () => {
+    const PAGE_2 = 'https://api.replicate.com/v1/models?cursor=abc'
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    })
+
+    function stubCatalog(page2: () => Response): ReturnType<typeof vi.fn> {
+      const fetchMock = vi.fn((url: string) => {
+        const href = String(url)
+        if (href === PAGE_2) return Promise.resolve(page2())
+        if (href.startsWith('https://api.replicate.com/v1/models')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ next: PAGE_2, results: [] })),
+          )
+        }
+        return Promise.resolve(new Response('', { status: 404 }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return fetchMock
+    }
+
+    async function flushed<T>(promise: Promise<T>): Promise<T> {
+      void promise.catch(() => undefined)
+      await vi.runAllTimersAsync()
+      return promise
+    }
+
+    it('retries the page and completes the walk', async () => {
+      let calls = 0
+      const fetchMock = stubCatalog(() =>
+        ++calls === 1
+          ? new Response('bad gateway', { status: 502 })
+          : new Response(
+              JSON.stringify({
+                next: null,
+                results: [model('openai/gpt-5.4')],
+              }),
+            ),
+      )
+      const { models } = await flushed(
+        provider.listModels({ REPLICATE_API_TOKEN: 'tok' }),
+      )
+      expect(models.map((m) => m.rawId)).toContain('openai/gpt-5.4')
+      expect(fetchMock.mock.calls.filter(([u]) => u === PAGE_2)).toHaveLength(2)
+    })
+
+    it('throws with the page URL when every attempt fails', async () => {
+      const fetchMock = stubCatalog(
+        () => new Response('bad gateway', { status: 502 }),
+      )
+      await expect(
+        flushed(provider.listModels({ REPLICATE_API_TOKEN: 'tok' })),
+      ).rejects.toThrow(`fetch failed after 3 attempts: ${PAGE_2} → 502`)
+      expect(fetchMock.mock.calls.filter(([u]) => u === PAGE_2)).toHaveLength(3)
+    })
   })
 })
 
