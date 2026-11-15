@@ -29,7 +29,7 @@ import {
   unavailable,
 } from './model-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
-import { sha256Text, skippedResult } from './types.ts'
+import { fetchWithRetry, sha256Text, skippedResult } from './types.ts'
 import type {
   BundledEndpoint,
   FactSource,
@@ -166,15 +166,6 @@ function classify(_path: string, op: OpenApiOperation): Activity | null {
   return null
 }
 
-/**
- * Statuses worth retrying: rate limiting and transient upstream/gateway
- * failures. Anything else (401, 403, 404, …) is a real config problem and
- * fails fast.
- */
-const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504])
-
-const MAX_BACKOFF_MS = 15_000
-
 /** A page that has not answered by now is retried like a dropped connection. */
 const FETCH_TIMEOUT_MS = 60_000
 
@@ -231,49 +222,30 @@ function reportGoneEndpoint(id: string, expandOpenApi: boolean): void {
 /**
  * The paginated crawl is ~30 requests per pass and runs from both cron
  * tiers, so transient 429s/5xxs and dropped connections are routine — each
- * page gets exponential backoff (honoring `Retry-After` when sent) rather
- * than one throw sinking the whole sync and flagging the provider degraded.
+ * page is retried by {@link fetchWithRetry} rather than one throw sinking
+ * the whole sync and flagging the provider degraded.
  */
-export async function fetchPageWithRetry(
+export function fetchPageWithRetry(
   url: string,
   apiKey: string,
   attempts = 5,
 ): Promise<FalApiResponse> {
-  let lastFailure = 'unknown failure'
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    let retryAfterMs: number | null = null
-    try {
-      const response = await fetch(url, {
-        headers: { Authorization: `Key ${apiKey}` },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      })
-      if (response.ok) return (await response.json()) as FalApiResponse
-      const body = await response.text()
-      lastFailure = `${String(response.status)} ${response.statusText}`
-      if (!RETRYABLE_STATUSES.has(response.status)) {
-        throw new FalFetchError(
-          `fal models fetch failed: ${lastFailure}`,
+  return fetchWithRetry(
+    url,
+    () => ({
+      headers: { Authorization: `Key ${apiKey}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    }),
+    async (response) => (await response.json()) as FalApiResponse,
+    {
+      attempts,
+      reject: async (response) =>
+        new FalFetchError(
+          `fal models fetch failed: ${String(response.status)} ${response.statusText}`,
           response.status,
-          body,
-        )
-      }
-      const retryAfter = Number(response.headers.get('retry-after'))
-      if (Number.isFinite(retryAfter) && retryAfter > 0) {
-        retryAfterMs = retryAfter * 1000
-      }
-    } catch (error) {
-      if (error instanceof FalFetchError) throw error
-      // Network-level failure (or a truncated body mid-json()) — retryable.
-      lastFailure = error instanceof Error ? error.message : String(error)
-    }
-    if (attempt < attempts) {
-      const backoff = Math.min(1000 * Math.pow(2, attempt), MAX_BACKOFF_MS)
-      const waitMs = Math.min(retryAfterMs ?? backoff, MAX_BACKOFF_MS)
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-    }
-  }
-  throw new Error(
-    `fal models fetch failed after ${String(attempts)} attempts: ${lastFailure}`,
+          await response.text(),
+        ),
+    },
   )
 }
 

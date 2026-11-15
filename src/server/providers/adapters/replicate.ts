@@ -15,11 +15,12 @@ import { walkRequestSchema } from '../fact-sources.ts'
 import { cachedDocs, mapConcurrent } from '../model-facts.ts'
 import { isoToEpochSeconds } from '../release-dates.ts'
 import {
-  fetchJson,
   fetchOpenApi,
   fetchText,
+  fetchWithRetry,
   sha256Text,
   skippedResult,
+  timeoutSignal,
 } from '../types.ts'
 import {
   BILLING_MARKER,
@@ -47,6 +48,12 @@ const REPLICATE_MODELS_URL = 'https://api.replicate.com/v1/models'
 /** Public catalog is huge; stay inside the Worker subrequest budget. */
 const MAX_MODEL_PAGES = 20
 const FETCH_TIMEOUT_MS = 20_000
+/**
+ * Tries per catalog page. A page that never answers costs at most
+ * 3 × 20s + 2s + 4s = 66s before the walk throws, inside the cron's
+ * 15-minute wall clock.
+ */
+const CATALOG_PAGE_ATTEMPTS = 3
 
 /** The run route the spec documents for official models. */
 const OFFICIAL_RUN_PATH = '/models/{model_owner}/{model_name}/predictions'
@@ -531,10 +538,13 @@ async function listCatalog(key: string): Promise<Array<ReplicateModel>> {
     if (!isSafeModelsUrl(url)) {
       throw new Error(`replicate: unexpected catalog page url ${url}`)
     }
-    const body = (await fetchJson(url, {
-      headers,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    })) as ReplicateModelPage
+    // One transient 502 on any page used to sink the whole poll (#662).
+    const body: ReplicateModelPage = await fetchWithRetry(
+      url,
+      () => ({ headers, signal: timeoutSignal(FETCH_TIMEOUT_MS) }),
+      async (response) => (await response.json()) as ReplicateModelPage,
+      { attempts: CATALOG_PAGE_ATTEMPTS },
+    )
     for (const row of body.results ?? []) {
       if (!row.owner || !row.name) continue
       const rawId = `${row.owner}/${row.name}`

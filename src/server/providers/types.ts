@@ -852,6 +852,73 @@ export async function fetchJson(
   return withFetchTimeout(url, init?.signal, () => response.json())
 }
 
+/**
+ * Rate limiting and transient upstream/gateway failures. Anything else
+ * (401, 403, 404, …) is a real problem and fails fast.
+ */
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504])
+
+const MAX_BACKOFF_MS = 15_000
+
+/**
+ * One page of a paginated walk, retried on {@link RETRYABLE_STATUSES},
+ * network failures and timeouts, with exponential backoff (2s, 4s, 8s,
+ * capped at 15s; `Retry-After` when sent, same cap). `init` runs per
+ * attempt so each gets a fresh timeout signal. A non-retryable status
+ * throws `reject(response)` (default: the URL, status and body start)
+ * at once. After the last attempt it throws with the URL and last
+ * failure: never a partial result.
+ */
+export async function fetchWithRetry<T>(
+  url: string,
+  init: () => RequestInit,
+  read: (response: Response) => Promise<T>,
+  {
+    attempts = 5,
+    reject = (response: Response) => fetchFailure(url, response),
+  }: {
+    attempts?: number
+    reject?: (response: Response) => Promise<Error>
+  } = {},
+): Promise<T> {
+  let lastFailure = 'unknown failure'
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let retryAfterMs: number | null = null
+    const request = init()
+    let response: Response | null = null
+    try {
+      response = await fetchResponse(url, request)
+      if (response.ok) {
+        const ok = response
+        return await withFetchTimeout(url, request.signal, () => read(ok))
+      }
+    } catch (error) {
+      // Network failure, timeout, or a truncated body: retryable.
+      lastFailure = error instanceof Error ? error.message : String(error)
+      response = null
+    }
+    if (response) {
+      if (!RETRYABLE_STATUSES.has(response.status)) {
+        throw await reject(response)
+      }
+      await response.body?.cancel()
+      lastFailure = `${String(response.status)} ${response.statusText}`
+      const retryAfter = Number(response.headers.get('retry-after'))
+      if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        retryAfterMs = retryAfter * 1000
+      }
+    }
+    if (attempt < attempts) {
+      const backoff = Math.min(1000 * Math.pow(2, attempt), MAX_BACKOFF_MS)
+      const waitMs = Math.min(retryAfterMs ?? backoff, MAX_BACKOFF_MS)
+      await new Promise((resolve) => setTimeout(resolve, waitMs))
+    }
+  }
+  throw new Error(
+    `fetch failed after ${String(attempts)} attempts: ${url} → ${lastFailure}`,
+  )
+}
+
 const timeoutBudgets = new WeakMap<AbortSignal, number>()
 
 /**
