@@ -143,14 +143,48 @@ describe('gemini model activity', () => {
     expect(geminiModelActivity('gemini-imagey-preview', GENERATE)).toBe('chat')
   })
 
-  it('groups live models with chat and leaves inert models null', () => {
+  it('keeps chat, robotics and aqa on chat, and leaves inert models null', () => {
+    expect(geminiModelActivity('aqa', ['generateAnswer'])).toBe('chat')
+    expect(
+      geminiModelActivity('gemini-robotics-er-1.5-preview', GENERATE),
+    ).toBe('chat')
+    expect(geminiModelActivity('some-utility', ['countTokens'])).toBeNull()
+  })
+
+  it('classifies music, image, video, transcription and live off chat (#661)', () => {
+    expect(geminiModelActivity('lyria-3.5', GENERATE)).toBe('audio')
+    expect(geminiModelActivity('lyria-3-clip-preview', GENERATE)).toBe('audio')
+    expect(geminiModelActivity('lyria-realtime-exp', [])).toBe('audio')
+    expect(geminiModelActivity('gemini-nano-banana-2.1', GENERATE)).toBe(
+      'image',
+    )
+    expect(geminiModelActivity('nano-banana-pro-preview', GENERATE)).toBe(
+      'image',
+    )
+    // Omni is still a chat listing. The docs page promotes it to video,
+    // and an unread page must not (#658).
+    expect(geminiModelActivity('gemini-omni-1.1-flash', GENERATE)).toBe('chat')
+    expect(geminiModelActivity('gemini-omni-flash-preview', GENERATE)).toBe(
+      'chat',
+    )
+    expect(geminiModelActivity('gemini-3.5-transcribe', GENERATE)).toBe('audio')
+    expect(geminiModelActivity('gemini-3.5-transcribe-live', GENERATE)).toBe(
+      'audio',
+    )
+    expect(
+      geminiModelActivity('gemini-3.8-live', ['bidiGenerateContent']),
+    ).toBe('audio')
     expect(
       geminiModelActivity('gemini-3.1-flash-live-preview', [
         'bidiGenerateContent',
       ]),
-    ).toBe('chat')
-    expect(geminiModelActivity('aqa', ['generateAnswer'])).toBe('chat')
-    expect(geminiModelActivity('some-utility', ['countTokens'])).toBeNull()
+    ).toBe('audio')
+    expect(
+      geminiModelActivity('gemini-2.5-flash-native-audio-latest', GENERATE),
+    ).toBe('audio')
+    expect(
+      geminiModelActivity('gemini-3.5-live-translate-preview', GENERATE),
+    ).toBe('audio')
   })
 })
 

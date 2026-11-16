@@ -118,9 +118,21 @@ describe('generation endpoint ids', () => {
     expect(geminiGenerationEndpointId('video', ['predictLongRunning'])).toBe(
       'v1beta/models/{modelsId}:predictLongRunning',
     )
+    expect(geminiGenerationEndpointId('video', ['generateContent'])).toBe(
+      'v1beta/models/{modelsId}:predictLongRunning',
+    )
     expect(geminiGenerationEndpointId('embeddings', ['embedContent'])).toBe(
       'v1beta/models/{modelsId}:embedContent',
     )
+    expect(geminiGenerationEndpointId('chat', ['generateContent'])).toBe(
+      'v1beta/models/{modelsId}:generateContent',
+    )
+    expect(geminiGenerationEndpointId('audio', ['generateContent'])).toBe(
+      'v1beta/models/{modelsId}:generateContent',
+    )
+    expect(
+      geminiGenerationEndpointId('audio', ['bidiGenerateContent']),
+    ).toBeNull()
   })
 
   it('derives OpenRouter activity from output modalities', () => {

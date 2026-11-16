@@ -618,6 +618,64 @@ Model ID: \`gpt-4o\`
     })
   })
 
+  it('treats a matching 30-minute cache-write sentence as prose (#661)', () => {
+    const page = pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $1 | 1M tokens |
+| Cached input | $0.05 | 1M tokens |
+| Cache writes | $1.25 | 1M tokens |
+| Output | $5 | 1M tokens |
+
+- Cached input tokens are priced at 5% of the uncached input token rate.
+- Cache-write prices shown use 30-minute retention. Standard cache writes cost $1.25 per million tokens for 30-minute retention and $2.50 for 12-hour retention, before long-context adjustments.
+- Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.
+- Batch and Flex prices are 50% lower than Standard.
+- Regional processing adds a 10% premium where available.
+- Fast mode prices are 2x Standard.
+`)
+    expect(parseModelPricing(page)).toEqual({
+      rates: {
+        input_tokens: 1 / 1e6,
+        cache_read_tokens: 0.05 / 1e6,
+        cache_write_tokens: 1.25 / 1e6,
+        output_tokens: 5 / 1e6,
+      },
+      tiers: [
+        {
+          minPromptTokens: 272_000,
+          rates: {
+            input_tokens: (1 / 1e6) * 2,
+            cache_read_tokens: (0.05 / 1e6) * 2,
+            cache_write_tokens: (1.25 / 1e6) * 2,
+            output_tokens: (5 / 1e6) * 1.5,
+          },
+        },
+      ],
+    })
+    expect(parseModelPricing(page)?.rates).not.toHaveProperty(
+      'cache_write_1h_tokens',
+    )
+  })
+
+  it('refuses a 30-minute cache-write sentence that disagrees with the table', () => {
+    expect(
+      parseModelPricing(
+        pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $1 | 1M tokens |
+| Cache writes | $1.25 | 1M tokens |
+| Output | $5 | 1M tokens |
+
+- Cache-write prices shown use 30-minute retention. Standard cache writes cost $9.99 per million tokens for 30-minute retention and $2.50 for 12-hour retention.
+`),
+      ),
+    ).toBeNull()
+  })
+
   it('stamps a promo end so the card is re-read after it', () => {
     const page = pricing(`### Text tokens
 
@@ -1545,6 +1603,8 @@ ${table(unit, rows)}
       )
     const deprecations = [
       'This page lists the known deprecation schedules.',
+      '| Model | Release date | Shutdown | Replacement |',
+      '| --- | --- | --- | --- |',
       '| `gemini-3.7-flash` | August 13, 2026 | N/A | `gemini-3.8-flash` (the endpoint is not shutting down and automatically routes API requests to `gemini-3.8-flash`) |',
       '| `gemini-3.5-flash` | May 19, 2026 | N/A | `gemini-3.6-flash` (automatically routes API requests to `gemini-3.6-flash`) |',
       '| `gemini-omni-flash-preview` | June 30, 2026 | October 22, 2026 | `gemini-omni-1.1-flash` |',
@@ -1574,6 +1634,7 @@ ${table(unit, rows)}
       expect(pricing('gemini-3.7-flash').factSources?.pricing?.path).toBe(
         'routed to gemini-3.8-flash',
       )
+      expect(pricing.releasedOn['gemini-3.7-flash']).toBe('2026-08-13')
       expect(quote('gemini-3.5-flash')).toMatchObject({
         amount: 3.5,
         currency: 'USD',

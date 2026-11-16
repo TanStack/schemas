@@ -390,6 +390,27 @@ export function parseModelPricing(markdown: string): DocsPricing | null {
       out.tiers.push({ minPromptTokens: threshold, rates: tier })
       continue
     }
+    // "Cache-write prices shown use 30-minute retention. Standard cache
+    // writes cost $1.25 … for 30-minute retention and $2.50 for 12-hour
+    // retention." The table's Cache writes cell is the 30-minute rate.
+    // A 12-hour retention is a second TTL this card does not model, so it
+    // is prose when the 30-minute amount matches and a refusal when it
+    // does not.
+    const cacheRetention = bullet.match(
+      /cache-write prices shown use 30-minute retention\. standard cache writes cost \$([\d.]+) per million tokens for 30-minute retention and \$[\d.]+ for 12-hour retention/i,
+    )
+    if (cacheRetention?.[1]) {
+      const written = rates.cache_write_tokens
+      const thirty = Number(cacheRetention[1]) / 1e6
+      if (
+        written === undefined ||
+        !Number.isFinite(thirty) ||
+        Math.abs(written - thirty) > Math.abs(thirty) * 1e-9
+      ) {
+        return null
+      }
+      continue
+    }
     if (PROSE_BULLETS.test(bullet)) continue
     // An unrecognised bullet that quotes money, a multiplier or a
     // percentage may be a surcharge this card would drop.

@@ -7,6 +7,7 @@
 import type { Activity } from '#/db/schema.ts'
 import { supportedFlags } from '#/lib/capabilities.ts'
 import {
+  GEMINI_DEPRECATIONS_URL,
   attachGeminiPublishedFacts,
   geminiPublishedBindings,
 } from './gemini-bindings.ts'
@@ -23,6 +24,7 @@ import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
   curatedReleasedAt,
+  dateToEpoch,
   geminiIdSuffixDate,
 } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
@@ -236,14 +238,22 @@ function classify(path: string): Activity | null {
   return GEMINI_VERB_ACTIVITIES[verb] ?? null
 }
 
+/** A dash-separated id segment, so `live` does not match inside another word. */
+function hasSegment(rawId: string, segment: string): boolean {
+  return new RegExp(`(^|-)${segment}(-|$)`).test(rawId)
+}
+
 /**
  * Model-level activity. Google's models API doesn't label modality, so
  * derive it from the signals it does carry: `predict`, `predictLongRunning`,
  * and `embedContent` uniquely identify Imagen, Veo, and embedding models.
- * The generateContent surface serves chat, image (Nano Banana), and TTS
- * models alike, so it splits on the id's `-image`/`-tts` segments. The
- * live/native-audio bidiGenerateContent models group with chat, matching
- * the OpenAI Realtime → chat mapping.
+ * The generateContent surface also serves music (Lyria), image (Nano
+ * Banana), transcription, TTS, and Live models. Those are classified by
+ * the id, because the shared route is not what the model does (#661).
+ * Live and native-audio models are audio: they are the Live API, not
+ * generateContent chat. Omni stays a chat listing here. Its docs page is
+ * what says video, and an unread page must not replace the stored row
+ * (#658).
  */
 export function geminiModelActivity(
   rawId: string,
@@ -254,13 +264,19 @@ export function geminiModelActivity(
   if (methods.includes('embedContent') || methods.includes('embedText')) {
     return 'embeddings'
   }
+  if (rawId.startsWith('lyria')) return 'audio'
+  if (rawId.includes('nano-banana') || hasSegment(rawId, 'image')) {
+    return 'image'
+  }
+  if (rawId.includes('transcribe') || hasSegment(rawId, 'tts')) return 'audio'
+  if (hasSegment(rawId, 'live') || rawId.includes('native-audio')) {
+    return 'audio'
+  }
   const generates =
     methods.includes('generateContent') ||
     methods.includes('bidiGenerateContent') ||
     methods.includes('generateAnswer')
   if (!generates) return null
-  if (/(^|-)image(-|$)/.test(rawId)) return 'image'
-  if (/(^|-)tts(-|$)/.test(rawId)) return 'audio'
   return 'chat'
 }
 
@@ -311,6 +327,54 @@ export function geminiCapabilities(
   if (m.topP !== undefined) out.push('top_p')
   if (m.topK !== undefined) out.push('top_k')
   return out.length > 0 ? out : null
+}
+
+/**
+ * Curated dates win, then the deprecations page, then an id's `-MM-YYYY`
+ * suffix. `releasedOn` is empty when that page failed, so a blip cannot
+ * replace a date the page would have stated.
+ */
+function geminiReleasedAt(
+  rawId: string,
+  releasedOn: Record<string, string>,
+): number | null {
+  return (
+    curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
+    statedRelease(rawId, releasedOn) ??
+    geminiIdSuffixDate(rawId)
+  )
+}
+
+function statedRelease(
+  rawId: string,
+  releasedOn: Record<string, string>,
+): number | null {
+  const date = releasedOn[rawId]
+  return date ? dateToEpoch(date) : null
+}
+
+/** Provenance only for the date the deprecations page itself supplied. */
+function geminiReleaseSource(
+  rawId: string,
+  releasedOn: Record<string, string>,
+):
+  | {
+      releasedAt: {
+        derivation: 'docs-derived'
+        sourceUrl: string
+        path: string
+      }
+    }
+  | Record<string, never> {
+  if (curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) != null) return {}
+  if (!releasedOn[rawId]) return {}
+  return {
+    releasedAt: {
+      derivation: 'docs-derived',
+      sourceUrl: GEMINI_DEPRECATIONS_URL,
+      path: 'Release date',
+    },
+  }
 }
 
 async function listModels(
@@ -410,11 +474,11 @@ async function listModels(
       ...(m.thinking === false
         ? { unsupportedCapabilities: ['reasoning'] }
         : {}),
-      // Gemini's API has no release timestamp: curated dates first, then
-      // the MM-YYYY month embedded in preview ids.
-      releasedAt:
-        curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
-        geminiIdSuffixDate(rawId),
+      // Gemini's API has no release timestamp: curated dates, then the
+      // deprecations page's Release date column, then the MM-YYYY month
+      // embedded in preview ids. A model the page does not date keeps a
+      // stored date, and firstSeenAt covers one that was never dated.
+      releasedAt: geminiReleasedAt(rawId, pricing.releasedOn),
       pricing: priced.pricing,
       reasoning: feat.reasoning,
       serverTools: feat.serverTools,
@@ -423,6 +487,7 @@ async function listModels(
         ...priced.factSources,
         ...feat.factSources,
         ...(requestMap ? { requestMap: wire.source } : {}),
+        ...geminiReleaseSource(rawId, pricing.releasedOn),
       },
       ...(Object.keys(absent).length > 0 ? { absent } : {}),
     }
