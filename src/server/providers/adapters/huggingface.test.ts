@@ -699,8 +699,46 @@ describe('huggingface spec', () => {
     const spec = await provider.fetchSpec({})
 
     expect(listed.models).toHaveLength(FIXTURE.data.length)
+    expect(listed.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
     expect(spec.specs).toHaveLength(1)
     expect(spec.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
     expect(urls).toHaveLength(4)
+  })
+
+  it('lists models when the chat guide has no recommended-models section', async () => {
+    const guide =
+      '<h1>Chat Completion</h1><p>reasoning_effort support is provider and model-dependent.</p>'
+    globalThis.fetch = ((url: string) => {
+      const body: Record<string, string> = {
+        [HUGGINGFACE_MODELS_URL]: JSON.stringify(FIXTURE),
+        ['https://huggingface.co/docs/inference-providers/tasks/chat-completion']:
+          guide,
+      }
+      const text = body[String(url)]
+      return text === undefined
+        ? Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
+        : Promise.resolve(new Response(text))
+    }) as typeof fetch
+
+    const listed = await provider.listModels({})
+
+    expect(listed.models.map((row) => row.rawId)).toEqual(
+      FIXTURE.data.map((row) => row.id),
+    )
+    expect(listed.docsFailures?.failed).toBe(1)
+    expect(listed.docsFailures?.first[0]).toMatchObject({
+      source:
+        'https://huggingface.co/docs/inference-providers/tasks/chat-completion',
+      error: 'huggingface: native recommendation section missing',
+    })
+    for (const row of listed.models) {
+      expect(row.absent?.reasoning).toBe('unavailable')
+      const caps = row.capabilities
+      const flags = Array.isArray(caps) ? caps : []
+      expect(flags).not.toContain('reasoning')
+    }
+    const priced = listed.models.find((row) => row.rawId === 'agree/all')
+    expect(priced?.pricing).toBeTruthy()
+    expect(priced?.absent?.pricing).toBeUndefined()
   })
 })

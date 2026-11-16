@@ -32,7 +32,7 @@ import {
   nativeReasoningCapability,
   parseHfHostedReasoning,
 } from '../native-host-reasoning.ts'
-import { cachedDocs, docsReport, docsRun, tryDocs } from '../model-facts.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import { hyperbolicListingCard } from '../catalog-prices.ts'
@@ -341,15 +341,39 @@ async function listModels(
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
   const catalog = await parseHuggingFaceModels(payload)
-  const doc = await cachedDocs(kv, HF_CHAT_GUIDE, async () => {
-    const html = await fetchText(HF_CHAT_GUIDE, {
-      signal: AbortSignal.timeout(30_000),
-    })
-    return { ids: parseHfHostedReasoning(html), hash: await sha256Text(html) }
-  })
+  // The listing above is never wrapped. This guide is the only native
+  // statement of which hosted models reason. A missing section throws
+  // inside the parser; `tryDocs` keeps that throw off the poll, reports
+  // it, and the rows keep the stored reasoning object.
+  const guide = docsRun()
+  const doc = await tryDocs(guide, HF_CHAT_GUIDE, (cached) =>
+    cached(kv, HF_CHAT_GUIDE, async () => {
+      const html = await fetchText(HF_CHAT_GUIDE, {
+        signal: AbortSignal.timeout(30_000),
+      })
+      return { ids: parseHfHostedReasoning(html), hash: await sha256Text(html) }
+    }),
+  )
+  const reported = docsReport(guide)
+  const docsFailures = {
+    failed: catalog.docsFailures.failed + reported.failed,
+    skipped: catalog.docsFailures.skipped + reported.skipped,
+    first: [...catalog.docsFailures.first, ...reported.first].slice(0, 5),
+  }
+  if (!doc) {
+    return {
+      ...catalog,
+      docsFailures,
+      models: catalog.models.map((model) => ({
+        ...model,
+        absent: { ...model.absent, ...unavailable('reasoning').absent },
+      })),
+    }
+  }
   const ids = new Set(doc.ids)
   return {
     ...catalog,
+    docsFailures,
     models: catalog.models.map((model) =>
       ids.has(model.rawId)
         ? nativeReasoningCapability(model, {
