@@ -38,6 +38,10 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
+import {
+  ingestFailedEvent,
+  noteIngest,
+} from '#/server/ingest/ingest-signals.ts'
 import { contentHash } from '#/server/kv.ts'
 import {
   ARK_GO_FILES,
@@ -65,8 +69,10 @@ import {
 import { githubRequestInit } from './github.ts'
 import { byteplusGenerationEndpointId } from './model-meta.ts'
 import {
+  SEEDANCE_DURATION_DOCS,
   SEEDANCE_DURATIONS,
   seedanceActivityRequests,
+  uncoveredSeedanceIds,
 } from './byteplus-video-duration.ts'
 import { byteplusIdSuffixDate } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
@@ -576,6 +582,26 @@ function toModelInfo(m: ArkModel): ModelInfo {
   }
 }
 
+/**
+ * A listed video id with no duration row still ships. The poll says which
+ * id, every time, until a row exists. Guessing the range would be worse.
+ */
+function noteMissingSeedanceDurations(models: Array<ModelInfo>): void {
+  const missing = uncoveredSeedanceIds(
+    models
+      .filter((model) => model.activity === 'video')
+      .map((model) => model.rawId),
+  )
+  if (missing.length === 0) return
+  noteIngest(
+    ingestFailedEvent(
+      'models-poll',
+      'byteplus',
+      `no Seedance duration for ${missing.join(', ')} (${SEEDANCE_DURATION_DOCS})`,
+    ),
+  )
+}
+
 async function listModels(
   env: ProviderSecrets,
   kv?: KVNamespace,
@@ -628,8 +654,10 @@ async function listModels(
       )
     })
   if (!key) {
+    const models = withPricing(curatedModels())
+    noteMissingSeedanceDurations(models)
     return {
-      models: withPricing(curatedModels()),
+      models,
       docsFailures: docsReport(docs),
     }
   }
@@ -649,8 +677,10 @@ async function listModels(
   // Ark serves but does not enumerate.
   const liveIds = new Set(live.map((m) => m.rawId))
   const gapFillers = curatedModels().filter((m) => !liveIds.has(m.rawId))
+  const models = withPricing([...live, ...gapFillers])
+  noteMissingSeedanceDurations(models)
   return {
-    models: withPricing([...live, ...gapFillers]),
+    models,
     docsFailures: docsReport(docs),
   }
 }

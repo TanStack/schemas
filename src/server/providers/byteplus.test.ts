@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
+import {
+  runIngestScope,
+  takeIngestEvents,
+} from '#/server/ingest/ingest-signals.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 import { cardRequestParamsOk } from '#/server/rate-card.ts'
 import {
@@ -15,6 +19,7 @@ import {
   BYTEPLUS_VIDEO_GUIDE_URL,
   compileSeedreamProCard,
 } from './byteplus-pricing.ts'
+import { SEEDANCE_DURATION_DOCS } from './byteplus-video-duration.ts'
 import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
 import { pricingDoc, routerHtml } from './fixtures/byteplus-pricing-doc.ts'
 import type { PricingTable } from './fixtures/byteplus-pricing-doc.ts'
@@ -909,6 +914,40 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
     const seed = row('seed-2-0-lite-260428')
     expect(seed?.activity).toBe('chat')
     expect(seed?.capabilities).toEqual(['tools', 'tool_choice'])
+  })
+
+  it('reports a listed video id with no duration row and still returns it', async () => {
+    await runIngestScope(async () => {
+      const { result } = await withStubbedFetch(
+        {
+          data: [
+            { id: 'dreamina-seedance-2-0-260128', domain: 'VideoGeneration' },
+            {
+              id: 'dreamina-not-in-the-duration-table',
+              domain: 'VideoGeneration',
+            },
+          ],
+        },
+        () => byteplusProvider.listModels({ ARK_API_KEY: 'ark-test' }),
+      )
+      expect(
+        result.models.find(
+          (model) => model.rawId === 'dreamina-not-in-the-duration-table',
+        )?.activity,
+      ).toBe('video')
+      expect(
+        takeIngestEvents().filter((event) => event.event === 'ingest_failed'),
+      ).toEqual([
+        {
+          event: 'ingest_failed',
+          properties: {
+            job: 'models-poll',
+            providerId: 'byteplus',
+            error: `no Seedance duration for dreamina-not-in-the-duration-table (${SEEDANCE_DURATION_DOCS})`,
+          },
+        },
+      ])
+    })
   })
 })
 

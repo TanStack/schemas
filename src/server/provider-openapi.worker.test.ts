@@ -1021,6 +1021,7 @@ describe('assembleProviderOpenApi', () => {
       .onConflictDoNothing()
     const seedance = [
       'dreamina-seedance-2-5-260628',
+      'dreamina-seedance-2-5-flash-261115',
       'dreamina-seedance-2-0-260128',
       'dreamina-seedance-2-0-fast-260128',
       'dreamina-seedance-2-0-mini-260615',
@@ -1056,6 +1057,7 @@ describe('assembleProviderOpenApi', () => {
                   schema: {
                     properties?: {
                       duration?: { minimum?: number; anyOf?: unknown }
+                      model?: { enum?: Array<string> }
                     }
                   }
                 }
@@ -1087,7 +1089,10 @@ describe('assembleProviderOpenApi', () => {
                   anyOf?: Array<{
                     'x-modelschemas-model'?: string
                     properties?: {
+                      model?: { enum?: Array<string> }
                       duration?: {
+                        type?: string
+                        description?: string
                         minimum?: number
                         maximum?: number
                         anyOf?: Array<{
@@ -1123,7 +1128,7 @@ describe('assembleProviderOpenApi', () => {
         'application/json'
       ].schema.anyOf
     expect(variants?.map((variant) => variant['x-modelschemas-model'])).toEqual(
-      seedance,
+      [...seedance, 'seedance-unpriced-extra'],
     )
     const durationOf = (rawId: string) =>
       variants?.find((variant) => variant['x-modelschemas-model'] === rawId)
@@ -1147,6 +1152,7 @@ describe('assembleProviderOpenApi', () => {
     })
     for (const rawId of [
       'dreamina-seedance-2-5-260628',
+      'dreamina-seedance-2-5-flash-261115',
       'dreamina-seedance-2-0-260128',
       'seedance-1-5-pro-251215',
     ]) {
@@ -1158,13 +1164,21 @@ describe('assembleProviderOpenApi', () => {
       durationOf('dreamina-seedance-2-5-260628')?.anyOf?.[0],
     ).toMatchObject({ minimum: 4, maximum: 30 })
     expect(
+      durationOf('dreamina-seedance-2-5-flash-261115')?.anyOf?.[0],
+    ).toMatchObject({ minimum: 4, maximum: 30 })
+    expect(
       durationOf('dreamina-seedance-2-0-260128')?.anyOf?.[0],
     ).toMatchObject({ minimum: 4, maximum: 15 })
     expect(durationOf('seedance-1-5-pro-251215')?.anyOf?.[0]).toMatchObject({
       minimum: 4,
       maximum: 12,
     })
-    expect(durationOf('seedance-unpriced-extra')).toBeUndefined()
+    const extra = variants?.find(
+      (variant) =>
+        variant['x-modelschemas-model'] === 'seedance-unpriced-extra',
+    )
+    expect(extra?.properties?.model?.enum).toEqual(['seedance-unpriced-extra'])
+    expect(extra?.properties?.duration).toEqual(createInput.properties.duration)
   })
 
   it('assembles a provider-grained document past 40 paths (#560)', async () => {

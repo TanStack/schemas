@@ -6,10 +6,18 @@
  * 2.0, 4-30s on 2.5"). `-1` lets the model choose on 2.5, 2.0, and 1.5-pro.
  * Fast and mini share the 2.0 second range; the `-1` note names 2.0, which
  * is `dreamina-seedance-2-0-260128`, not those suffixes.
+ * Seedance 2.5 flash is the same 4–30 seconds and `-1` as 2.5. The
+ * capabilities table states that on {@link SEEDANCE_DURATION_DOCS}.
  *
- * `?activity=video` copies the shared request once per model and writes
- * these bounds onto `duration`, tagged `x-modelschemas-model`.
+ * `?activity=video` copies the shared request once per listed model and
+ * writes these bounds onto `duration`, tagged `x-modelschemas-model`. A
+ * listed id with no row here keeps the stored `duration` and stays its own
+ * branch, so the `anyOf` does not reject it. The poll reports that id.
  */
+
+/** Capabilities overview. Output duration column, read 2026-11-16. */
+export const SEEDANCE_DURATION_DOCS =
+  'https://ai.byteplus.com/ark/region:ap-southeast-1/docs/seedance-2-5'
 
 export interface SeedanceDuration {
   min: number
@@ -20,6 +28,7 @@ export interface SeedanceDuration {
 
 export const SEEDANCE_DURATIONS: Record<string, SeedanceDuration> = {
   'dreamina-seedance-2-5-260628': { min: 4, max: 30, auto: true },
+  'dreamina-seedance-2-5-flash-261115': { min: 4, max: 30, auto: true },
   'dreamina-seedance-2-0-260128': { min: 4, max: 15, auto: true },
   'dreamina-seedance-2-0-fast-260128': { min: 4, max: 15, auto: false },
   'dreamina-seedance-2-0-mini-260615': { min: 4, max: 15, auto: false },
@@ -67,9 +76,28 @@ export function seedanceDurationSchema(
 }
 
 /**
- * One create-request schema per listed Seedance model. Undefined when this
- * operation is not the shared video create call, or when none of `rawIds`
- * is in {@link SEEDANCE_DURATIONS}.
+ * Listed video ids with no {@link SEEDANCE_DURATIONS} row, in order, once
+ * each. The poll names these; the create document still accepts them.
+ */
+export function uncoveredSeedanceIds(
+  rawIds: ReadonlyArray<string>,
+): Array<string> {
+  const missing: Array<string> = []
+  const seen = new Set<string>()
+  for (const rawId of rawIds) {
+    if (seen.has(rawId) || Object.hasOwn(SEEDANCE_DURATIONS, rawId)) continue
+    seen.add(rawId)
+    missing.push(rawId)
+  }
+  return missing
+}
+
+/**
+ * One create-request schema per listed model. Ids in
+ * {@link SEEDANCE_DURATIONS} get that row's bounds. Any other listed id
+ * keeps the stored `duration` and still pins `model`, so a request for it
+ * stays valid. Undefined when this operation is not the shared video create
+ * call, or when `rawIds` is empty.
  */
 export function seedanceActivityRequests(input: {
   path: string
@@ -86,20 +114,25 @@ export function seedanceActivityRequests(input: {
     ? properties.model
     : { type: 'string' }
   const listed = new Set(input.rawIds)
+  const pin = (
+    rawId: string,
+    duration?: Record<string, unknown>,
+  ): Record<string, unknown> =>
+    overlay(schema, {
+      properties: overlay(properties, {
+        model: overlay(model, { enum: [rawId] }),
+        ...(duration ? { duration } : {}),
+      }),
+    })
   const variants: Array<{ rawId: string; schema: unknown }> = []
   for (const rawId of Object.keys(SEEDANCE_DURATIONS)) {
     if (!listed.has(rawId)) continue
     const bounds = SEEDANCE_DURATIONS[rawId]
     if (!bounds) continue
-    variants.push({
-      rawId,
-      schema: overlay(schema, {
-        properties: overlay(properties, {
-          model: overlay(model, { enum: [rawId] }),
-          duration: seedanceDurationSchema(bounds),
-        }),
-      }),
-    })
+    variants.push({ rawId, schema: pin(rawId, seedanceDurationSchema(bounds)) })
+  }
+  for (const rawId of uncoveredSeedanceIds(input.rawIds)) {
+    variants.push({ rawId, schema: pin(rawId) })
   }
   return variants.length > 0 ? variants : undefined
 }
