@@ -1571,6 +1571,202 @@ describe('assembleProviderOpenApi', () => {
     ).toMatchObject({ ok: false, code: 'spec_requires_selector' })
   })
 
+  it('serves models that share one path as one operation with a body per model (#658)', async () => {
+    const VIDEO_PATH = '/v1beta/interactions'
+    const LRO_PATH = '/v1beta/models/{modelsId}:predictLongRunning'
+    const omni = (rawId: string, seconds: Array<string>) => ({
+      type: 'object',
+      required: ['model'],
+      properties: {
+        model: { type: 'string', enum: [rawId] },
+        response_format: { $ref: '#/$defs/VideoResponseFormat' },
+      },
+      $defs: {
+        VideoResponseFormat: {
+          type: 'object',
+          properties: { duration: { type: 'string', enum: seconds } },
+        },
+      },
+    })
+    await db
+      .insert(providers)
+      .values({
+        id: 'gemini',
+        displayName: 'Google Gemini',
+        specSourceUrl: 'https://example.com/g.json',
+      })
+      .onConflictDoNothing()
+    await db
+      .insert(endpoints)
+      .values([
+        {
+          id: `gemini${LRO_PATH}`,
+          providerId: 'gemini',
+          activity: 'video',
+          method: 'POST',
+          path: LRO_PATH,
+        },
+        ...['gemini-omni-1.1-flash', 'gemini-omni-1.2-flash'].map((rawId) => ({
+          id: `gemini/${rawId}`,
+          providerId: 'gemini',
+          activity: 'video' as const,
+          method: 'POST',
+          path: VIDEO_PATH,
+          description: `Generate a video with ${rawId}`,
+        })),
+      ])
+      .onConflictDoNothing()
+    await db
+      .insert(schemaVersions)
+      .values([
+        {
+          id: 'gemini/lro:input',
+          endpointId: `gemini${LRO_PATH}`,
+          kind: 'input',
+          contentHash: '1'.repeat(64),
+          schema: JSON.stringify({ type: 'object' }),
+          createdAt: NOW,
+        },
+        {
+          id: 'gemini/omni-1.1:input',
+          endpointId: 'gemini/gemini-omni-1.1-flash',
+          kind: 'input',
+          contentHash: '2'.repeat(64),
+          schema: JSON.stringify(omni('gemini-omni-1.1-flash', ['3s', '10s'])),
+          createdAt: NOW,
+        },
+        {
+          id: 'gemini/omni-1.2:input',
+          endpointId: 'gemini/gemini-omni-1.2-flash',
+          kind: 'input',
+          contentHash: '3'.repeat(64),
+          schema: JSON.stringify(omni('gemini-omni-1.2-flash', ['3s', '15s'])),
+          createdAt: NOW,
+        },
+        {
+          id: 'gemini/omni-1.2:output',
+          endpointId: 'gemini/gemini-omni-1.2-flash',
+          kind: 'output',
+          contentHash: '4'.repeat(64),
+          schema: JSON.stringify(OUTPUT),
+          createdAt: NOW,
+        },
+      ])
+      .onConflictDoNothing()
+    await db
+      .insert(models)
+      .values(
+        [
+          'gemini-omni-1.1-flash',
+          'gemini-omni-1.2-flash',
+          'veo-3.1-generate-preview',
+        ].map((rawId) => ({
+          id: `gemini-${rawId.replace(/\./g, '-')}`,
+          providerId: 'gemini',
+          rawId,
+          activity: 'video' as const,
+          firstSeenAt: NOW,
+          lastSeenAt: NOW,
+        })),
+      )
+      .onConflictDoNothing()
+
+    const result = await assembleProviderOpenApi(db, 'gemini', {
+      activity: 'video',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const paths = result.document.paths as Record<
+      string,
+      { post: Record<string, unknown> }
+    >
+    expect(Object.keys(paths).sort()).toEqual([VIDEO_PATH, LRO_PATH])
+    const post = paths[VIDEO_PATH]?.post
+    expect(post?.['x-modelschemas-activity']).toBe('video')
+    expect(post?.requestBody).toEqual({
+      required: true,
+      content: {
+        'application/json': {
+          schema: {
+            anyOf: [
+              { $ref: '#/components/schemas/input_gemini-omni-1.1-flash' },
+              { $ref: '#/components/schemas/input_gemini-omni-1.2-flash' },
+            ],
+          },
+        },
+      },
+    })
+    // 1.1 has no stored output, so no result union is published.
+    expect(post?.responses).toEqual({ '200': { description: 'Success' } })
+    const schemas = (
+      result.document.components as {
+        schemas: Record<string, Record<string, unknown>>
+      }
+    ).schemas
+    // Each model keeps its own duration list behind its own ref.
+    const durations = (name: string) => {
+      const body = schemas[name] as {
+        'x-modelschemas-model': string
+        properties: { response_format: { $ref: string } }
+      }
+      const format = schemas[
+        body.properties.response_format.$ref.replace(
+          '#/components/schemas/',
+          '',
+        )
+      ] as { properties: { duration: { enum: Array<string> } } }
+      return [body['x-modelschemas-model'], format.properties.duration.enum]
+    }
+    expect(durations('input_gemini-omni-1.1-flash')).toEqual([
+      'gemini-omni-1.1-flash',
+      ['3s', '10s'],
+    ])
+    expect(durations('input_gemini-omni-1.2-flash')).toEqual([
+      'gemini-omni-1.2-flash',
+      ['3s', '15s'],
+    ])
+    expect(unresolvedRefs(result.document)).toEqual([])
+
+    const pinned = await assembleProviderOpenApi(db, 'gemini', {
+      model: 'gemini-omni-1.2-flash',
+    })
+    expect(pinned.ok).toBe(true)
+    if (!pinned.ok) return
+    const pinnedPaths = pinned.document.paths as Record<
+      string,
+      { post: { requestBody: unknown; responses: unknown } }
+    >
+    expect(Object.keys(pinnedPaths)).toEqual([VIDEO_PATH])
+    expect(pinnedPaths[VIDEO_PATH]?.post.requestBody).toEqual({
+      required: true,
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/input_gemini-omni-1.2-flash' },
+        },
+      },
+    })
+    expect(pinnedPaths[VIDEO_PATH]?.post.responses).toEqual({
+      '200': {
+        description: 'Success',
+        content: {
+          'application/json': {
+            schema: {
+              $ref: '#/components/schemas/output_gemini-omni-1.2-flash',
+            },
+          },
+        },
+      },
+    })
+
+    // A model with no body of its own does not get another model's.
+    const other = await assembleProviderOpenApi(db, 'gemini', {
+      model: 'veo-3.1-generate-preview',
+    })
+    expect(other.ok).toBe(true)
+    if (!other.ok) return
+    expect(Object.keys(other.document.paths as object)).toEqual([LRO_PATH])
+  })
+
   it('404s unknown provider and unknown model', async () => {
     expect(await assembleProviderOpenApi(db, 'nope')).toMatchObject({
       ok: false,

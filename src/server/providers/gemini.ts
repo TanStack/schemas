@@ -12,6 +12,7 @@ import {
 } from './gemini-bindings.ts'
 import { geminiModelFeatures } from './gemini-features.ts'
 import { geminiModelPricing } from './gemini-pricing.ts'
+import { geminiVideoEndpoints } from './gemini-video.ts'
 import {
   GEMINI_DISCOVERY_URL,
   geminiRequestMap,
@@ -264,12 +265,17 @@ export function geminiModelActivity(
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const text = await fetchText(GEMINI_DISCOVERY_URL)
+  const [text, video] = await Promise.all([
+    fetchText(GEMINI_DISCOVERY_URL),
+    geminiVideoEndpoints(),
+  ])
   const discovery = JSON.parse(text) as DiscoveryDoc
   return {
     specs: [discoveryToOpenApi(discovery)],
     sources: [{ url: GEMINI_DISCOVERY_URL, hash: await sha256Text(text) }],
     outputStrategy: 'post-200',
+    bundledEndpoints: video.endpoints,
+    ...(video.warnings.length > 0 ? { warnings: video.warnings } : {}),
   }
 }
 
@@ -347,9 +353,15 @@ async function listModels(
   const models = listed.map((m) => {
     const rawId = rawIdOf(m)
     const methods = m.supportedGenerationMethods ?? []
-    const activity = geminiModelActivity(rawId, methods)
     const priced = pricing(rawId)
     const feat = features(rawId, m.thinking)
+    // The Models API lists a video model like a chat model. Its docs page
+    // is what says video, so a poll that could not read the page keeps the
+    // stored activity and route instead of calling the row chat (#658).
+    const listing = geminiModelActivity(rawId, methods)
+    const pageUnread =
+      listing === 'chat' && feat.absent?.modalities === 'unavailable'
+    const activity = pageUnread ? null : feat.outputVideo ? 'video' : listing
     const capabilities = [
       ...new Set([
         ...(geminiCapabilities(m) ?? []),
@@ -371,15 +383,26 @@ async function listModels(
       ...(thinkingLoaded || activity !== 'chat' || !usesConfig
         ? {}
         : { requestMap: 'unavailable' as const }),
+      ...(pageUnread
+        ? {
+            activity: 'unavailable' as const,
+            schemaEndpointId: 'unavailable' as const,
+            requestMap: 'unavailable' as const,
+          }
+        : {}),
     }
     return {
       rawId,
       displayName: m.displayName ?? null,
       activity,
+      // A video model's route is its own Interactions schema
+      // (`gemini-video.ts`), stored under the model id.
       schemaEndpointId:
         activity === null
           ? null
-          : geminiGenerationEndpointId(activity, methods),
+          : feat.outputVideo
+            ? rawId
+            : geminiGenerationEndpointId(activity, methods),
       contextWindow: m.inputTokenLimit ?? null,
       maxOutput: m.outputTokenLimit ?? null,
       modalities: feat.modalities,
