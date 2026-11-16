@@ -119,9 +119,6 @@ describe('generation endpoint ids', () => {
       'v1beta/models/{modelsId}:predictLongRunning',
     )
     expect(geminiGenerationEndpointId('video', ['generateContent'])).toBe(
-      'v1beta/models/{modelsId}:generateContent',
-    )
-    expect(geminiGenerationEndpointId('video', [])).toBe(
       'v1beta/models/{modelsId}:predictLongRunning',
     )
     expect(geminiGenerationEndpointId('embeddings', ['embedContent'])).toBe(

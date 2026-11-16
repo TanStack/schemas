@@ -152,14 +152,8 @@ export function geminiGenerationEndpointId(
         ? 'v1beta/models/{modelsId}:predict'
         : 'v1beta/models/{modelsId}:generateContent'
     case 'video':
-      // Omni is generateContent. Veo, and a video row whose methods were
-      // not stored, stays on `:predictLongRunning`.
-      if (
-        methods.includes('generateContent') &&
-        !methods.includes('predictLongRunning')
-      ) {
-        return 'v1beta/models/{modelsId}:generateContent'
-      }
+      // Veo. Omni's route is the per-model Interactions schema, chosen in
+      // listModels when the docs page states an output video limit.
       return 'v1beta/models/{modelsId}:predictLongRunning'
     case 'embeddings':
       return 'v1beta/models/{modelsId}:embedContent'

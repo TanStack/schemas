@@ -248,10 +248,12 @@ function hasSegment(rawId: string, segment: string): boolean {
  * derive it from the signals it does carry: `predict`, `predictLongRunning`,
  * and `embedContent` uniquely identify Imagen, Veo, and embedding models.
  * The generateContent surface also serves music (Lyria), image (Nano
- * Banana), video (Omni), transcription, TTS, and Live models. Those are
- * classified by the id, because the shared route is not what the model
- * does (#661). Live and native-audio models are audio: they are the Live
- * API, not generateContent chat.
+ * Banana), transcription, TTS, and Live models. Those are classified by
+ * the id, because the shared route is not what the model does (#661).
+ * Live and native-audio models are audio: they are the Live API, not
+ * generateContent chat. Omni stays a chat listing here. Its docs page is
+ * what says video, and an unread page must not replace the stored row
+ * (#658).
  */
 export function geminiModelActivity(
   rawId: string,
@@ -266,7 +268,6 @@ export function geminiModelActivity(
   if (rawId.includes('nano-banana') || hasSegment(rawId, 'image')) {
     return 'image'
   }
-  if (hasSegment(rawId, 'omni')) return 'video'
   if (rawId.includes('transcribe') || hasSegment(rawId, 'tts')) return 'audio'
   if (hasSegment(rawId, 'live') || rawId.includes('native-audio')) {
     return 'audio'

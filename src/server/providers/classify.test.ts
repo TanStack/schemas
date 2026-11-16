@@ -161,9 +161,11 @@ describe('gemini model activity', () => {
     expect(geminiModelActivity('nano-banana-pro-preview', GENERATE)).toBe(
       'image',
     )
-    expect(geminiModelActivity('gemini-omni-1.1-flash', GENERATE)).toBe('video')
+    // Omni is still a chat listing. The docs page promotes it to video,
+    // and an unread page must not (#658).
+    expect(geminiModelActivity('gemini-omni-1.1-flash', GENERATE)).toBe('chat')
     expect(geminiModelActivity('gemini-omni-flash-preview', GENERATE)).toBe(
-      'video',
+      'chat',
     )
     expect(geminiModelActivity('gemini-3.5-transcribe', GENERATE)).toBe('audio')
     expect(geminiModelActivity('gemini-3.5-transcribe-live', GENERATE)).toBe(
