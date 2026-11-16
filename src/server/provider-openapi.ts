@@ -252,23 +252,39 @@ function refuseModelGrained(
 function applyConnectProfile(
   config: ProviderConfig | undefined,
   selected: Array<LoadedEndpoint>,
-): { connect: ProviderConnect | null; selected: Array<LoadedEndpoint> } {
-  if (!config?.connect) return { connect: null, selected }
+): {
+  connect: ProviderConnect | null
+  selected: Array<LoadedEndpoint>
+  /**
+   * Activities whose operations carry their own servers and security.
+   * Empty when the document itself uses that activity's profile.
+   */
+  operationOverrides: Partial<Record<Activity, ProviderConnect>>
+} {
+  if (!config?.connect) {
+    return { connect: null, selected, operationOverrides: {} }
+  }
   const overrides = config.connectByActivity
-  if (!overrides) return { connect: config.connect, selected }
+  if (!overrides) {
+    return { connect: config.connect, selected, operationOverrides: {} }
+  }
 
   const present = new Set(selected.map((endpoint) => endpoint.activity))
   if (present.size === 1) {
     const only = selected[0]?.activity
     const override = only !== undefined ? overrides[only] : undefined
-    return { connect: override ?? config.connect, selected }
+    return {
+      connect: override ?? config.connect,
+      selected,
+      operationOverrides: {},
+    }
   }
-  return {
-    connect: config.connect,
-    selected: selected.filter(
-      (endpoint) => overrides[endpoint.activity] === undefined,
-    ),
+  const operationOverrides: Partial<Record<Activity, ProviderConnect>> = {}
+  for (const activity of present) {
+    const override = overrides[activity]
+    if (override) operationOverrides[activity] = override
   }
+  return { connect: config.connect, selected, operationOverrides }
 }
 
 /**
@@ -360,6 +376,35 @@ function contentTypesFor(
   return rest.length > 0 ? rest : null
 }
 
+function httpMethodOf(endpoint: LoadedEndpoint): 'post' | 'get' | 'delete' {
+  const method = endpoint.method.toLowerCase()
+  if (method === 'get' || method === 'delete') return method
+  return 'post'
+}
+
+/** Path parameters, with descriptions taken from a GET/DELETE input schema. */
+function pathParamsFromInput(
+  path: string,
+  input: unknown,
+): Array<Record<string, unknown>> {
+  const props =
+    isObject(input) && isObject(input.properties) ? input.properties : {}
+  return pathParamsFromPath(path).map((param) => {
+    const name = param.name
+    if (typeof name !== 'string') return param
+    const described = props[name]
+    if (!isObject(described)) return param
+    const description = described.description
+    const schema = { ...described }
+    delete schema.description
+    return {
+      ...param,
+      ...(typeof description === 'string' ? { description } : {}),
+      schema,
+    }
+  })
+}
+
 function buildOperation(
   providerId: string,
   endpoint: LoadedEndpoint,
@@ -367,9 +412,13 @@ function buildOperation(
   modelIds: Array<string>,
   pinnedModel: string | undefined,
 ): Record<string, unknown> {
+  const method = httpMethodOf(endpoint)
+  const hasBody = method === 'post'
   const input = applyModelEnum(endpoint.input, modelIds)
   const parameters = [
-    ...pathParamsFromPath(endpoint.path),
+    ...(hasBody
+      ? pathParamsFromPath(endpoint.path)
+      : pathParamsFromInput(endpoint.path, endpoint.input)),
     ...headerParams(connect.requiredHeaders),
     ...(connect.modelHeader && modelIds.length > 0
       ? [
@@ -385,7 +434,9 @@ function buildOperation(
   const pinned = pinnedModel
     ? pinPathParams(parameters, pinnedModel)
     : parameters
-  const body = requestMedia(input, endpoint.requestContentType)
+  const body = hasBody
+    ? requestMedia(input, endpoint.requestContentType)
+    : undefined
   const media = connect.siblingGet
     ? undefined
     : responseMedia(
@@ -394,7 +445,7 @@ function buildOperation(
         endpoint.streamSchema,
       )
   return {
-    operationId: operationId(providerId, 'post', endpoint.path),
+    operationId: operationId(providerId, method, endpoint.path),
     summary: endpoint.description ?? undefined,
     'x-modelschemas-activity': endpoint.activity,
     ...(pinned.length > 0 ? { parameters: pinned } : {}),
@@ -510,6 +561,32 @@ function schemaComponentKey(
   }
   used.add(unique)
   return unique
+}
+
+/**
+ * `?activity=` may replace one shared body with one schema per model.
+ * The bare document keeps the stored schema.
+ */
+function withActivityModelRequests(
+  config: ProviderConfig | undefined,
+  endpoint: LoadedEndpoint,
+  rawIds: Array<string>,
+): LoadedEndpoint {
+  const variants = config?.activityModelRequests?.({
+    path: endpoint.path,
+    method: endpoint.method,
+    schema: endpoint.input,
+    rawIds,
+  })
+  if (!variants || variants.length === 0) return endpoint
+  return {
+    ...endpoint,
+    input: {
+      anyOf: variants.map((variant) =>
+        withModelAnnotation(variant.schema, variant.rawId),
+      ),
+    },
+  }
 }
 
 function withModelAnnotation(
@@ -630,7 +707,11 @@ function buildModelComponents(
  * (Gemini video: `gemini-omni-1.2-flash` on `/v1beta/interactions`).
  */
 function isModelBody(endpoint: LoadedEndpoint): boolean {
-  return endpoint.id !== endpointIdFromPath(endpoint.path)
+  const pathId = endpointIdFromPath(endpoint.path)
+  if (endpoint.id === pathId) return false
+  // A second method on the same path (`…/{id}:delete`) is that path's
+  // operation, not a model that shares the URL.
+  return endpoint.id !== `${pathId}:${endpoint.method.toLowerCase()}`
 }
 
 /**
@@ -1114,17 +1195,17 @@ export function operationsFor(
   pinnedModel: string | undefined,
 ): Array<{
   path: string
-  method: 'post' | 'get'
+  method: 'post' | 'get' | 'delete'
   operation: Record<string, unknown>
 }> {
   const operations: Array<{
     path: string
-    method: 'post' | 'get'
+    method: 'post' | 'get' | 'delete'
     operation: Record<string, unknown>
   }> = [
     {
       path: endpoint.path,
-      method: 'post',
+      method: httpMethodOf(endpoint),
       operation: buildOperation(
         providerId,
         endpoint,
@@ -1274,6 +1355,7 @@ export async function assembleProviderOpenApi(
   const profile = applyConnectProfile(config, selected)
   const connect = profile.connect
   selected = profile.selected
+  const operationOverrides = profile.operationOverrides
 
   if (selected.length === 0) {
     const filtered = activity !== undefined || pinnedModel !== undefined
@@ -1386,9 +1468,15 @@ export async function assembleProviderOpenApi(
         const path = endpoint.path.split('#')[0] ?? endpoint.path
         const target = path === endpoint.path ? paths : twinPaths
         const owner = owners?.get(endpoint.id)
+        const rawIds = owner !== undefined ? [owner] : idsFor(endpoint.id)
+        const shaped =
+          activity !== undefined
+            ? withActivityModelRequests(config, endpoint, rawIds)
+            : endpoint
+        const override = operationOverrides[endpoint.activity]
         for (const op of operationsFor(
           providerId,
-          { ...endpoint, path },
+          { ...shaped, path },
           connect,
           owner !== undefined
             ? [owner]
@@ -1397,7 +1485,9 @@ export async function assembleProviderOpenApi(
               : idsFor(endpoint.id),
           pinnedModel,
         )) {
+          if (override) op.operation.security = override.security
           const item = target[op.path] ?? {}
+          if (override) item.servers = override.servers
           item[op.method] = op.operation
           target[op.path] = item
         }
@@ -1408,8 +1498,12 @@ export async function assembleProviderOpenApi(
   const revision =
     selected.find((e) => e.specRevision)?.specRevision ?? 'current'
   const components: Record<string, unknown> = {}
-  if (Object.keys(connect.securitySchemes).length > 0) {
-    components.securitySchemes = connect.securitySchemes
+  const securitySchemes = { ...connect.securitySchemes }
+  for (const override of Object.values(operationOverrides)) {
+    Object.assign(securitySchemes, override.securitySchemes)
+  }
+  if (Object.keys(securitySchemes).length > 0) {
+    components.securitySchemes = securitySchemes
   }
   let schemas: Record<string, unknown>
   try {

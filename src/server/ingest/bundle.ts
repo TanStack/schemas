@@ -350,7 +350,7 @@ export function extractEndpointSchemas(
   spec: OpenApiDocument,
   pathKey: string,
   strategy: OutputStrategy = 'post-200',
-  method: 'post' | 'get' = 'post',
+  method: 'post' | 'get' | 'delete' = 'post',
 ): ExtractedEndpointSchemas {
   const warnings: Array<string> = []
   const components = schemaComponents(spec)
@@ -402,7 +402,7 @@ export function extractEndpointSchemas(
         warnings.push(...bundled.warnings)
       }
     }
-  } else if (method === 'get') {
+  } else if (method === 'get' || method === 'delete') {
     input = pathParameterSchema(operation)
   }
 

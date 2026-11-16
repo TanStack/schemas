@@ -64,6 +64,10 @@ import {
 } from './byteplus-spec.ts'
 import { githubRequestInit } from './github.ts'
 import { byteplusGenerationEndpointId } from './model-meta.ts'
+import {
+  SEEDANCE_DURATIONS,
+  seedanceActivityRequests,
+} from './byteplus-video-duration.ts'
 import { byteplusIdSuffixDate } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
@@ -195,17 +199,16 @@ const REASON_TOOLS_SO = [
 ]
 
 const video = (
-  rawId: string,
+  rawId: keyof typeof SEEDANCE_DURATIONS,
   input: Array<string>,
   output: Array<string>,
   resolutions: Array<string>,
-  duration: { min: number; max: number },
 ): CuratedModel => ({
   rawId,
   activity: 'video',
   input,
   output,
-  capabilities: { resolutions, duration },
+  capabilities: { resolutions, duration: SEEDANCE_DURATIONS[rawId] },
 })
 
 const image = (rawId: string, maxReferenceImages: number): CuratedModel => ({
@@ -248,49 +251,42 @@ const BYTEPLUS_MODELS: Array<CuratedModel> = [
     TIVA,
     ['video', 'audio'],
     ['480p', '720p'],
-    { min: 4, max: 30 },
   ),
   video(
     'dreamina-seedance-2-0-260128',
     TIVA,
     ['video', 'audio'],
     ['480p', '720p', '1080p', '4k'],
-    { min: 4, max: 15 },
   ),
   video(
     'dreamina-seedance-2-0-fast-260128',
     TIVA,
     ['video', 'audio'],
     ['480p', '720p'],
-    { min: 4, max: 15 },
   ),
   video(
     'dreamina-seedance-2-0-mini-260615',
     TIVA,
     ['video', 'audio'],
     ['480p', '720p'],
-    { min: 4, max: 15 },
   ),
   video(
     'seedance-1-5-pro-251215',
     ['text', 'image'],
     ['video', 'audio'],
     ['480p', '720p', '1080p'],
-    { min: 4, max: 12 },
   ),
   video(
     'seedance-1-0-pro-250528',
     ['text', 'image'],
     ['video'],
     ['480p', '720p', '1080p'],
-    { min: 2, max: 12 },
   ),
   video(
     'seedance-1-0-pro-fast-251015',
     ['text', 'image'],
     ['video'],
     ['480p', '720p', '1080p'],
-    { min: 2, max: 12 },
   ),
   // Image (Seedream)
   image('dola-seedream-5-0-pro-260628', 10),
@@ -517,6 +513,19 @@ export function arkChatCapabilities(m: ArkModel): Array<string> {
   return caps
 }
 
+/** Clip length and resolution tiers the listing does not state. */
+function curatedVideoFacts(rawId: string): Record<string, unknown> {
+  const caps = CURATED_BY_ID.get(rawId)?.capabilities
+  if (!caps || Array.isArray(caps)) return {}
+  const facts = caps as { duration?: unknown; resolutions?: unknown }
+  return {
+    ...(facts.resolutions !== undefined
+      ? { resolutions: facts.resolutions }
+      : {}),
+    ...(facts.duration !== undefined ? { duration: facts.duration } : {}),
+  }
+}
+
 function toModelInfo(m: ArkModel): ModelInfo {
   const probed = PROBED_STRUCTURED_OUTPUT[m.id]
   const curated = CURATED_BY_ID.get(m.id)
@@ -556,6 +565,8 @@ function toModelInfo(m: ArkModel): ModelInfo {
             // Distinct key from the upstream `structured_outputs` block
             // above so the disagreement stays visible.
             ...(probed === undefined ? {} : { structuredOutputProbed: probed }),
+            // The listing does not state clip length. The curated table does.
+            ...curatedVideoFacts(m.id),
           },
         }),
     // 'Retiring' models still serve but are on the way out; both states are
@@ -656,9 +667,10 @@ export const byteplusProvider: ProviderConfig = {
   // status. This default only applies if a marker is ever missing.
   defaultDerivation: 'probe-verified',
   specGrain: 'provider',
-  // Default document is Ark. Seed Speech (`?activity=audio`) uses a
-  // different host and X-Api-Key — a combined profile would send Bearer
-  // to the voice host.
+  // Default document is Ark. Seed Speech uses the voice host and
+  // X-Api-Key. A mixed document keeps those paths and overrides `servers`
+  // and `security` on each, so the Ark bearer profile is not sent there.
+  // `?activity=audio` is still the voice document on its own.
   connect: bearerConnect(BYTEPLUS_ARK_BASE_URL, 'Ark'),
   connectByActivity: {
     audio: headerApiKeyConnect(BYTEPLUS_VOICE_BASE_URL, 'X-Api-Key'),
@@ -667,6 +679,8 @@ export const byteplusProvider: ProviderConfig = {
   listModels,
   classify,
   classifyGets: true,
+  classifyDeletes: true,
+  activityModelRequests: seedanceActivityRequests,
   generationEndpointId: ({ rawId, activity }) =>
     byteplusGenerationEndpointId(rawId, activity),
 }

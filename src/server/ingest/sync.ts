@@ -79,8 +79,12 @@ export interface ClassifiedEndpoint {
   /** Globally unique db id: `${providerId}/${pathId}`. */
   dbId: string
   path: string
-  /** HTTP method. GET is the BytePlus video-task retrieve call. */
-  method: 'POST' | 'GET'
+  /**
+   * HTTP method. GET retrieves a BytePlus video task. DELETE cancels one.
+   * A second method on a path that already has POST gets `:${method}` on
+   * the id, so both rows can exist.
+   */
+  method: 'POST' | 'GET' | 'DELETE'
   activity: Activity
   description: string | null
   /** Provenance of the spec document this endpoint came from. */
@@ -114,6 +118,25 @@ const DERIVATIONS: ReadonlyArray<Derivation> = [
   'probe-verified',
   'docs-derived',
 ]
+
+type SpecMethod = 'post' | 'get' | 'delete'
+
+/**
+ * POST keeps the historical path id. GET does too, unless the same path
+ * also has POST. DELETE (and a GET that shares its path with POST) gets
+ * `:${method}` so the two rows do not collide.
+ */
+function endpointDbId(
+  providerId: string,
+  pathKey: string,
+  method: SpecMethod,
+  methodsOnPath: ReadonlySet<SpecMethod>,
+): string {
+  const base = `${providerId}/${endpointIdFromPath(pathKey)}`
+  if (method === 'post') return base
+  if (method === 'get' && !methodsOnPath.has('post')) return base
+  return `${base}:${method}`
+}
 
 /**
  * Per-operation provenance annotation, falling back to the provider's
@@ -152,11 +175,18 @@ export function classifyAndBundle(
   for (const [specIndex, spec] of fetched.specs.entries()) {
     const source = fetched.sources[specIndex] ?? null
     for (const [pathKey, operations] of Object.entries(spec.paths ?? {})) {
-      const methods = ['post', 'get'] as const
+      const methods = (['post', 'get', 'delete'] as const).filter((method) => {
+        const operation = operations[method]
+        if (!operation) return false
+        if (method === 'get' && provider.classifyGets !== true) return false
+        if (method === 'delete' && provider.classifyDeletes !== true) {
+          return false
+        }
+        return provider.classify(pathKey, operation) !== null
+      })
       for (const method of methods) {
         const operation = operations[method]
         if (!operation) continue
-        if (method === 'get' && provider.classifyGets !== true) continue
         const activity = provider.classify(pathKey, operation)
         if (activity === null) continue
 
@@ -193,9 +223,10 @@ export function classifyAndBundle(
               : null
         const { derivation, verifiedAt } = readProvenance(operation, provider)
         classified.push({
-          dbId: `${provider.id}/${endpointIdFromPath(pathKey)}`,
+          dbId: endpointDbId(provider.id, pathKey, method, new Set(methods)),
           path: pathKey,
-          method: method === 'get' ? 'GET' : 'POST',
+          method:
+            method === 'get' ? 'GET' : method === 'delete' ? 'DELETE' : 'POST',
           activity,
           description,
           source,
@@ -499,6 +530,7 @@ export async function syncProvider(
       outcome.changesWritten++
     } else if (
       existing.activity !== endpoint.activity ||
+      existing.method !== endpoint.method ||
       existing.description !== endpoint.description ||
       existing.requestContentType !== endpoint.requestContentType ||
       !sameContentTypes(
@@ -510,6 +542,7 @@ export async function syncProvider(
         .update(endpoints)
         .set({
           activity: endpoint.activity,
+          method: endpoint.method,
           description: endpoint.description,
           requestContentType: endpoint.requestContentType,
           responseContentTypes: endpoint.responseContentTypes,

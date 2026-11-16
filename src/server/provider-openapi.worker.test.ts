@@ -849,7 +849,8 @@ describe('assembleProviderOpenApi', () => {
     })
   })
 
-  it('splits BytePlus Ark and Seed Speech onto their own connect profiles', async () => {
+  it('keeps Seed Speech on the voice host inside the Ark document', async () => {
+    const voice = 'https://voice.ap-southeast-1.bytepluses.com/api/v3'
     await db
       .insert(providers)
       .values({
@@ -875,29 +876,270 @@ describe('assembleProviderOpenApi', () => {
           method: 'POST',
           path: '/tts/create',
         },
+        {
+          id: 'byteplus/auc/bigmodel/recognize/flash',
+          providerId: 'byteplus',
+          activity: 'audio',
+          method: 'POST',
+          path: '/auc/bigmodel/recognize/flash',
+        },
       ])
       .onConflictDoNothing()
     const combined = await assembleProviderOpenApi(db, 'byteplus')
     expect(combined.ok).toBe(true)
     if (!combined.ok) return
-    const combinedPaths = combined.document.paths as Record<string, unknown>
-    expect(combinedPaths['/chat/completions']).toBeDefined()
-    expect(combinedPaths['/tts/create']).toBeUndefined()
+    const combinedPaths = combined.document.paths as Record<
+      string,
+      {
+        servers?: Array<{ url: string }>
+        post?: { security?: Array<Record<string, Array<string>>> }
+      }
+    >
+    expect(combinedPaths['/chat/completions']?.post).toBeDefined()
+    expect(combinedPaths['/chat/completions']?.servers).toBeUndefined()
+    expect(combinedPaths['/chat/completions']?.post?.security).toBeUndefined()
+    for (const path of ['/tts/create', '/auc/bigmodel/recognize/flash']) {
+      expect(combinedPaths[path]?.servers).toEqual([{ url: voice }])
+      expect(combinedPaths[path]?.post?.security).toEqual([{ apiKey: [] }])
+    }
     expect((combined.document.servers as Array<{ url: string }>)[0]?.url).toBe(
       'https://ark.ap-southeast.bytepluses.com/api/v3',
     )
+    expect(combined.document.security).toEqual([{ bearerAuth: [] }])
+    expect(
+      (
+        combined.document.components as {
+          securitySchemes: Record<string, unknown>
+        }
+      ).securitySchemes,
+    ).toMatchObject({
+      bearerAuth: { type: 'http', scheme: 'bearer' },
+      apiKey: { type: 'apiKey', name: 'X-Api-Key' },
+    })
 
     const audio = await assembleProviderOpenApi(db, 'byteplus', {
       activity: 'audio',
     })
     expect(audio.ok).toBe(true)
     if (!audio.ok) return
-    const audioPaths = audio.document.paths as Record<string, unknown>
+    const audioPaths = audio.document.paths as Record<
+      string,
+      { servers?: unknown }
+    >
     expect(audioPaths['/tts/create']).toBeDefined()
+    expect(audioPaths['/auc/bigmodel/recognize/flash']).toBeDefined()
+    expect(audioPaths['/tts/create']?.servers).toBeUndefined()
     expect(audioPaths['/chat/completions']).toBeUndefined()
     expect((audio.document.servers as Array<{ url: string }>)[0]?.url).toBe(
-      'https://voice.ap-southeast-1.bytepluses.com/api/v3',
+      voice,
     )
+    expect(audio.document.security).toEqual([{ apiKey: [] }])
+  })
+
+  it('publishes per-model Seedance durations and GET/DELETE task status', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'byteplus',
+        displayName: 'BytePlus',
+        specSourceUrl: 'https://example.com/b.json',
+      })
+      .onConflictDoNothing()
+    const createInput = {
+      type: 'object',
+      required: ['model', 'content'],
+      properties: {
+        model: { type: 'string' },
+        duration: {
+          type: 'integer',
+          description:
+            '2-12s on 1.0, 4-12s on 1.5-pro, 4-15s on 2.0, 4-30s on 2.5. -1 lets the model choose.',
+        },
+      },
+    }
+    await db
+      .insert(endpoints)
+      .values([
+        {
+          id: 'byteplus/contents/generations/tasks',
+          providerId: 'byteplus',
+          activity: 'video',
+          method: 'POST',
+          path: '/contents/generations/tasks',
+        },
+        {
+          id: 'byteplus/contents/generations/tasks/{id}',
+          providerId: 'byteplus',
+          activity: 'video',
+          method: 'GET',
+          path: '/contents/generations/tasks/{id}',
+        },
+        {
+          id: 'byteplus/contents/generations/tasks/{id}:delete',
+          providerId: 'byteplus',
+          activity: 'video',
+          method: 'DELETE',
+          path: '/contents/generations/tasks/{id}',
+        },
+      ])
+      .onConflictDoNothing()
+    await db
+      .insert(schemaVersions)
+      .values({
+        id: 'byteplus/contents/generations/tasks:input:duration',
+        endpointId: 'byteplus/contents/generations/tasks',
+        kind: 'input',
+        contentHash: 'a'.repeat(64),
+        schema: JSON.stringify(createInput),
+        createdAt: NOW,
+      })
+      .onConflictDoNothing()
+    const seedance = [
+      'dreamina-seedance-2-5-260628',
+      'dreamina-seedance-2-0-260128',
+      'dreamina-seedance-2-0-fast-260128',
+      'dreamina-seedance-2-0-mini-260615',
+      'seedance-1-5-pro-251215',
+      'seedance-1-0-pro-250528',
+      'seedance-1-0-pro-fast-251015',
+    ]
+    await db
+      .insert(models)
+      .values(
+        [...seedance, 'seedance-unpriced-extra'].map((rawId) => ({
+          id: `byteplus-${rawId}`,
+          providerId: 'byteplus',
+          rawId,
+          activity: 'video' as const,
+          firstSeenAt: NOW,
+          lastSeenAt: NOW,
+        })),
+      )
+      .onConflictDoNothing()
+
+    const bare = await assembleProviderOpenApi(db, 'byteplus')
+    expect(bare.ok).toBe(true)
+    if (!bare.ok) return
+    const bareDuration = (
+      bare.document.paths as Record<
+        string,
+        {
+          post?: {
+            requestBody?: {
+              content: {
+                'application/json': {
+                  schema: {
+                    properties?: {
+                      duration?: { minimum?: number; anyOf?: unknown }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      >
+    )['/contents/generations/tasks']?.post?.requestBody?.content[
+      'application/json'
+    ].schema.properties?.duration
+    expect(bareDuration).toMatchObject({ type: 'integer' })
+    expect(bareDuration?.minimum).toBeUndefined()
+    expect(bareDuration?.anyOf).toBeUndefined()
+
+    const video = await assembleProviderOpenApi(db, 'byteplus', {
+      activity: 'video',
+    })
+    expect(video.ok).toBe(true)
+    if (!video.ok) return
+    const paths = video.document.paths as Record<
+      string,
+      {
+        post?: {
+          requestBody?: {
+            content: {
+              'application/json': {
+                schema: {
+                  anyOf?: Array<{
+                    'x-modelschemas-model'?: string
+                    properties?: {
+                      duration?: {
+                        minimum?: number
+                        maximum?: number
+                        anyOf?: Array<{
+                          minimum?: number
+                          maximum?: number
+                          const?: number
+                        }>
+                      }
+                    }
+                  }>
+                }
+              }
+            }
+          }
+        }
+        get?: { requestBody?: unknown }
+        delete?: {
+          requestBody?: unknown
+          responses?: { '200'?: { content?: unknown } }
+        }
+      }
+    >
+    const task = paths['/contents/generations/tasks/{id}']
+    expect(task?.get).toBeDefined()
+    expect(task?.delete).toBeDefined()
+    expect(task).not.toHaveProperty('post')
+    expect(task?.get?.requestBody).toBeUndefined()
+    expect(task?.delete?.requestBody).toBeUndefined()
+    expect(task?.delete?.responses?.['200']?.content).toBeUndefined()
+
+    const variants =
+      paths['/contents/generations/tasks']?.post?.requestBody?.content[
+        'application/json'
+      ].schema.anyOf
+    expect(variants?.map((variant) => variant['x-modelschemas-model'])).toEqual(
+      seedance,
+    )
+    const durationOf = (rawId: string) =>
+      variants?.find((variant) => variant['x-modelschemas-model'] === rawId)
+        ?.properties?.duration
+    expect(durationOf('seedance-1-0-pro-250528')).toMatchObject({
+      type: 'integer',
+      minimum: 2,
+      maximum: 12,
+    })
+    expect(durationOf('seedance-1-0-pro-250528')?.anyOf).toBeUndefined()
+    expect(durationOf('dreamina-seedance-2-0-fast-260128')).toMatchObject({
+      minimum: 4,
+      maximum: 15,
+    })
+    expect(
+      durationOf('dreamina-seedance-2-0-fast-260128')?.anyOf,
+    ).toBeUndefined()
+    expect(durationOf('dreamina-seedance-2-0-mini-260615')).toMatchObject({
+      minimum: 4,
+      maximum: 15,
+    })
+    for (const rawId of [
+      'dreamina-seedance-2-5-260628',
+      'dreamina-seedance-2-0-260128',
+      'seedance-1-5-pro-251215',
+    ]) {
+      const duration = durationOf(rawId)
+      expect(duration?.minimum).toBeUndefined()
+      expect(duration?.anyOf?.[1]).toMatchObject({ const: -1 })
+    }
+    expect(
+      durationOf('dreamina-seedance-2-5-260628')?.anyOf?.[0],
+    ).toMatchObject({ minimum: 4, maximum: 30 })
+    expect(
+      durationOf('dreamina-seedance-2-0-260128')?.anyOf?.[0],
+    ).toMatchObject({ minimum: 4, maximum: 15 })
+    expect(durationOf('seedance-1-5-pro-251215')?.anyOf?.[0]).toMatchObject({
+      minimum: 4,
+      maximum: 12,
+    })
+    expect(durationOf('seedance-unpriced-extra')).toBeUndefined()
   })
 
   it('assembles a provider-grained document past 40 paths (#560)', async () => {

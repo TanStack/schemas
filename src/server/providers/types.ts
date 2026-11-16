@@ -758,8 +758,9 @@ export interface ProviderConfig {
   openModelNames?: true
   /**
    * Per-activity override when one provider has multiple data planes
-   * (BytePlus Ark vs Seed Speech). Mixed selections drop overridden
-   * activities from the default document.
+   * (BytePlus Ark vs Seed Speech). A selection that is only that activity
+   * uses the override as the document profile. A mixed selection keeps
+   * the paths and sets the override's `servers` and `security` on each.
    */
   connectByActivity?: Partial<Record<Activity, ProviderConnect>>
   /**
@@ -796,6 +797,23 @@ export interface ProviderConfig {
    * video URL comes back.
    */
   classifyGets?: boolean
+  /**
+   * Also classify DELETE operations. Off by default. BytePlus video
+   * cancel is DELETE /contents/generations/tasks/{id}.
+   */
+  classifyDeletes?: boolean
+  /**
+   * When `?activity=` (or a pinned model) is set, replace one shared
+   * request schema with one schema per listed model. Each schema is
+   * tagged `x-modelschemas-model`. Return undefined to keep the stored
+   * schema. BytePlus video uses this for per-model `duration` bounds.
+   */
+  activityModelRequests?: (input: {
+    path: string
+    method: string
+    schema: unknown
+    rawIds: Array<string>
+  }) => Array<{ rawId: string; schema: unknown }> | undefined
   /**
    * Drop a listed `schemaEndpointId` until its route has a synced input
    * schema. For listings that name per-model routes the daily sync creates

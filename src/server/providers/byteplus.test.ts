@@ -283,13 +283,16 @@ describe('byteplus spec generated from the Go SDK', () => {
       ['byteplus/chat/completions', 'chat'],
       ['byteplus/contents/generations/tasks', 'video'],
       ['byteplus/contents/generations/tasks/{id}', 'video'],
+      ['byteplus/contents/generations/tasks/{id}:delete', 'video'],
       ['byteplus/images/generations', 'image'],
       ['byteplus/tts/create', 'audio'],
     ])
 
     for (const endpoint of endpoints) {
       expect(endpoint.input, endpoint.dbId).toBeDefined()
-      expect(endpoint.output, endpoint.dbId).toBeDefined()
+      if (endpoint.method !== 'DELETE') {
+        expect(endpoint.output, endpoint.dbId).toBeDefined()
+      }
       if (endpoint.input) expect(findDanglingRefs(endpoint.input)).toEqual([])
       if (endpoint.output) expect(findDanglingRefs(endpoint.output)).toEqual([])
     }
@@ -305,6 +308,12 @@ describe('byteplus spec generated from the Go SDK', () => {
     )
     expect(task?.method).toBe('GET')
     expect(task?.input?.required).toEqual(['id'])
+    const cancel = endpoints.find(
+      (e) => e.dbId === 'byteplus/contents/generations/tasks/{id}:delete',
+    )
+    expect(cancel?.method).toBe('DELETE')
+    expect(cancel?.input?.required).toEqual(['id'])
+    expect(cancel?.output).toBeUndefined()
     const defs = task?.output?.$defs as
       | Record<string, { properties?: Record<string, unknown> }>
       | undefined
@@ -352,10 +361,10 @@ describe('byteplus spec generated from the Go SDK', () => {
     expect(fetched.sources[0]?.url).toMatch(/^https:\/\/docs\.byteplus\.com\//)
     expect(fetched.warnings?.[0]).toContain('served the embedded Ark document')
 
-    // Degraded freshness, not a degraded service: all five endpoints survive.
+    // Degraded freshness, not a degraded service: every endpoint survives.
     const { endpoints, warnings } = classifyAndBundle(byteplusProvider, fetched)
     expect(warnings).toEqual([])
-    expect(endpoints).toHaveLength(6)
+    expect(endpoints).toHaveLength(7)
   })
 
   it.each(['ok', 'unreachable'] as const)(
@@ -920,6 +929,14 @@ describe('byteplus schema provenance', () => {
       'generated',
       null,
     ])
+    expect(by.get('byteplus/contents/generations/tasks/{id}')).toEqual([
+      'generated',
+      null,
+    ])
+    expect(by.get('byteplus/contents/generations/tasks/{id}:delete')).toEqual([
+      'generated',
+      null,
+    ])
     // Seed Speech is hand-written: TTS was exercised live, ASR never was.
     expect(by.get('byteplus/tts/create')).toEqual([
       'probe-verified',
@@ -940,5 +957,10 @@ describe('byteplus schema provenance', () => {
     // No longer self-healing, and it says so.
     expect(chat?.derivation).toBe('probe-verified')
     expect(chat?.verifiedAt).toBe('2026-07-31')
+    const cancel = endpoints.find(
+      (e) => e.dbId === 'byteplus/contents/generations/tasks/{id}:delete',
+    )
+    expect(cancel?.derivation).toBe('docs-derived')
+    expect(cancel?.verifiedAt).toBeNull()
   })
 })
