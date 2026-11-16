@@ -1,3 +1,4 @@
+import { Validator } from '@cfworker/json-schema'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -72,6 +73,44 @@ describe('seedanceActivityRequests', () => {
     expect(duration.minimum).toBeUndefined()
     expect(duration.anyOf?.[0]).toMatchObject({ minimum: 4, maximum: 30 })
     expect(duration.anyOf?.[1]).toMatchObject({ const: -1 })
+  })
+
+  it('accepts -1 for Seedance 2.0 fast and mini', () => {
+    const variants = variantsFor([
+      'dreamina-seedance-2-0-fast-260128',
+      'dreamina-seedance-2-0-mini-260615',
+      'seedance-1-0-pro-fast-251015',
+    ])
+    const durationOf = (rawId: string) => {
+      const variant = variants?.find((item) => item.rawId === rawId)
+      expect(variant).toBeDefined()
+      if (!variant) return undefined
+      const schema = variant.schema as {
+        properties: { duration: Record<string, unknown> }
+      }
+      return schema.properties.duration
+    }
+    for (const rawId of [
+      'dreamina-seedance-2-0-fast-260128',
+      'dreamina-seedance-2-0-mini-260615',
+    ]) {
+      const duration = durationOf(rawId)
+      expect(duration).toBeDefined()
+      if (!duration) return
+      expect(duration.minimum).toBeUndefined()
+      const validator = new Validator(duration, '2020-12', false)
+      expect(validator.validate(-1).valid).toBe(true)
+      expect(validator.validate(4).valid).toBe(true)
+      expect(validator.validate(15).valid).toBe(true)
+      expect(validator.validate(3).valid).toBe(false)
+      expect(validator.validate(16).valid).toBe(false)
+    }
+    const proFast = durationOf('seedance-1-0-pro-fast-251015')
+    expect(proFast).toBeDefined()
+    if (!proFast) return
+    expect(new Validator(proFast, '2020-12', false).validate(-1).valid).toBe(
+      false,
+    )
   })
 
   it('leaves a non-create operation alone', () => {

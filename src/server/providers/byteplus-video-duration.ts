@@ -3,11 +3,10 @@
  *
  * The create schema publishes one integer for every model. The limits live
  * in that field's description ("2-12s on 1.0, 4-12s on 1.5-pro, 4-15s on
- * 2.0, 4-30s on 2.5"). `-1` lets the model choose on 2.5, 2.0, and 1.5-pro.
- * Fast and mini share the 2.0 second range; the `-1` note names 2.0, which
- * is `dreamina-seedance-2-0-260128`, not those suffixes.
- * Seedance 2.5 flash is the same 4–30 seconds and `-1` as 2.5. The
- * capabilities table states that on {@link SEEDANCE_DURATION_DOCS}.
+ * 2.0, 4-30s on 2.5"). `-1` lets the model choose on 2.5, 2.5 flash, every
+ * 2.0 id (base, fast, and mini), and 1.5-pro. The capabilities table on
+ * {@link SEEDANCE_DURATION_DOCS} states those rows. 1.0 does not accept
+ * `-1`.
  *
  * `?activity=video` copies the shared request once per listed model and
  * writes these bounds onto `duration`, tagged `x-modelschemas-model`. A
@@ -30,8 +29,8 @@ export const SEEDANCE_DURATIONS: Record<string, SeedanceDuration> = {
   'dreamina-seedance-2-5-260628': { min: 4, max: 30, auto: true },
   'dreamina-seedance-2-5-flash-261115': { min: 4, max: 30, auto: true },
   'dreamina-seedance-2-0-260128': { min: 4, max: 15, auto: true },
-  'dreamina-seedance-2-0-fast-260128': { min: 4, max: 15, auto: false },
-  'dreamina-seedance-2-0-mini-260615': { min: 4, max: 15, auto: false },
+  'dreamina-seedance-2-0-fast-260128': { min: 4, max: 15, auto: true },
+  'dreamina-seedance-2-0-mini-260615': { min: 4, max: 15, auto: true },
   'seedance-1-5-pro-251215': { min: 4, max: 12, auto: true },
   'seedance-1-0-pro-250528': { min: 2, max: 12, auto: false },
   'seedance-1-0-pro-fast-251015': { min: 2, max: 12, auto: false },

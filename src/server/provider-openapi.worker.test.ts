@@ -1149,21 +1149,12 @@ describe('assembleProviderOpenApi', () => {
       maximum: 12,
     })
     expect(durationOf('seedance-1-0-pro-250528')?.anyOf).toBeUndefined()
-    expect(durationOf('dreamina-seedance-2-0-fast-260128')).toMatchObject({
-      minimum: 4,
-      maximum: 15,
-    })
-    expect(
-      durationOf('dreamina-seedance-2-0-fast-260128')?.anyOf,
-    ).toBeUndefined()
-    expect(durationOf('dreamina-seedance-2-0-mini-260615')).toMatchObject({
-      minimum: 4,
-      maximum: 15,
-    })
     for (const rawId of [
       'dreamina-seedance-2-5-260628',
       'dreamina-seedance-2-5-flash-261115',
       'dreamina-seedance-2-0-260128',
+      'dreamina-seedance-2-0-fast-260128',
+      'dreamina-seedance-2-0-mini-260615',
       'seedance-1-5-pro-251215',
     ]) {
       const duration = durationOf(rawId)
@@ -1178,6 +1169,12 @@ describe('assembleProviderOpenApi', () => {
     ).toMatchObject({ minimum: 4, maximum: 30 })
     expect(
       durationOf('dreamina-seedance-2-0-260128')?.anyOf?.[0],
+    ).toMatchObject({ minimum: 4, maximum: 15 })
+    expect(
+      durationOf('dreamina-seedance-2-0-fast-260128')?.anyOf?.[0],
+    ).toMatchObject({ minimum: 4, maximum: 15 })
+    expect(
+      durationOf('dreamina-seedance-2-0-mini-260615')?.anyOf?.[0],
     ).toMatchObject({ minimum: 4, maximum: 15 })
     expect(durationOf('seedance-1-5-pro-251215')?.anyOf?.[0]).toMatchObject({
       minimum: 4,
