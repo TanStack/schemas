@@ -353,6 +353,7 @@ export const activities = [
   'moderation',
   'world',
   'decision',
+  'search',
 ] as const
 export type Activity = (typeof activities)[number]
 

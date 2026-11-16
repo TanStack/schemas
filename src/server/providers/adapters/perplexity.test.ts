@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { classifyAndBundle } from '../../ingest/sync.ts'
 import {
   parsePerplexityModelsPage,
   parsePerplexityEffortLevels,
@@ -530,14 +531,14 @@ describe('perplexity provider', () => {
 })
 
 describe('perplexity classify', () => {
-  it('maps generation paths and drops search, async, and platform', () => {
+  it('maps generation and search paths and drops async and platform', () => {
     expect(provider.classify('/v1/sonar', {})).toBe('chat')
     expect(provider.classify('/v1/agent', {})).toBe('chat')
     expect(provider.classify('/v1/embeddings', {})).toBe('embeddings')
     expect(provider.classify('/v1/contextualizedembeddings', {})).toBe(
       'embeddings',
     )
-    expect(provider.classify('/search', {})).toBeNull()
+    expect(provider.classify('/search', {})).toBe('search')
     expect(provider.classify('/v1/async/sonar', {})).toBeNull()
     expect(provider.classify('/v1/models', {})).toBeNull()
     expect(provider.classify('/v1/agent/{id}/cancel', {})).toBeNull()
@@ -774,5 +775,96 @@ describe('perplexity fetchSpec', () => {
     )
     expect(fetched.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
     expect(fetched.outputStrategy).toBe('post-200')
+  })
+})
+
+describe('perplexity Search API', () => {
+  // The upstream shape: the request is an allOf over shared filter schemas.
+  const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` })
+  const json = (schema: object) => ({
+    content: { 'application/json': { schema } },
+  })
+  const spec = {
+    openapi: '3.1.0',
+    paths: {
+      '/search': {
+        post: {
+          requestBody: json(ref('ApiSearchRequest')),
+          responses: { '200': json(ref('ApiSearchResponse')) },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        ApiSearchRequest: {
+          type: 'object',
+          allOf: [
+            {
+              type: 'object',
+              required: ['query'],
+              properties: {
+                query: {
+                  anyOf: [
+                    { type: 'string' },
+                    { type: 'array', items: { type: 'string' } },
+                  ],
+                },
+                max_results: { type: 'integer' },
+              },
+            },
+            ref('SearchDomainFilter'),
+          ],
+        },
+        SearchDomainFilter: {
+          type: 'object',
+          properties: {
+            search_domain_filter: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        ApiSearchResponse: {
+          type: 'object',
+          required: ['results', 'id'],
+          properties: {
+            id: { type: 'string' },
+            results: { type: 'array', items: ref('ApiSearchPage') },
+          },
+        },
+        ApiSearchPage: {
+          type: 'object',
+          required: ['title', 'url', 'snippet'],
+          properties: {
+            title: { type: 'string' },
+            url: { type: 'string' },
+            snippet: { type: 'string' },
+          },
+        },
+      },
+    },
+  }
+
+  it('bundles POST /search with its request and response', () => {
+    const { endpoints } = classifyAndBundle(provider, {
+      specs: [spec],
+      sources: [{ url: 'https://docs.perplexity.ai/openapi.json', hash: 'ab' }],
+      outputStrategy: 'post-200',
+    })
+    expect(endpoints).toHaveLength(1)
+    const [endpoint] = endpoints
+    expect(endpoint).toMatchObject({
+      path: '/search',
+      method: 'POST',
+      activity: 'search',
+    })
+    const text = JSON.stringify([endpoint?.input, endpoint?.output])
+    for (const name of [
+      'query',
+      'search_domain_filter',
+      'results',
+      'snippet',
+    ]) {
+      expect(text).toContain(`"${name}"`)
+    }
+    // Every $ref resolves inside the bundled schema.
+    expect(text).not.toContain('#/components/')
   })
 })

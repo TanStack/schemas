@@ -196,7 +196,8 @@
                 "embeddings",
                 "moderation",
                 "world",
-                "decision"
+                "decision",
+                "search"
               ]
             }
           },
@@ -397,7 +398,8 @@
                 "embeddings",
                 "moderation",
                 "world",
-                "decision"
+                "decision",
+                "search"
               ]
             }
           }
@@ -455,7 +457,8 @@
                 "embeddings",
                 "moderation",
                 "world",
-                "decision"
+                "decision",
+                "search"
               ]
             }
           },
@@ -579,7 +582,8 @@
                 "embeddings",
                 "moderation",
                 "world",
-                "decision"
+                "decision",
+                "search"
               ]
             }
           }
@@ -2572,7 +2576,8 @@
                 "embeddings",
                 "moderation",
                 "world",
-                "decision"
+                "decision",
+                "search"
               ]
             },
             "additionalProperties": {
@@ -2870,6 +2875,7 @@
               "moderation",
               "world",
               "decision",
+              "search",
               null
             ]
           },
@@ -3220,6 +3226,7 @@
               "moderation",
               "world",
               "decision",
+              "search",
               null
             ]
           },
