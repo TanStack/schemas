@@ -152,12 +152,25 @@ export function geminiGenerationEndpointId(
         ? 'v1beta/models/{modelsId}:predict'
         : 'v1beta/models/{modelsId}:generateContent'
     case 'video':
+      // Omni is generateContent. Veo, and a video row whose methods were
+      // not stored, stays on `:predictLongRunning`.
+      if (
+        methods.includes('generateContent') &&
+        !methods.includes('predictLongRunning')
+      ) {
+        return 'v1beta/models/{modelsId}:generateContent'
+      }
       return 'v1beta/models/{modelsId}:predictLongRunning'
     case 'embeddings':
       return 'v1beta/models/{modelsId}:embedContent'
     case 'chat':
-    case 'audio':
       return 'v1beta/models/{modelsId}:generateContent'
+    case 'audio':
+      // TTS, music, and transcription share generateContent. Live-only
+      // models do not, and the discovery doc has no bidi route to bind.
+      return methods.includes('generateContent')
+        ? 'v1beta/models/{modelsId}:generateContent'
+        : null
     default:
       return null
   }

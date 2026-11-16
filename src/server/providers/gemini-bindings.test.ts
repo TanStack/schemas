@@ -4,6 +4,7 @@ import {
   attachGeminiPublishedFacts,
   parseAutomaticRoutes,
   parseChangelogAliases,
+  parseGeminiReleaseDates,
   htmlTables,
   parseGemmaModalities,
 } from './gemini-bindings.ts'
@@ -46,6 +47,7 @@ interface Listed {
   rawId: string
   modalities: { input: Array<string>; output: Array<string> } | null
   aliases?: Array<string> | null
+  pricing?: unknown
   factSources?: {
     modalities?: {
       derivation: 'docs-derived'
@@ -53,8 +55,14 @@ interface Listed {
       sourceHash?: string
       path?: string
     }
+    pricing?: {
+      derivation: 'docs-derived'
+      sourceUrl?: string
+      sourceHash?: string
+      path?: string
+    }
   }
-  absent?: { modalities?: 'unavailable' }
+  absent?: { modalities?: 'unavailable'; pricing?: 'cleared' }
 }
 
 function bindings(
@@ -88,6 +96,37 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
     expect([...routes]).toEqual([
       ['gemini-3.7-flash', 'gemini-3.8-flash'],
       ['gemini-3.5-flash', 'gemini-3.6-flash'],
+    ])
+  })
+
+  it('reads a Release date column and skips a parenthetical id', () => {
+    const dates = parseGeminiReleaseDates(`
+{% table %}
+  * Model
+  * Release date
+  * Shutdown date
+  ---
+  * \`gemini-4-argon\`
+  * October 13, 2026
+  * No shutdown date announced
+  ---
+  * \`gemini-3.8-flash\` (\`gemini-3.7-flash\` is routed)
+  * September 2, 2026
+  * No shutdown date announced
+  ---
+  * \`gemini-3.5-transcribe\`
+  * August 2026
+  * No shutdown date announced
+  ---
+  * \`embedding-gecko-001\`
+  *
+  * No shutdown date announced
+{% /table %}
+`)
+    expect([...dates]).toEqual([
+      ['gemini-4-argon', '2026-10-13'],
+      ['gemini-3.8-flash', '2026-09-02'],
+      ['gemini-3.5-transcribe', '2026-08-01'],
     ])
   })
 
@@ -218,6 +257,44 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
     expect(
       models.find((model) => model.rawId === 'gemma-4-31b-it')?.modalities,
     ).toEqual({ input: ['text', 'image'], output: ['text'] })
+  })
+
+  it('copies an alias price from the changelog target (#661)', () => {
+    const models = attachGeminiPublishedFacts<Listed>(
+      [
+        {
+          rawId: 'gemini-3-flash-preview',
+          modalities: null,
+          pricing: { price: 1 },
+          factSources: {
+            pricing: {
+              derivation: 'docs-derived',
+              sourceUrl: 'https://aistudio.google.com/docs/pricing.md',
+              sourceHash: 'pricing-page',
+              path: 'Input price',
+            },
+          },
+        },
+        {
+          rawId: 'gemini-flash-latest',
+          modalities: null,
+          pricing: null,
+          absent: { pricing: 'cleared' },
+        },
+      ],
+      bindings({
+        aliases: { 'gemini-flash-latest': 'gemini-3-flash-preview' },
+      }),
+    )
+    const alias = models.find((model) => model.rawId === 'gemini-flash-latest')
+    expect(alias?.pricing).toEqual({ price: 1 })
+    expect(alias?.absent).toBeUndefined()
+    expect(alias?.factSources?.pricing).toEqual({
+      derivation: 'docs-derived',
+      sourceUrl: 'https://aistudio.google.com/docs/pricing.md',
+      sourceHash: 'pricing-page',
+      path: 'Input price; alias of gemini-3-flash-preview',
+    })
   })
 
   it('keeps stored modalities when the changelog or Gemma card fails', () => {

@@ -6,10 +6,20 @@
  * one id is that id's Standard card. A recommended replacement is not.
  * A changelog sentence that names a `-latest` alias binds that alias to
  * one model, newest sentence first, and does not follow a later "points
- * to". Gemma 4 sizes come from the model card's Supported Modalities
- * cell; the card's "generating text output" sentence is the output.
+ * to". That alias is billed as the target, so it takes the target's price
+ * when it has none of its own. Gemma 4 sizes come from the model card's
+ * Supported Modalities cell; the card's "generating text output" sentence
+ * is the output. A deprecations table's Release date column is the model's
+ * release day, or the first of a month when the cell names only the month.
  */
-import { cachedDocs, docsReport, docsRun, tryDocs } from './model-facts.ts'
+import {
+  cachedDocs,
+  docsReport,
+  docsRun,
+  markdocTables,
+  parseDay,
+  tryDocs,
+} from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type {
   DocsFailures,
@@ -62,6 +72,57 @@ export function parseAutomaticRoutes(text: string): Map<string, string> {
     }
   }
   return routes
+}
+
+/**
+ * `October 13, 2026` → that day. `August 2026` → the first of the month,
+ * the same grain as a preview id's `-MM-YYYY` suffix. Anything else is
+ * not a date this page stated.
+ */
+function statedReleaseDay(cell: string): string | null {
+  const text = cell.trim()
+  const day = parseDay(text)
+  if (day !== null) return new Date(day).toISOString().slice(0, 10)
+  const month = /^([A-Za-z]+) (\d{4})$/.exec(text)
+  if (!month?.[1] || !month[2]) return null
+  const first = parseDay(`${month[1]} 1, ${month[2]}`)
+  return first === null ? null : new Date(first).toISOString().slice(0, 10)
+}
+
+/**
+ * Model id → `YYYY-MM-DD` from a Release date column. An id mentioned only
+ * inside parentheses (a route target in the model cell) is not that row's
+ * model. The first table that dates an id wins; the page does not disagree
+ * with itself.
+ */
+export function parseGeminiReleaseDates(markdown: string): Map<string, string> {
+  const out = new Map<string, string>()
+  let releaseCol = -1
+  for (const line of markdocTables(markdown).split('\n')) {
+    if (!line.startsWith('|')) {
+      releaseCol = -1
+      continue
+    }
+    const columns = line
+      .split('|')
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+    if (columns.some((cell) => /release date/i.test(cell))) {
+      releaseCol = columns.findIndex((cell) => /release date/i.test(cell))
+      continue
+    }
+    if (releaseCol < 0 || columns.every((cell) => /^:?-+:?$/.test(cell))) {
+      continue
+    }
+    const date = statedReleaseDay(columns[releaseCol] ?? '')
+    if (!date) continue
+    const subject = (columns[0] ?? '').replace(/\([^)]*\)/g, '')
+    for (const match of subject.matchAll(/`([a-z0-9][a-z0-9.-]+)`/g)) {
+      const id = match[1]
+      if (id && !out.has(id)) out.set(id, date)
+    }
+  }
+  return out
 }
 
 /**
@@ -220,16 +281,23 @@ export function parseGemmaModalities(
   return out
 }
 
+export interface GeminiDeprecationFacts {
+  routes: Record<string, string>
+  /** Model id → `YYYY-MM-DD`. Empty when a cached doc predates the column. */
+  released: Record<string, string>
+}
+
 /**
  * Throws when the fetch fails or the body is not the deprecations page.
- * A real page that names no automatic route returns `{}`, and the poll
- * may then clear those cards. `geminiModelPricing` loads this through
- * `tryDocs`, so a throw keeps stored cards instead of failing the poll.
+ * A real page that names no automatic route returns empty `routes`, and
+ * the poll may then clear those cards. `geminiModelPricing` loads this
+ * through `tryDocs`, so a throw keeps stored cards instead of failing
+ * the poll.
  */
 export async function geminiAutomaticRoutes(
   kv?: KVNamespace,
   cached: typeof cachedDocs = cachedDocs,
-): Promise<Record<string, string>> {
+): Promise<GeminiDeprecationFacts> {
   const doc = await cached(kv, GEMINI_DEPRECATIONS_URL, async () => {
     const markdown = await fetchText(GEMINI_DEPRECATIONS_URL)
     if (!markdown.includes(DEPRECATIONS_MARK)) {
@@ -239,10 +307,19 @@ export async function geminiAutomaticRoutes(
     }
     return {
       routes: Object.fromEntries(parseAutomaticRoutes(markdown)),
+      released: Object.fromEntries(parseGeminiReleaseDates(markdown)),
       hash: await sha256Text(markdown),
     }
   })
-  return doc.routes
+  // A hit cached before the Release date column was stored has no
+  // `released`. The next refresh fills it; until then dates stay empty.
+  return { routes: doc.routes, released: cachedReleaseDates(doc) }
+}
+
+function cachedReleaseDates(doc: {
+  released?: Record<string, string>
+}): Record<string, string> {
+  return doc.released ?? {}
 }
 
 export interface GeminiPublishedBindings {
@@ -300,6 +377,7 @@ interface FactRow {
   rawId: string
   modalities?: unknown
   aliases?: Array<string> | null
+  pricing?: unknown
   factSources?: ModelFactSources
   absent?: Partial<Record<ModelFact, FactAbsence>>
 }
@@ -371,6 +449,39 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
         ...current,
         aliases: [...new Set([...(current.aliases ?? []), alias])].sort(),
       })
+      const priced = byId.get(targetId)
+      const aliasNow = byId.get(alias)
+      if (
+        !aliasNow ||
+        !priced ||
+        aliasNow.pricing != null ||
+        priced.pricing == null
+      ) {
+        continue
+      }
+      const prior = priced.factSources?.pricing
+      const absent = { ...aliasNow.absent }
+      delete absent.pricing
+      const next: T = {
+        ...aliasNow,
+        pricing: priced.pricing,
+        factSources: {
+          ...aliasNow.factSources,
+          pricing: {
+            derivation: 'docs-derived',
+            sourceUrl: prior?.sourceUrl ?? bindings.changelog.url,
+            ...sourceHash(
+              prior?.sourceUrl ? prior.sourceHash : bindings.changelog.hash,
+            ),
+            path: prior?.path
+              ? `${prior.path}; alias of ${targetId}`
+              : `alias of ${targetId}`,
+          },
+        },
+      }
+      if (Object.keys(absent).length > 0) next.absent = absent
+      else delete next.absent
+      put(next)
     }
   } else {
     for (const rawId of rawIds) {

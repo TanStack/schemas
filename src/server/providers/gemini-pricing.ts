@@ -534,6 +534,12 @@ export function parseGeminiPricing(
 
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'absent'>
 
+export interface GeminiPricingLookup {
+  (rawId: string): PricedFacts
+  /** `YYYY-MM-DD` from the deprecations page. Empty when that page failed. */
+  releasedOn: Record<string, string>
+}
+
 /**
  * Card lookup by model id. An id no section names is `cleared`: the page
  * visibly does not price it. An id a section names but the parser refuses
@@ -546,7 +552,7 @@ type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'absent'>
 export async function geminiModelPricing(
   kv?: KVNamespace,
   run: DocsRun = docsRun(),
-): Promise<(rawId: string) => PricedFacts> {
+): Promise<GeminiPricingLookup> {
   const [doc, routes] = await Promise.all([
     tryDocs(run, GEMINI_PRICING_URL, (cached) =>
       cached(kv, GEMINI_PRICING_URL, async () => {
@@ -568,8 +574,13 @@ export async function geminiModelPricing(
       geminiAutomaticRoutes(kv, cached),
     ),
   ])
-  if (!doc) return () => unavailable('pricing')
-  const routeTo = new Map(Object.entries(routes ?? {}))
+  const releasedOn = routes?.released ?? {}
+  if (!doc) {
+    const unread = (_rawId: string): PricedFacts => unavailable('pricing')
+    unread.releasedOn = releasedOn
+    return unread
+  }
+  const routeTo = new Map(Object.entries(routes?.routes ?? {}))
   const card = (rawId: string): RateCard | null => {
     const rates = doc.rates[rawId]
     if (!rates) return null
@@ -593,7 +604,7 @@ export async function geminiModelPricing(
     }
     return { pricing, factSources }
   }
-  return (rawId) => {
+  const lookup = (rawId: string): PricedFacts => {
     // `gemini-2.5-flash-preview-09-2025` is priced by its family row.
     const family = familyOf(rawId)
     const own = card(rawId) ?? (family === rawId ? null : card(family))
@@ -623,4 +634,6 @@ export async function geminiModelPricing(
         ? { absent: { pricing: 'cleared' } }
         : unavailable('pricing')
   }
+  lookup.releasedOn = releasedOn
+  return lookup
 }

@@ -5,7 +5,8 @@
  * 1. A curated per-provider map of rawId → 'YYYY-MM-DD' (public announcement
  *    or first-availability date, UTC). Extend freely — unmapped models simply
  *    keep their poll-time firstSeenAt.
- * 2. For Gemini, a `MM-YYYY` suffix embedded in preview ids
+ * 2. For Gemini, the deprecations page's Release date column, read in
+ *    `geminiReleasedAt`, then a `MM-YYYY` suffix embedded in preview ids
  *    (e.g. `gemini-2.5-computer-use-preview-10-2025`) → first of that month.
  *
  * Providers that DO report a date (OpenAI/xAI/OpenRouter `created`,
