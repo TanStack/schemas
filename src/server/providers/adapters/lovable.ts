@@ -4,11 +4,13 @@
  * the API surfaces each model serves. Prices there are in Lovable credits
  * with no stated USD rate, so no rate card is stored
  * (docs/source-silent/lovable.md). The routes are OpenAI-compatible under
- * https://ai.gateway.lovable.dev/v1; their schemas are generated from
- * OpenAI's document.
+ * https://ai.gateway.lovable.dev/v1. Chat, image, and audio schemas are
+ * generated from OpenAI's document. Video is rewritten per model
+ * (`lovable-video.ts`): the gateway runs Veo and Gemini Omni, not Sora.
  */
 import type { Activity } from '#/db/schema.ts'
 
+import { applyLovableVideoSchema } from '../lovable-video.ts'
 import { bearerConnect } from '../connect.ts'
 import {
   classifyOpenAiCompat,
@@ -144,6 +146,10 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
       '/videos',
     ],
   })
+  const videoIds = parseLovableModels(await fetchJson(LOVABLE_MODELS_URL))
+    .filter((model) => model.activity === 'video')
+    .map((model) => model.rawId)
+  applyLovableVideoSchema(spec, videoIds)
   return { specs: [spec], sources: [{ url, hash }], outputStrategy: 'post-200' }
 }
 
