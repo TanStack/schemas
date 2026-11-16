@@ -983,16 +983,41 @@ describe('assembleProviderOpenApi', () => {
         },
       ])
       .onConflictDoNothing()
+    const taskParam = {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'string', description: 'Task id from the create call.' },
+      },
+    }
     await db
       .insert(schemaVersions)
-      .values({
-        id: 'byteplus/contents/generations/tasks:input:duration',
-        endpointId: 'byteplus/contents/generations/tasks',
-        kind: 'input',
-        contentHash: 'a'.repeat(64),
-        schema: JSON.stringify(createInput),
-        createdAt: NOW,
-      })
+      .values([
+        {
+          id: 'byteplus/contents/generations/tasks:input:duration',
+          endpointId: 'byteplus/contents/generations/tasks',
+          kind: 'input',
+          contentHash: 'a'.repeat(64),
+          schema: JSON.stringify(createInput),
+          createdAt: NOW,
+        },
+        {
+          id: 'byteplus/contents/generations/tasks/{id}:input',
+          endpointId: 'byteplus/contents/generations/tasks/{id}',
+          kind: 'input',
+          contentHash: 'b'.repeat(64),
+          schema: JSON.stringify(taskParam),
+          createdAt: NOW,
+        },
+        {
+          id: 'byteplus/contents/generations/tasks/{id}:delete:input',
+          endpointId: 'byteplus/contents/generations/tasks/{id}:delete',
+          kind: 'input',
+          contentHash: 'c'.repeat(64),
+          schema: JSON.stringify(taskParam),
+          createdAt: NOW,
+        },
+      ])
       .onConflictDoNothing()
     const seedance = [
       'dreamina-seedance-2-5-260628',
