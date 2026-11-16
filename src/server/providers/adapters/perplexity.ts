@@ -1,7 +1,8 @@
 /**
  * Perplexity — public OpenAPI 3.1 spec at docs.perplexity.ai/openapi.json.
  * Generation is Sonar (`/v1/sonar`) and the Agent API (`/v1/agent`), plus
- * embeddings. Search, async jobs, files/cancel, and analytics are platform.
+ * embeddings and the Search API (`/search`, which takes no model). Async
+ * jobs, files/cancel, and analytics are platform.
  */
 import type { Activity } from '#/db/schema.ts'
 import { perplexityListingCard } from '../catalog-prices.ts'
@@ -45,6 +46,7 @@ function classify(path: string): Activity | null {
   if (path === '/v1/embeddings' || path === '/v1/contextualizedembeddings') {
     return 'embeddings'
   }
+  if (path === '/search') return 'search'
   return null
 }
 

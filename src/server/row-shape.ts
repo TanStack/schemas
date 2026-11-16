@@ -16,10 +16,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 8,
-  hash: '66ce1bb03eb5e6a41bab72a3ecaa287e4f35d0d6d09ff0b4300c6b892fb5e844',
+  version: 9,
+  hash: '5591ebc85597cefbd738785bfecac8d330f942a908d2d4437f311dbac8fa7ec5',
   notes:
-    'Activity gained decision for typed-question models answered over POST /v1/systemone (Ollaya, issue #620).',
+    'Activity gained search for web search endpoints that take no model (Perplexity POST /search, issue #660).',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

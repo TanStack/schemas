@@ -769,6 +769,7 @@ export type Model = {
     | 'moderation'
     | 'world'
     | 'decision'
+    | 'search'
     | null
   displayName: string | null
   schemaEndpointId: string | null
@@ -893,6 +894,7 @@ export type ExportModel = {
     | 'moderation'
     | 'world'
     | 'decision'
+    | 'search'
     | null
   displayName: string | null
   schemaEndpointId: string | null
@@ -1245,6 +1247,7 @@ export type ListModelsData = {
       | 'moderation'
       | 'world'
       | 'decision'
+      | 'search'
     provider?: string
     /**
      * A capability flag the model is stated to support: matches rows whose capabilities map has this key set to true (capability=tools). Exact flag name, not a substring.
@@ -1381,6 +1384,7 @@ export type GetActivitySchemasData = {
       | 'moderation'
       | 'world'
       | 'decision'
+      | 'search'
   }
   query?: never
   url: '/v1/schemas/{provider}/{activity}'
@@ -1427,6 +1431,7 @@ export type GetSchemaData = {
       | 'moderation'
       | 'world'
       | 'decision'
+      | 'search'
     /**
      * Path-derived endpoint id (URL-encode slashes), or a listed model rawId/slug which aliases onto that activity's generation route and pins the request `model` field.
      */
@@ -1498,6 +1503,7 @@ export type GetProviderOpenApiData = {
       | 'moderation'
       | 'world'
       | 'decision'
+      | 'search'
   }
   url: '/v1/openapi/{provider}'
 }

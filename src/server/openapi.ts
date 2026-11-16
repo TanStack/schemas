@@ -44,6 +44,7 @@ const activityEnum = [
   'moderation',
   'world',
   'decision',
+  'search',
 ]
 
 const changeTypeEnum = [
