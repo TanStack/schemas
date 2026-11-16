@@ -63,13 +63,14 @@ export const ARK_GO_SOURCE_URL = `https://github.com/${GO_SDK_REPO}/tree/${GO_SD
 
 interface ArkEndpoint {
   path: string
-  method?: 'post' | 'get'
+  method?: 'post' | 'get' | 'delete'
   operationId: string
   summary: string
-  /** Body schema. GETs use `pathParam` instead. */
+  /** Body schema. GETs and DELETEs use `pathParam` instead. */
   requestType?: string
   pathParam?: { name: string; description: string }
-  responseType: string
+  /** Omitted when the call has no response body (task cancel). */
+  responseType?: string
   responseDescription: string
 }
 
@@ -119,6 +120,19 @@ const ARK_ENDPOINTS: Array<ArkEndpoint> = [
     responseType: 'GetContentGenerationTaskResponse',
     responseDescription:
       'Task record. content.video_url is the file once status is succeeded.',
+  },
+  {
+    path: '/contents/generations/tasks/{id}',
+    method: 'delete',
+    operationId: 'deleteContentsGenerationsTask',
+    summary:
+      'Cancel a Seedance video task. The Go SDK calls DELETE and reads no response body.',
+    pathParam: {
+      name: 'id',
+      description:
+        'Task id from POST /contents/generations/tasks. Records from the past 7 days can be cancelled.',
+    },
+    responseDescription: 'The task is cancelled. The response has no body.',
   },
 ]
 
@@ -317,16 +331,18 @@ export function buildArkSpecFromGo(files: Array<GoSourceFile>): ArkSpecBuild {
       operationId: endpoint.operationId,
       summary: endpoint.summary,
       responses: {
-        '200': {
-          description: endpoint.responseDescription,
-          content: {
-            'application/json': {
-              schema: {
-                $ref: `#/components/schemas/${endpoint.responseType}`,
+        '200': endpoint.responseType
+          ? {
+              description: endpoint.responseDescription,
+              content: {
+                'application/json': {
+                  schema: {
+                    $ref: `#/components/schemas/${endpoint.responseType}`,
+                  },
+                },
               },
-            },
-          },
-        },
+            }
+          : { description: endpoint.responseDescription },
       },
     }
     if (endpoint.requestType !== undefined) {
@@ -350,7 +366,9 @@ export function buildArkSpecFromGo(files: Array<GoSourceFile>): ArkSpecBuild {
         },
       ]
     }
-    paths[endpoint.path] = { [method]: operation }
+    const item = paths[endpoint.path] ?? {}
+    item[method] = operation
+    paths[endpoint.path] = item
   }
 
   return {

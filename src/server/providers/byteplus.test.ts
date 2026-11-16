@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
+import {
+  runIngestScope,
+  takeIngestEvents,
+} from '#/server/ingest/ingest-signals.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 import { cardRequestParamsOk } from '#/server/rate-card.ts'
 import {
@@ -15,6 +19,7 @@ import {
   BYTEPLUS_VIDEO_GUIDE_URL,
   compileSeedreamProCard,
 } from './byteplus-pricing.ts'
+import { SEEDANCE_DURATION_DOCS } from './byteplus-video-duration.ts'
 import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
 import { pricingDoc, routerHtml } from './fixtures/byteplus-pricing-doc.ts'
 import type { PricingTable } from './fixtures/byteplus-pricing-doc.ts'
@@ -283,13 +288,16 @@ describe('byteplus spec generated from the Go SDK', () => {
       ['byteplus/chat/completions', 'chat'],
       ['byteplus/contents/generations/tasks', 'video'],
       ['byteplus/contents/generations/tasks/{id}', 'video'],
+      ['byteplus/contents/generations/tasks/{id}:delete', 'video'],
       ['byteplus/images/generations', 'image'],
       ['byteplus/tts/create', 'audio'],
     ])
 
     for (const endpoint of endpoints) {
       expect(endpoint.input, endpoint.dbId).toBeDefined()
-      expect(endpoint.output, endpoint.dbId).toBeDefined()
+      if (endpoint.method !== 'DELETE') {
+        expect(endpoint.output, endpoint.dbId).toBeDefined()
+      }
       if (endpoint.input) expect(findDanglingRefs(endpoint.input)).toEqual([])
       if (endpoint.output) expect(findDanglingRefs(endpoint.output)).toEqual([])
     }
@@ -305,6 +313,12 @@ describe('byteplus spec generated from the Go SDK', () => {
     )
     expect(task?.method).toBe('GET')
     expect(task?.input?.required).toEqual(['id'])
+    const cancel = endpoints.find(
+      (e) => e.dbId === 'byteplus/contents/generations/tasks/{id}:delete',
+    )
+    expect(cancel?.method).toBe('DELETE')
+    expect(cancel?.input?.required).toEqual(['id'])
+    expect(cancel?.output).toBeUndefined()
     const defs = task?.output?.$defs as
       | Record<string, { properties?: Record<string, unknown> }>
       | undefined
@@ -352,10 +366,10 @@ describe('byteplus spec generated from the Go SDK', () => {
     expect(fetched.sources[0]?.url).toMatch(/^https:\/\/docs\.byteplus\.com\//)
     expect(fetched.warnings?.[0]).toContain('served the embedded Ark document')
 
-    // Degraded freshness, not a degraded service: all five endpoints survive.
+    // Degraded freshness, not a degraded service: every endpoint survives.
     const { endpoints, warnings } = classifyAndBundle(byteplusProvider, fetched)
     expect(warnings).toEqual([])
-    expect(endpoints).toHaveLength(6)
+    expect(endpoints).toHaveLength(7)
   })
 
   it.each(['ok', 'unreachable'] as const)(
@@ -901,6 +915,40 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
     expect(seed?.activity).toBe('chat')
     expect(seed?.capabilities).toEqual(['tools', 'tool_choice'])
   })
+
+  it('reports a listed video id with no duration row and still returns it', async () => {
+    await runIngestScope(async () => {
+      const { result } = await withStubbedFetch(
+        {
+          data: [
+            { id: 'dreamina-seedance-2-0-260128', domain: 'VideoGeneration' },
+            {
+              id: 'dreamina-not-in-the-duration-table',
+              domain: 'VideoGeneration',
+            },
+          ],
+        },
+        () => byteplusProvider.listModels({ ARK_API_KEY: 'ark-test' }),
+      )
+      expect(
+        result.models.find(
+          (model) => model.rawId === 'dreamina-not-in-the-duration-table',
+        )?.activity,
+      ).toBe('video')
+      expect(
+        takeIngestEvents().filter((event) => event.event === 'ingest_failed'),
+      ).toEqual([
+        {
+          event: 'ingest_failed',
+          properties: {
+            job: 'models-poll',
+            providerId: 'byteplus',
+            error: `no Seedance duration for dreamina-not-in-the-duration-table (${SEEDANCE_DURATION_DOCS})`,
+          },
+        },
+      ])
+    })
+  })
 })
 
 describe('byteplus schema provenance', () => {
@@ -917,6 +965,14 @@ describe('byteplus schema provenance', () => {
     expect(by.get('byteplus/chat/completions')).toEqual(['generated', null])
     expect(by.get('byteplus/images/generations')).toEqual(['generated', null])
     expect(by.get('byteplus/contents/generations/tasks')).toEqual([
+      'generated',
+      null,
+    ])
+    expect(by.get('byteplus/contents/generations/tasks/{id}')).toEqual([
+      'generated',
+      null,
+    ])
+    expect(by.get('byteplus/contents/generations/tasks/{id}:delete')).toEqual([
       'generated',
       null,
     ])
@@ -940,5 +996,10 @@ describe('byteplus schema provenance', () => {
     // No longer self-healing, and it says so.
     expect(chat?.derivation).toBe('probe-verified')
     expect(chat?.verifiedAt).toBe('2026-07-31')
+    const cancel = endpoints.find(
+      (e) => e.dbId === 'byteplus/contents/generations/tasks/{id}:delete',
+    )
+    expect(cancel?.derivation).toBe('docs-derived')
+    expect(cancel?.verifiedAt).toBeNull()
   })
 })

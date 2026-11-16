@@ -1010,6 +1010,28 @@ export function bytePlusArkSpec(): OpenApiDocument {
             },
           },
         },
+        delete: {
+          // The Go SDK calls DELETE and discards the body. This fallback
+          // copies that call; it was not part of the 2026-07-31 probe.
+          [PROVENANCE_MARKER]: { derivation: 'docs-derived' },
+          operationId: 'deleteContentsGenerationsTask',
+          summary: 'Cancel a Seedance video task. The response has no body.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description:
+                'Task id from POST /contents/generations/tasks. Records from the past 7 days can be cancelled.',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'The task is cancelled. The response has no body.',
+            },
+          },
+        },
       },
     },
     components: {

@@ -129,6 +129,51 @@ describe('generation media types', () => {
     })
   })
 
+  it('emits GET with the path parameter and no request body', () => {
+    const ops = operationsFor(
+      'byteplus',
+      {
+        id: 'contents/generations/tasks/{id}',
+        path: '/contents/generations/tasks/{id}',
+        activity: 'video',
+        description: 'Retrieve a task',
+        method: 'GET',
+        input: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: {
+              type: 'string',
+              description: 'Task id from the create call.',
+            },
+          },
+        },
+        output: { type: 'object', properties: { status: { type: 'string' } } },
+        requestContentType: null,
+        responseContentTypes: null,
+        specRevision: null,
+      },
+      {
+        servers: [{ url: 'https://ark.example' }],
+        securitySchemes: {},
+        security: [],
+      },
+      [],
+      undefined,
+    )
+    expect(ops.map((op) => op.method)).toEqual(['get'])
+    expect(ops[0]?.operation.requestBody).toBeUndefined()
+    expect(ops[0]?.operation.parameters).toEqual([
+      {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Task id from the create call.',
+        schema: { type: 'string' },
+      },
+    ])
+  })
+
   it('keeps JSON and SSE on one post, as the official OpenAI spec does', () => {
     const chunk = { type: 'object', properties: { delta: { type: 'string' } } }
     const ops = operationsFor(

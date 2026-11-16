@@ -793,6 +793,63 @@ describe('D1 overload window on spec sync (issue #635)', () => {
     expect(await providerEndpoints(deps.db, nextId)).toHaveLength(1)
   })
 
+  it('rewrites a stored POST status row to GET and stores DELETE beside it', async () => {
+    const id = 'sync-method-get'
+    const deps = await freshDeps(id)
+    const taskPath = '/contents/generations/tasks/{id}'
+    const taskId = `${id}${taskPath}`
+    await deps.db.insert(endpoints).values({
+      id: taskId,
+      providerId: id,
+      activity: 'video',
+      method: 'POST',
+      path: taskPath,
+    })
+    const parameter = {
+      name: 'id',
+      in: 'path',
+      required: true,
+      schema: { type: 'string' },
+    }
+    const spec: OpenApiDocument = {
+      openapi: '3.1.0',
+      paths: {
+        [taskPath]: {
+          get: {
+            parameters: [parameter],
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: { status: { type: 'string' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          delete: {
+            parameters: [parameter],
+            responses: { '200': { description: 'cancelled' } },
+          },
+        },
+      },
+    }
+    const result = await syncProvider(deps, {
+      ...stubProvider(id, spec),
+      classifyGets: true,
+      classifyDeletes: true,
+      classify: (path) => (path === taskPath ? 'video' : null),
+    })
+    expect(result.error).toBeUndefined()
+    const rows = await providerEndpoints(deps.db, id)
+    const byId = new Map(rows.map((row) => [row.id, row.method]))
+    expect(byId.get(taskId)).toBe('GET')
+    expect(byId.get(`${taskId}:delete`)).toBe('DELETE')
+  })
+
   it('does not retry a failure that is not a spent D1 window', async () => {
     const id = 'sync-overload-other'
     const deps = await freshDeps(id)
