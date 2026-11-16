@@ -403,6 +403,33 @@ export function parseModelIndex(markdown: string): Array<string> {
   ]
 }
 
+/** Whole seconds a model page's `Output video` limit states, both ends included. */
+export interface GeminiOutputVideo {
+  minSeconds: number
+  maxSeconds: number
+}
+
+/**
+ * `**Output video** 3s-15s (…)` in a model page's Limits row. Null when the
+ * page has no such limit. A limit that is not `Ns-Ms` throws: a video model
+ * with no range would publish an unbounded duration.
+ */
+export function parsePageOutputVideo(
+  markdown: string,
+): GeminiOutputVideo | null {
+  const stated = markdown.match(/\*\*Output video\*\*\s*([^|\n]*)/)?.[1]
+  if (stated === undefined) return null
+  const range = stated.match(/^(\d+)s\s*[-–]\s*(\d+)s\b/)
+  const minSeconds = Number(range?.[1])
+  const maxSeconds = Number(range?.[2])
+  if (!range || minSeconds < 1 || maxSeconds < minSeconds) {
+    throw new Error(
+      `gemini model page: unreadable Output video limit "${stated.trim().slice(0, 80)}"`,
+    )
+  }
+  return { minSeconds, maxSeconds }
+}
+
 export interface GeminiPageSection {
   /** Model-code, agent-code, then version ids, in that order. */
   ids: Array<string>
@@ -411,6 +438,8 @@ export interface GeminiPageSection {
   modalities: { input: Array<string>; output: Array<string> } | null
   tools: Array<string>
   thinking?: true
+  /** Present on a video model's section only. */
+  outputVideo?: GeminiOutputVideo
 }
 
 function labeledIds(chunk: string, label: string): Array<string> {
@@ -434,6 +463,7 @@ function sectionFrom(chunk: string): GeminiPageSection {
   const versions = labeledIds(chunk, 'Versions').filter(
     (id) => !codes.includes(id),
   )
+  const outputVideo = parsePageOutputVideo(chunk)
   return {
     ids: [...codes, ...versions],
     codes,
@@ -441,6 +471,7 @@ function sectionFrom(chunk: string): GeminiPageSection {
     modalities: parsePageModalities(chunk),
     tools: parsePageTools(chunk),
     ...(parsePageThinkingSupported(chunk) ? { thinking: true as const } : {}),
+    ...(outputVideo ? { outputVideo } : {}),
   }
 }
 
@@ -488,6 +519,8 @@ type GeminiFeatures = Pick<ModelInfo, 'absent'> & {
   budget: GeminiBudgetBody | null
   serverTools: Array<string> | null
   modalities: { input: Array<string>; output: Array<string> } | null
+  /** The model page states an output video limit: a video model. */
+  outputVideo?: GeminiOutputVideo
   factSources: ModelFactSources
 }
 
@@ -500,6 +533,7 @@ interface LoadedPage {
 
 interface BoundSection {
   modalities: GeminiPageSection['modalities']
+  outputVideo?: GeminiOutputVideo
   tools: Array<string>
   reasoning: ModelReasoning | null
   thinking: boolean
@@ -783,6 +817,7 @@ export async function geminiModelFeatures(
       budget,
       serverTools: bound.tools.length > 0 ? bound.tools : null,
       modalities: bound.modalities,
+      ...(bound.outputVideo ? { outputVideo: bound.outputVideo } : {}),
       ...(documentedThinking ? { capabilities: ['reasoning'] } : {}),
       factSources: {
         ...factSources,
@@ -870,6 +905,7 @@ function sectionPlacements(
   if (named.length === 1 && named[0]) {
     const bound: BoundSection = {
       modalities: named[0].modalities,
+      outputVideo: named[0].outputVideo,
       tools: named[0].tools,
       reasoning: page.reasoning,
       thinking: page.sections.some((section) => section.thinking === true),
@@ -889,6 +925,7 @@ function sectionPlacements(
   if (named.length === 0 && page.sections[0]) {
     const bound: BoundSection = {
       modalities: page.sections[0].modalities,
+      outputVideo: page.sections[0].outputVideo,
       tools: page.sections[0].tools,
       reasoning: page.reasoning,
       thinking: page.sections.some((section) => section.thinking === true),
@@ -902,6 +939,7 @@ function sectionPlacements(
   for (const section of named) {
     const bound: BoundSection = {
       modalities: section.modalities,
+      outputVideo: section.outputVideo,
       tools: section.tools,
       reasoning: null,
       thinking: section.thinking === true,

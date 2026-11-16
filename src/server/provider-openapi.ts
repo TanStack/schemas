@@ -29,6 +29,7 @@ import type {
   RequiredHeader,
 } from '#/server/providers/types.ts'
 import { hasAsyncApiFlag } from '#/server/ingest/asyncapi.ts'
+import { endpointIdFromPath } from '#/server/ingest/bundle.ts'
 import { providerExists, publicEndpointId } from '#/server/schemas-api.ts'
 
 export interface AssembleOpenApiQuery {
@@ -625,6 +626,52 @@ function buildModelComponents(
 }
 
 /**
+ * A provider-grained endpoint stored under a model id, not its path
+ * (Gemini video: `gemini-omni-1.2-flash` on `/v1beta/interactions`).
+ */
+function isModelBody(endpoint: LoadedEndpoint): boolean {
+  return endpoint.id !== endpointIdFromPath(endpoint.path)
+}
+
+/**
+ * One endpoint per HTTP path for the models that share it. Its body is the
+ * `anyOf` of each model's own schema, added to `schemas` as components
+ * tagged `x-modelschemas-model`. The result union is there only when every
+ * model has an output schema, the same rule as the queue document.
+ */
+function mergeModelBodies(
+  bodies: Array<LoadedEndpoint>,
+  schemas: Record<string, unknown>,
+): Array<LoadedEndpoint> {
+  const used = new Set(Object.keys(schemas))
+  const byPath = new Map<string, Array<LoadedEndpoint>>()
+  for (const endpoint of bodies) {
+    if (endpoint.input === undefined) continue
+    byPath.set(endpoint.path, [...(byPath.get(endpoint.path) ?? []), endpoint])
+  }
+  const refs = (kind: 'input' | 'output', group: Array<LoadedEndpoint>) =>
+    group.map((endpoint) => {
+      const name = schemaComponentKey(kind, endpoint.id, used)
+      schemas[name] = withModelAnnotation(endpoint[kind], endpoint.id)
+      return { $ref: `#/components/schemas/${name}` }
+    })
+  return [...byPath.values()].flatMap((group) => {
+    const first = group[0]
+    if (!first) return []
+    const complete = group.every((endpoint) => endpoint.output !== undefined)
+    return [
+      {
+        ...first,
+        description: group.length === 1 ? first.description : null,
+        input: schemaUnion(refs('input', group)),
+        output: complete ? schemaUnion(refs('output', group)) : undefined,
+        streamSchema: undefined,
+      },
+    ]
+  })
+}
+
+/**
  * One queue client: `POST /{endpoint_id}` and
  * `GET /{endpoint_id}/requests/{request_id}`. A model is in `endpoint_id`
  * only when it has an input schema. The request `anyOf` is those schemas,
@@ -1200,7 +1247,9 @@ export async function assembleProviderOpenApi(
         (realtime && e.path.startsWith(`/${pinnedModel}/`)),
     )
     if (matching.length > 0) selected = matching
-    else if (grain === 'model') {
+    // Another model's own body is not this model's route.
+    else if (grain !== 'model') selected = loaded.filter((e) => !isModelBody(e))
+    else {
       return {
         ok: false,
         status: 404,
@@ -1316,7 +1365,24 @@ export async function assembleProviderOpenApi(
     if (realtime) {
       Object.assign(paths, config.platformOperations?.(pinnedModel) ?? {})
     } else {
-      for (const endpoint of built?.endpoints ?? selected) {
+      // Models that share a path (Gemini video) become one operation.
+      // A model-grained provider's ids are model ids already.
+      const bodies = grain === 'model' ? [] : selected.filter(isModelBody)
+      const merged =
+        bodies.length > 0 ? mergeModelBodies(bodies, (queueSchemas ??= {})) : []
+      const plain =
+        built?.endpoints ?? selected.filter((e) => !bodies.includes(e))
+      const taken = new Set(plain.map((e) => e.path.split('#')[0]))
+      const clash = merged.find((e) => taken.has(e.path))
+      if (clash) {
+        return {
+          ok: false,
+          status: 500,
+          code: 'schema_conflict',
+          message: `Could not assemble '${providerId}': ${clash.path} is stored both as a shared route and as per-model bodies. Use GET /v1/schemas/${providerId} for each endpoint's own schema.`,
+        }
+      }
+      for (const endpoint of [...plain, ...merged]) {
         const path = endpoint.path.split('#')[0] ?? endpoint.path
         const target = path === endpoint.path ? paths : twinPaths
         const owner = owners?.get(endpoint.id)
@@ -1324,7 +1390,11 @@ export async function assembleProviderOpenApi(
           providerId,
           { ...endpoint, path },
           connect,
-          owner !== undefined ? [owner] : idsFor(endpoint.id),
+          owner !== undefined
+            ? [owner]
+            : merged.includes(endpoint)
+              ? []
+              : idsFor(endpoint.id),
           pinnedModel,
         )) {
           const item = target[op.path] ?? {}
@@ -1378,7 +1448,7 @@ export async function assembleProviderOpenApi(
           : `Generation-only OpenAPI assembled by modelschemas from stored endpoint schemas. Call this provider directly with your own key — this is not a proxy. One path per endpoint; each body is a component schema (input_/output_) tagged with its model (x-modelschemas-model).`
         : queue
           ? `Generation-only OpenAPI assembled by modelschemas from stored endpoint schemas. Call this provider directly with your own key — this is not a proxy. One queue client: endpoint_id is the model raw id${lean ? "; bodies are untyped here, pass ?activity= to inline each model's own schema" : ", and each component schema is that model's own body (x-modelschemas-model)"}.`
-          : `Generation-only OpenAPI assembled by modelschemas from live endpoint schemas. Call this provider directly with your own key — this is not a proxy.`,
+          : `Generation-only OpenAPI assembled by modelschemas from live endpoint schemas. Call this provider directly with your own key — this is not a proxy.${grain !== 'model' && selected.some(isModelBody) ? " A path that takes a different body per model has each model's own schema as a component (x-modelschemas-model)." : ''}`,
     },
     servers: connect.servers,
     ...(Object.keys(connect.securitySchemes).length > 0

@@ -114,6 +114,17 @@ ones).
   Seed Speech document, which no SDK covers. The model catalog is live when
   `ARK_API_KEY` is set (Ark `GET /models`), with the embedded catalog filling
   the gaps that listing omits — Seed Speech and unlisted-but-served ids.
+- **Gemini video** (#658) is the Interactions API (`POST /v1beta/interactions`),
+  which the Discovery document lacks. `gemini-video.ts` builds one endpoint
+  per video model at sync time: Google's Interactions OpenAPI request with
+  `model` pinned and `response_format.duration` an enum from the model
+  page's `Output video 3s-15s` limit. The endpoint id is the model id and
+  the path is shared, so `GET /v1/openapi/gemini` merges them into one
+  operation whose body is an `anyOf` of components tagged
+  `x-modelschemas-model` (`mergeModelBodies`). The Models API lists these
+  models like chat models: the poll calls a row `video` only when its docs
+  page states that limit, and keeps the stored activity when the page is
+  unread. Veo is shut down on this API (2026-10-22).
 - **Ingest** (`src/server/providers/` + `src/server/ingest/`): per-provider
   `ProviderConfig` (fetchSpec/listModels/classify) → `bundle.ts` extracts
   request/response schemas and inlines `$ref` closures under `$defs` →
