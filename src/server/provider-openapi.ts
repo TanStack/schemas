@@ -1131,11 +1131,25 @@ export function hoistSchemaDefs(
     components[name] = hoistRoot(schema, components, seen, name)
     seen.delete(name)
   }
+  // `?activity=` wraps one stored body in `anyOf`. Each branch keeps its
+  // own `$defs`. Hoist those before the wrapper, or `#/$defs/…` never
+  // resolves and assembly returns 500.
+  const hoistNode = (schema: unknown): unknown => {
+    if (!isObject(schema)) return schema
+    let next: Record<string, unknown> | undefined
+    for (const key of ['anyOf', 'oneOf', 'allOf']) {
+      const branches = schema[key]
+      if (!Array.isArray(branches)) continue
+      next ??= Object.fromEntries(Object.entries(schema))
+      next[key] = branches.map((branch) => hoistNode(branch))
+    }
+    return hoistRoot(next ?? schema, components, seen)
+  }
   const hoistContent = (holder: unknown) => {
     if (!isObject(holder) || !isObject(holder.content)) return
     for (const media of Object.values(holder.content)) {
       if (isObject(media) && 'schema' in media) {
-        media.schema = hoistRoot(media.schema, components, seen)
+        media.schema = hoistNode(media.schema)
       }
     }
   }

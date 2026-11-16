@@ -950,10 +950,20 @@ describe('assembleProviderOpenApi', () => {
       required: ['model', 'content'],
       properties: {
         model: { type: 'string' },
+        content: {
+          type: 'array',
+          items: { $ref: '#/$defs/VideoContentPart' },
+        },
         duration: {
           type: 'integer',
           description:
             '2-12s on 1.0, 4-12s on 1.5-pro, 4-15s on 2.0, 4-30s on 2.5. -1 lets the model choose.',
+        },
+      },
+      $defs: {
+        VideoContentPart: {
+          type: 'object',
+          properties: { type: { type: 'string' } },
         },
       },
     }
@@ -1173,6 +1183,15 @@ describe('assembleProviderOpenApi', () => {
       minimum: 4,
       maximum: 12,
     })
+    expect(unresolvedRefs(video.document)).toEqual([])
+    expect(JSON.stringify(paths)).not.toContain('$defs')
+    expect(
+      (
+        video.document.components as {
+          schemas: { VideoContentPart: { type: string } }
+        }
+      ).schemas.VideoContentPart.type,
+    ).toBe('object')
     const extra = variants?.find(
       (variant) =>
         variant['x-modelschemas-model'] === 'seedance-unpriced-extra',
