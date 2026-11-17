@@ -628,9 +628,10 @@ export interface ListModelsResult {
    * Docs sources that failed while the listing itself loaded (`tryDocs`,
    * or a docs.cloud.google.com 429 served from the stored parse).
    * The poll goes on; rows mark the facts those sources supply
-   * `unavailable`. A failed listing still throws. An adapter that reports
-   * docs failures always returns this, zeros included: that is what clears
-   * the provider's `docs-failing` record.
+   * `unavailable`. A failed listing still throws. Zeros clear the
+   * provider's `docs-failing` record, and so does omitting this field:
+   * an adapter that stopped loading docs is a healthy run. A skipped
+   * listing does not clear it.
    */
   docsFailures?: DocsFailures
   /**

@@ -4,7 +4,9 @@
  * line says nothing of the ones before it. One `cache_meta` row per
  * provider, `docs-failing:<providerId>`, records when the failures began
  * and how many polls they have lasted. It is deleted by the first poll
- * whose docs all load. Read it with:
+ * that reports no docs failures, including one that omits `docsFailures`
+ * because the adapter no longer loads docs. A skipped listing leaves it.
+ * Read it with:
  *
  *   select key, fetched_at, last_error from cache_meta
  *   where key like 'docs-failing:%'
