@@ -1,18 +1,47 @@
 import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
-import { OPENCODE_GO_ROUTE_DOCS_URL } from '../opencode-routes.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { OPENCODE_GO_MODELS_URL, provider } from './opencode-go.ts'
 
-const LISTING = {
-  object: 'list',
-  data: ['mini', 'kimi', 'gpt', 'deepseek', 'absent'].map((id) => ({
+const OPENAI = 'https://opencode.ai/inference/go/openai/v1'
+const ANTHROPIC = 'https://opencode.ai/inference/go/anthropic/v1'
+const GOOGLE = 'https://opencode.ai/inference/go/google/v1beta'
+
+function listingRow(id: string, protocol: string, base: string, sdk: string) {
+  return {
     id,
     object: 'model',
     owned_by: 'opencode',
     go: { training: id === 'mini' },
-  })),
+    api: {
+      [protocol]: {
+        base_url: base,
+        sdk: { aisdk: sdk },
+      },
+    },
+  }
+}
+
+const LISTING = {
+  object: 'list',
+  data: [
+    listingRow('mini', 'messages', ANTHROPIC, '@ai-sdk/anthropic'),
+    listingRow('kimi', 'chat-completions', OPENAI, '@ai-sdk/openai-compatible'),
+    listingRow('gpt', 'responses', OPENAI, '@ai-sdk/openai'),
+    listingRow(
+      'deepseek',
+      'chat-completions',
+      OPENAI,
+      '@ai-sdk/openai-compatible',
+    ),
+    listingRow(
+      'absent',
+      'chat-completions',
+      OPENAI,
+      '@ai-sdk/openai-compatible',
+    ),
+  ],
 }
 
 const CATALOG = {
@@ -45,28 +74,6 @@ const CATALOG = {
   },
 }
 
-/** go.mdx Endpoints table excerpt (2026-10-21), Gemini row included. */
-const ROUTE_DOCS = `# Go
-
-## Endpoints
-
-| Model  | Model ID | Endpoint                                                       |
-| ------ | -------- | -------------------------------------------------------------- |
-| GPT    | gpt      | \`https://opencode.ai/inference/go/openai/v1/responses\`         |
-| Mini   | mini     | \`https://opencode.ai/inference/go/anthropic/v1/messages\`       |
-| Gemini | gemini   | \`https://opencode.ai/inference/go/google/v1beta/models/gemini\` |
-| Kimi   | kimi     | \`https://opencode.ai/inference/go/openai/v1/chat/completions\`  |
-
-## Privacy
-
-| Model  | Model training | Data retention |
-| ------ | -------------- | -------------- |
-| Mini   | Yes            | Not ZDR        |
-| GPT    | Not used       | 30 days        |
-| Gemini | Not used       | 0 days         |
-| Kimi   | Not used       | 0 days         |
-`
-
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
@@ -82,9 +89,6 @@ function stubFetch() {
     }
     if (String(url) === OPENCODE_CATALOG_URL) {
       return Promise.resolve(new Response(JSON.stringify(CATALOG)))
-    }
-    if (String(url) === OPENCODE_GO_ROUTE_DOCS_URL) {
-      return Promise.resolve(new Response(ROUTE_DOCS))
     }
     return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
   }) as typeof fetch
@@ -170,9 +174,7 @@ describe('opencode-go', () => {
       },
     })
     expect(spec.specs[0]?.paths?.['/v1/messages']).toBeUndefined()
-    expect(urls.filter((url) => url.includes('/docs/'))).toEqual([
-      OPENCODE_GO_ROUTE_DOCS_URL,
-    ])
+    expect(urls.filter((url) => url.includes('/docs/'))).toEqual([])
     expect(urls).toContain(OPENCODE_GO_MODELS_URL)
     expect(urls).toContain(OPENCODE_CATALOG_URL)
   })
@@ -209,18 +211,19 @@ describe('opencode-go', () => {
             JSON.stringify({
               object: 'list',
               data: [
-                {
-                  id: 'gemini',
-                  object: 'model',
-                  owned_by: 'opencode',
-                  go: { training: false },
-                },
-                {
-                  id: 'gemini-4-argon-contributor',
-                  object: 'model',
-                  owned_by: 'opencode',
-                  go: { training: false },
-                },
+                ...LISTING.data,
+                listingRow(
+                  'gemini',
+                  'generate-content',
+                  GOOGLE,
+                  '@ai-sdk/google',
+                ),
+                listingRow(
+                  'gemini-4-argon-contributor',
+                  'generate-content',
+                  GOOGLE,
+                  '@ai-sdk/google',
+                ),
               ],
             }),
           ),
@@ -228,9 +231,6 @@ describe('opencode-go', () => {
       }
       if (String(url) === OPENCODE_CATALOG_URL) {
         return Promise.resolve(new Response(JSON.stringify(catalog)))
-      }
-      if (String(url) === OPENCODE_GO_ROUTE_DOCS_URL) {
-        return Promise.resolve(new Response(ROUTE_DOCS))
       }
       return Promise.resolve(new Response('404: Not Found', { status: 404 }))
     }) as typeof fetch
@@ -307,5 +307,31 @@ describe('opencode-go', () => {
       )
     }) as typeof fetch
     await expect(provider.listModels({})).rejects.toThrow(/go\.training/)
+  })
+
+  it('throws when a listed id has no api entry', async () => {
+    stubFetch()
+    const fetchListing = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (String(url) !== OPENCODE_GO_MODELS_URL) return fetchListing(url, init)
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [
+              {
+                id: 'mini',
+                object: 'model',
+                owned_by: 'opencode',
+                go: { training: false },
+              },
+            ],
+          }),
+        ),
+      )
+    }) as typeof fetch
+    await expect(provider.fetchSpec({})).rejects.toThrow(
+      'opencode-go: mini has no api entry',
+    )
   })
 })

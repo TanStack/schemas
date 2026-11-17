@@ -1,5 +1,6 @@
 import { bearerConnect } from '../connect.ts'
 import {
+  OPENCODE_GO_MODELS_URL,
   OPENCODE_GO_REQUIRED_HEADERS,
   goTrainsOnRequestData,
 } from '../opencode-go-facts.ts'
@@ -20,9 +21,7 @@ import type {
 } from '../types.ts'
 import { parseOpencodeModels } from './opencode.ts'
 
-/** The models endpoint go.mdx documents. */
-export const OPENCODE_GO_MODELS_URL =
-  'https://opencode.ai/inference/go/v1/models'
+export { OPENCODE_GO_MODELS_URL }
 
 const FETCH_TIMEOUT_MS = 30_000
 

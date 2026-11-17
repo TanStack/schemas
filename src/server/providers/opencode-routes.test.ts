@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { OPENCODE_GO_MODELS_URL } from './opencode-go-facts.ts'
 import {
   classifyOpenCodeRoute,
   documentedRoutes,
-  OPENCODE_GO_ROUTE_DOCS_URL,
   OPENCODE_ROUTE_DOCS_URL,
   openCodeRouteSpec,
 } from './opencode-routes.ts'
@@ -41,6 +41,47 @@ const GO_DOCS = `# Go
 
 \`https://opencode.ai/inference/go/openai/v1/chat/completions\`
 `
+
+/** Models list shaped like GET /inference/go/v1/models (2026-11-17). */
+const GO_LISTING = {
+  object: 'list',
+  data: [
+    {
+      id: 'gpt',
+      api: {
+        responses: {
+          base_url: 'https://opencode.ai/inference/go/openai/v1',
+          sdk: { aisdk: '@ai-sdk/openai' },
+        },
+      },
+    },
+    {
+      id: 'haiku',
+      api: {
+        messages: {
+          base_url: 'https://opencode.ai/inference/go/anthropic/v1',
+          sdk: { aisdk: '@ai-sdk/anthropic' },
+        },
+      },
+    },
+    {
+      id: 'kimi',
+      api: {
+        'chat-completions': {
+          base_url: 'https://opencode.ai/inference/go/openai/v1',
+          sdk: {
+            aisdk: '@ai-sdk/openai-compatible',
+            opencodeai: '@opencode/ai/providers/openai-compatible',
+          },
+          compatibility: { reasoning_field: 'reasoning_content' },
+        },
+      },
+      cost: { input: 1, output: 2 },
+      limit: { context: 128000 },
+      capabilities: { tools: true },
+    },
+  ],
+}
 
 const original = globalThis.fetch
 afterEach(() => {
@@ -110,8 +151,8 @@ it('sources Zen protocol paths from the inference docs, with no schema bodies', 
     'https://models.dev/api.json',
   ])
 })
-it('checks Go ids against the full documented /inference/go/<protocol>/ path', async () => {
-  serve(GO_DOCS)
+it('checks Go ids against routes from the models list api field', async () => {
+  serve(JSON.stringify(GO_LISTING))
   const result = await openCodeRouteSpec(
     [
       {
@@ -132,7 +173,11 @@ it('checks Go ids against the full documented /inference/go/<protocol>/ path', a
     '/inference/go/google/v1beta/models/gemini-4-argon-contributor:generateContent',
     '/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent',
   ])
-  expect(fetched()).toEqual([OPENCODE_GO_ROUTE_DOCS_URL])
+  expect(fetched()).toEqual([OPENCODE_GO_MODELS_URL])
+  const source = result.specs[0]?.paths?.['/inference/go/openai/v1/responses']
+    ?.post?.['x-modelschemas-method-source'] as { url: string; hash: string }
+  expect(source.url).toBe(OPENCODE_GO_MODELS_URL)
+  expect(source.hash).toMatch(/^[a-f0-9]{64}$/)
   const parameters = result.specs[0]?.paths?.[
     '/inference/go/openai/v1/responses'
   ]?.post?.parameters as Array<{ name: string; required: boolean }>
@@ -148,19 +193,67 @@ it.each([
   ['inference/go/openai/v1/chat/completions', false],
   ['inference/go/anthropic/v1/chat/completions', true],
   ['inference/go/google/v1beta/models/gemini:generateContent', true],
+  ['inference/go/openai/v1/embeddings', true],
   ['inference/v1/messages', false],
   ['v1/chat/completions', true],
   ['v1/responses', true],
   ['v1/embeddings', true],
 ])('rejects %s, a route the docs do not list', async (id, go) => {
-  serve(go ? GO_DOCS : ZEN_DOCS)
+  serve(go ? JSON.stringify(GO_LISTING) : ZEN_DOCS)
   await expect(
     openCodeRouteSpec(
       [{ schemaEndpointId: id, activity: 'chat' }],
       { url: 'docs', text: 'docs' },
       go,
     ),
-  ).rejects.toThrow(`documents no /${id} route`)
+  ).rejects.toThrow(`${go ? 'states' : 'documents'} no /${id} route`)
+})
+it('rejects a Go listing row with no api entry or an unknown protocol', async () => {
+  serve(
+    JSON.stringify({
+      object: 'list',
+      data: [{ id: 'gpt', object: 'model' }],
+    }),
+  )
+  await expect(
+    openCodeRouteSpec(
+      [
+        {
+          schemaEndpointId: 'inference/go/openai/v1/responses',
+          activity: 'chat',
+        },
+      ],
+      { url: 'docs', text: 'docs' },
+      true,
+    ),
+  ).rejects.toThrow('opencode-go: gpt has no api entry')
+  serve(
+    JSON.stringify({
+      object: 'list',
+      data: [
+        {
+          id: 'gpt',
+          api: {
+            embeddings: {
+              base_url: 'https://opencode.ai/inference/go/openai/v1',
+            },
+          },
+        },
+      ],
+    }),
+  )
+  await expect(
+    openCodeRouteSpec(
+      [
+        {
+          schemaEndpointId: 'inference/go/openai/v1/responses',
+          activity: 'chat',
+        },
+      ],
+      { url: 'docs', text: 'docs' },
+      true,
+    ),
+  ).rejects.toThrow('opencode-go: gpt has unknown api protocol embeddings')
 })
 it('rejects a failed docs source', async () => {
   globalThis.fetch = vi.fn(async () => new Response('gone', { status: 404 }))
