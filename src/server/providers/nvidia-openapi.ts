@@ -58,6 +58,16 @@ function isChallenge(text: string): boolean {
   )
 }
 
+/** A docs page answered with an HTTP error. A 404 is that page missing. */
+export class NvidiaFetchError extends Error {
+  readonly status: number
+  constructor(url: string, status: number, statusText: string) {
+    super(`fetch failed: ${url} → ${String(status)} ${statusText}`)
+    this.name = 'NvidiaFetchError'
+    this.status = status
+  }
+}
+
 /** Fetch one NVIDIA docs page. A 429 is retried; a challenge is not a spec. */
 export async function fetchNvidiaText(url: string): Promise<string> {
   let last = 'no response'
@@ -78,9 +88,7 @@ export async function fetchNvidiaText(url: string): Promise<string> {
     }
     const text = await response.text()
     if (!response.ok) {
-      throw new Error(
-        `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
-      )
+      throw new NvidiaFetchError(url, response.status, response.statusText)
     }
     if (isChallenge(text)) {
       last = 'cloudflare challenge'

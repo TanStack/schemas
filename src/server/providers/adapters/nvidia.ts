@@ -23,6 +23,7 @@ import type { Activity } from '#/db/schema.ts'
 import { tagDocsFacts } from '../fact-sources.ts'
 import {
   assertParsed,
+  DOCS_TTL_SECONDS,
   docsRun,
   mapConcurrent,
   markdownSection,
@@ -46,6 +47,7 @@ import type {
 import {
   classifyNvidiaOperation,
   fetchNvidiaText,
+  NvidiaFetchError,
   nvidiaStatedModelIds,
   NVIDIA_REFERENCE_INDEXES,
   parseNvidiaInfer,
@@ -726,6 +728,32 @@ interface OwnedContract {
   url: string
   hash: string
 }
+
+/** A 404 of an index infer page, remembered so the next polls do not refetch it. */
+const MISSING_SPEC_PREFIX = 'nvidia-missing-spec:v1:'
+
+async function missingSpec(
+  kv: KVNamespace | undefined,
+  page: string,
+): Promise<boolean> {
+  if (!kv) return false
+  const hit = await getJson<{ missing: true }>(kv, MISSING_SPEC_PREFIX + page)
+  return hit?.missing === true
+}
+
+async function rememberMissingSpec(
+  kv: KVNamespace | undefined,
+  page: string,
+): Promise<void> {
+  if (!kv) return
+  await putJson(
+    kv,
+    MISSING_SPEC_PREFIX + page,
+    { missing: true },
+    { expirationTtl: DOCS_TTL_SECONDS },
+  )
+}
+
 /** ReadMe discovery uses actual published index/sitemap paths, never fabricated routes. */
 async function chooseNativeContracts(
   models: ModelInfo[],
@@ -735,7 +763,14 @@ async function chooseNativeContracts(
 ) {
   const diagnostics: string[] = []
   const index = await loadIndex(kv, run)
-  const indexed = new Map(index.rows.map((row) => [row.rawId, row.inferUrl]))
+  // The models list is the authority. A reference-index row it does not
+  // name is stale, so that row's infer page is not fetched.
+  const listedIds = new Set(models.map((model) => model.rawId))
+  const indexed = new Map(
+    index.rows.flatMap((row) =>
+      listedIds.has(row.rawId) ? [[row.rawId, row.inferUrl] as const] : [],
+    ),
+  )
   const missing = models.filter((row) => !indexed.has(row.rawId))
   const sitemap = missing.length
     ? await tryDocs(run, NVIDIA_SITEMAP_URL, (cached) =>
@@ -762,8 +797,31 @@ async function chooseNativeContracts(
     const conflicts: string[] = []
     for (const candidate of candidates) {
       const page = candidate + '.md'
+      // The index named this page and it is gone. That is this model's
+      // missing spec, kept for the docs TTL: not an outage to report on
+      // every poll, and not a reason to try another URL.
+      if (linked && (await missingSpec(kv, page))) {
+        unavailableIds.add(model.rawId)
+        return
+      }
       const markdown = await tryDocs(run, page, (cached) =>
-        cached(kv, page, () => fetchNvidiaText(page)),
+        cached(kv, page, async () => {
+          try {
+            return await fetchNvidiaText(page)
+          } catch (error) {
+            if (
+              linked &&
+              error instanceof NvidiaFetchError &&
+              error.status === 404
+            ) {
+              await rememberMissingSpec(kv, page)
+              throw new Error(
+                `nvidia: ${model.rawId} has no published spec: ${page} returned 404`,
+              )
+            }
+            throw error
+          }
+        }),
       )
       if (markdown === null) {
         unavailableIds.add(model.rawId)
