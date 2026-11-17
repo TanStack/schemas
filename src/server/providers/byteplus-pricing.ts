@@ -27,8 +27,8 @@
  * see `parseByteplusVideo` and `parseByteplusImages`. A page missing chat,
  * video, or image rows throws. The model list's "also supports" note copies
  * a published image, video, or pixel-tier price onto that alias when the
- * pair is unambiguous (issue #117). This page has no speech table, so Seed
- * Speech stays unpriced. Seedance estimates also read frame rate and
+ * pair is unambiguous (issue #117). This page has no speech table: Seed
+ * Speech is priced in `byteplus-speech-pricing.ts`. Seedance estimates also read frame rate and
  * output sizes from the video generation tutorial; if that page fails, the
  * cards publish without an estimate rather than failing the lookup.
  */

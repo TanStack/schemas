@@ -50,6 +50,7 @@ import {
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
 import { byteplusModelPricing } from './byteplus-pricing.ts'
+import { byteplusSpeechPricing } from './byteplus-speech-pricing.ts'
 import { byteplusServerTools } from './byteplus-tools.ts'
 import { docsReport, docsRun } from './model-facts.ts'
 import {
@@ -619,14 +620,16 @@ async function listModels(
       elapsedMs: 0,
     })
   }
-  const [pricing, reasoning, tools] = await Promise.all([
+  const [pricing, speech, reasoning, tools] = await Promise.all([
     byteplusModelPricing(docs, kv),
+    byteplusSpeechPricing(docs, kv),
     byteplusModelReasoning(kv),
     byteplusServerTools(docs, kv),
   ])
   const withPricing = (models: Array<ModelInfo>): Array<ModelInfo> =>
     models.map((model) => {
-      const priced = pricing(model.rawId)
+      // Seed Speech is priced on the voice billing pages, not the Ark one.
+      const priced = speech(model.rawId) ?? pricing(model.rawId)
       const hosted = tools(model.rawId)
       // Both pages may name tools for one row; keep every one of them.
       const merged = [

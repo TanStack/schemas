@@ -1,0 +1,679 @@
+{
+  "version": "1.2.62",
+  "data": {
+    "0": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "PIekKKJG",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Audio is charged by the length of generated audio, the accuracy is second. 60min free trial usage will be provided when you activate the service.\n"
+        },
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "9RaFMsOD",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "*",
+          "attributes": {
+            "aceTable": "rs92ecezmfkbf6b07z608ico7cpu1d83i8 csdglun0luyczng82ci7tt3mtq8mdpmb4e"
+          }
+        },
+        {
+          "insert": "\n"
+        },
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "o88070rspp",
+            "list": "bullet1",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Note: 0.15 USD/min = 0.0025 USD/second, and Audio 1.0 pricing unit is USD/second.\n"
+        }
+      ],
+      "zoneId": "0",
+      "zoneType": "Z"
+    },
+    "csdglun0luyczng82ci7tt3mtq8mdpmb4e": {
+      "ops": [
+        {
+          "insert": {
+            "id": "c1cfl88kjum3e0jq4bbr5zu19gao2lw1ba"
+          },
+          "attributes": {
+            "colWidth": "138",
+            "mergeCellID": "5sofnf5a,wgpzdrh4"
+          }
+        },
+        {
+          "insert": {
+            "id": "c14eyh2e189j2ro9k7vlem47peolm2w1vc"
+          },
+          "attributes": {
+            "colWidth": "147",
+            "mergeCellID": "wgpzdrh4"
+          }
+        },
+        {
+          "insert": {
+            "id": "c1qtoyntsgztcde92f2f0zj6yztkevjwic"
+          },
+          "attributes": {
+            "colWidth": "127"
+          }
+        },
+        {
+          "insert": {
+            "id": "c1aibgbuj9rezekhjy3l5sss2s596fkrv1"
+          },
+          "attributes": {
+            "colWidth": "182"
+          }
+        },
+        {
+          "insert": {
+            "id": "c1q8c9ff77tf9q3n4r2333a9a29qqbt8ky"
+          },
+          "attributes": {
+            "colWidth": "132"
+          }
+        }
+      ],
+      "zoneId": "csdglun0luyczng82ci7tt3mtq8mdpmb4e",
+      "zoneType": "C"
+    },
+    "rs92ecezmfkbf6b07z608ico7cpu1d83i8": {
+      "ops": [
+        {
+          "insert": {
+            "id": "r1ndnfpkw7hgd8z3v6owfugaq55rmvsre6"
+          },
+          "attributes": {
+            "rowHeight": "27"
+          }
+        },
+        {
+          "insert": {
+            "id": "r122licngr76uy789k0rq9ndivszvvij33"
+          }
+        },
+        {
+          "insert": {
+            "id": "r1b483uma20wab62bneqyi04wf51wmj539"
+          },
+          "attributes": {
+            "mergeCellID": "5sofnf5a",
+            "rowHeight": "27"
+          }
+        },
+        {
+          "insert": {
+            "id": "r170sezwo6fa2qds1z0k9vgefusyuqk8cv"
+          },
+          "attributes": {
+            "mergeCellID": "5sofnf5a",
+            "rowHeight": "27"
+          }
+        },
+        {
+          "insert": {
+            "id": "r1tv8y1y4njnj4qnsv508hm2s088hmbdft"
+          },
+          "attributes": {
+            "mergeCellID": "5sofnf5a",
+            "rowHeight": "27"
+          }
+        },
+        {
+          "insert": {
+            "id": "r1l1fzyl6c7r3oafwftc9sai155itwkko4"
+          },
+          "attributes": {
+            "mergeCellID": "5sofnf5a",
+            "rowHeight": "27"
+          }
+        }
+      ],
+      "zoneId": "rs92ecezmfkbf6b07z608ico7cpu1d83i8",
+      "zoneType": "R"
+    },
+    "xr122licngr76uy789k0rq9ndivszvvij33xc14eyh2e189j2ro9k7vlem47peolm2w1vc": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "OwMEGjfc",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "-\n"
+        }
+      ],
+      "zoneId": "xr122licngr76uy789k0rq9ndivszvvij33xc14eyh2e189j2ro9k7vlem47peolm2w1vc",
+      "zoneType": "Z"
+    },
+    "xr122licngr76uy789k0rq9ndivszvvij33xc1aibgbuj9rezekhjy3l5sss2s596fkrv1": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "Ju3xVy8k",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "minute\n"
+        }
+      ],
+      "zoneId": "xr122licngr76uy789k0rq9ndivszvvij33xc1aibgbuj9rezekhjy3l5sss2s596fkrv1",
+      "zoneType": "Z"
+    },
+    "xr122licngr76uy789k0rq9ndivszvvij33xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "plfJHSxa",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Pay-as-you-go\n"
+        }
+      ],
+      "zoneId": "xr122licngr76uy789k0rq9ndivszvvij33xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba",
+      "zoneType": "Z"
+    },
+    "xr122licngr76uy789k0rq9ndivszvvij33xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "4t9eLs9r",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "-\n"
+        }
+      ],
+      "zoneId": "xr122licngr76uy789k0rq9ndivszvvij33xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky",
+      "zoneType": "Z"
+    },
+    "xr122licngr76uy789k0rq9ndivszvvij33xc1qtoyntsgztcde92f2f0zj6yztkevjwic": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "AvymFegQ",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "0.15\n"
+        }
+      ],
+      "zoneId": "xr122licngr76uy789k0rq9ndivszvvij33xc1qtoyntsgztcde92f2f0zj6yztkevjwic",
+      "zoneType": "Z"
+    },
+    "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc14eyh2e189j2ro9k7vlem47peolm2w1vc": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "sUiAUIoX",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "200k min\n"
+        }
+      ],
+      "zoneId": "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc14eyh2e189j2ro9k7vlem47peolm2w1vc",
+      "zoneType": "Z"
+    },
+    "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1aibgbuj9rezekhjy3l5sss2s596fkrv1": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "8DV68pnk",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "-\n"
+        }
+      ],
+      "zoneId": "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1aibgbuj9rezekhjy3l5sss2s596fkrv1",
+      "zoneType": "Z"
+    },
+    "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "r2dYMFV3",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "\n"
+        }
+      ],
+      "zoneId": "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba",
+      "zoneType": "Z"
+    },
+    "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "mccVjBQL",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "1 Year\n"
+        }
+      ],
+      "zoneId": "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky",
+      "zoneType": "Z"
+    },
+    "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1qtoyntsgztcde92f2f0zj6yztkevjwic": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "fntIAyr4",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "27000\n"
+        }
+      ],
+      "zoneId": "xr170sezwo6fa2qds1z0k9vgefusyuqk8cvxc1qtoyntsgztcde92f2f0zj6yztkevjwic",
+      "zoneType": "Z"
+    },
+    "xr1b483uma20wab62bneqyi04wf51wmj539xc14eyh2e189j2ro9k7vlem47peolm2w1vc": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "rdd85QDl",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "200 min\n"
+        }
+      ],
+      "zoneId": "xr1b483uma20wab62bneqyi04wf51wmj539xc14eyh2e189j2ro9k7vlem47peolm2w1vc",
+      "zoneType": "Z"
+    },
+    "xr1b483uma20wab62bneqyi04wf51wmj539xc1aibgbuj9rezekhjy3l5sss2s596fkrv1": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "Y70XGBbI",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "-\n"
+        }
+      ],
+      "zoneId": "xr1b483uma20wab62bneqyi04wf51wmj539xc1aibgbuj9rezekhjy3l5sss2s596fkrv1",
+      "zoneType": "Z"
+    },
+    "xr1b483uma20wab62bneqyi04wf51wmj539xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "WyDrRxR8",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "\n"
+        },
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "UrVtJB92",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "\n"
+        },
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "lJfDwekd",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Pre-paid\n"
+        }
+      ],
+      "zoneId": "xr1b483uma20wab62bneqyi04wf51wmj539xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba",
+      "zoneType": "Z"
+    },
+    "xr1b483uma20wab62bneqyi04wf51wmj539xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "RzLcdlnE",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "1 Year\n"
+        }
+      ],
+      "zoneId": "xr1b483uma20wab62bneqyi04wf51wmj539xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky",
+      "zoneType": "Z"
+    },
+    "xr1b483uma20wab62bneqyi04wf51wmj539xc1qtoyntsgztcde92f2f0zj6yztkevjwic": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "Us7uYnKW",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "28.5\n"
+        }
+      ],
+      "zoneId": "xr1b483uma20wab62bneqyi04wf51wmj539xc1qtoyntsgztcde92f2f0zj6yztkevjwic",
+      "zoneType": "Z"
+    },
+    "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc14eyh2e189j2ro9k7vlem47peolm2w1vc": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "wYUC14Re",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "2m min\n"
+        }
+      ],
+      "zoneId": "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc14eyh2e189j2ro9k7vlem47peolm2w1vc",
+      "zoneType": "Z"
+    },
+    "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1aibgbuj9rezekhjy3l5sss2s596fkrv1": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "Uz4vvU6U",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "-\n"
+        }
+      ],
+      "zoneId": "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1aibgbuj9rezekhjy3l5sss2s596fkrv1",
+      "zoneType": "Z"
+    },
+    "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "tnhSm8Al",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "\n"
+        }
+      ],
+      "zoneId": "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba",
+      "zoneType": "Z"
+    },
+    "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "UK6CXvam",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "1 Year\n"
+        }
+      ],
+      "zoneId": "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky",
+      "zoneType": "Z"
+    },
+    "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1qtoyntsgztcde92f2f0zj6yztkevjwic": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "fOAtsh30",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "240,000\n"
+        }
+      ],
+      "zoneId": "xr1l1fzyl6c7r3oafwftc9sai155itwkko4xc1qtoyntsgztcde92f2f0zj6yztkevjwic",
+      "zoneType": "Z"
+    },
+    "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc14eyh2e189j2ro9k7vlem47peolm2w1vc": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "EagkzSk6",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Package\n"
+        }
+      ],
+      "zoneId": "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc14eyh2e189j2ro9k7vlem47peolm2w1vc",
+      "zoneType": "Z"
+    },
+    "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1aibgbuj9rezekhjy3l5sss2s596fkrv1": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "ro8VSnJ7",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Unit\n"
+        }
+      ],
+      "zoneId": "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1aibgbuj9rezekhjy3l5sss2s596fkrv1",
+      "zoneType": "Z"
+    },
+    "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "BN7mkzlL",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Payment\n"
+        }
+      ],
+      "zoneId": "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba",
+      "zoneType": "Z"
+    },
+    "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "hOtoQ1LQ",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Valid Period\n"
+        }
+      ],
+      "zoneId": "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky",
+      "zoneType": "Z"
+    },
+    "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1qtoyntsgztcde92f2f0zj6yztkevjwic": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "ymOSIbCi",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "Fee (USD)\n"
+        }
+      ],
+      "zoneId": "xr1ndnfpkw7hgd8z3v6owfugaq55rmvsre6xc1qtoyntsgztcde92f2f0zj6yztkevjwic",
+      "zoneType": "Z"
+    },
+    "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc14eyh2e189j2ro9k7vlem47peolm2w1vc": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "rL2Rtz7E",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "500k min\n"
+        }
+      ],
+      "zoneId": "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc14eyh2e189j2ro9k7vlem47peolm2w1vc",
+      "zoneType": "Z"
+    },
+    "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1aibgbuj9rezekhjy3l5sss2s596fkrv1": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "iQDlxxLW",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "-\n"
+        }
+      ],
+      "zoneId": "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1aibgbuj9rezekhjy3l5sss2s596fkrv1",
+      "zoneType": "Z"
+    },
+    "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "lineId": "SDDjDqPI",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "\n"
+        }
+      ],
+      "zoneId": "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1cfl88kjum3e0jq4bbr5zu19gao2lw1ba",
+      "zoneType": "Z"
+    },
+    "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "39ECcggT",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "1 Year\n"
+        }
+      ],
+      "zoneId": "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1q8c9ff77tf9q3n4r2333a9a29qqbt8ky",
+      "zoneType": "Z"
+    },
+    "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1qtoyntsgztcde92f2f0zj6yztkevjwic": {
+      "ops": [
+        {
+          "insert": "*",
+          "attributes": {
+            "align": "center",
+            "lineId": "aIADwgjp",
+            "lmkr": "1"
+          }
+        },
+        {
+          "insert": "64,000\n"
+        }
+      ],
+      "zoneId": "xr1tv8y1y4njnj4qnsv508hm2s088hmbdftxc1qtoyntsgztcde92f2f0zj6yztkevjwic",
+      "zoneType": "Z"
+    }
+  }
+}
