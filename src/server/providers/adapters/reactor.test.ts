@@ -305,6 +305,8 @@ describe('reactor POST /tokens', () => {
     ])
     const pinned = reactorPlatformOperations('reactor/helios')['/tokens']?.post
     expect(JSON.stringify(pinned)).toContain('"enum":["reactor/helios"]')
+    const x2 = reactorPlatformOperations('x2')['/tokens']?.post
+    expect(JSON.stringify(x2)).toContain('"enum":["xmax/x2"]')
   })
 })
 

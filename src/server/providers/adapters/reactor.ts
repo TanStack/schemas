@@ -45,13 +45,15 @@ export const REACTOR_PRICING_URL = `${REACTOR_API_BASE}/pricing`
 type Schema = Record<string, unknown>
 
 interface ReactorModel {
-  /** Pricing catalog `name` and `/models/{slug}/api` page slug. */
+  /** Pricing catalog `name`. */
   pricingName: string
-  /** Connect slug (`modelName`). */
+  /** Catalog row id. Usually the connect slug. */
   rawId: string
   displayName: string
   /** Override when the marketing page slug differs from pricingName. */
   pageSlug?: string
+  /** Session `modelName` passed to `POST /tokens` match. Defaults to rawId. */
+  connectSlug?: string
 }
 
 /** Billing parent row — not a connect slug. */
@@ -109,6 +111,7 @@ const REACTOR_MODELS: Array<ReactorModel> = [
     // renamed to `xmax/x2`; the marketing page stayed `/models/x2`.
     pricingName: 'xmax/x2',
     rawId: 'x2',
+    connectSlug: 'xmax/x2',
     displayName: 'X2',
     pageSlug: 'x2',
   },
@@ -485,6 +488,11 @@ function catalogFromPricing(
   return models
 }
 
+/** Wire model name for a catalog raw id. Unknown ids pass through. */
+function sessionConnectSlug(rawId: string): string {
+  return MODEL_BY_RAW_ID.get(rawId)?.connectSlug ?? rawId
+}
+
 function matchItem(pinnedModel: string | undefined): Schema {
   return pinnedModel === undefined
     ? {
@@ -492,7 +500,7 @@ function matchItem(pinnedModel: string | undefined): Schema {
         description:
           'Connect slug (`reactor/helios`). No wildcard; list every model the token may start.',
       }
-    : { type: 'string', enum: [pinnedModel] }
+    : { type: 'string', enum: [sessionConnectSlug(pinnedModel)] }
 }
 
 /** Request body for `POST /tokens`. Optional fields are the documented ones. */
