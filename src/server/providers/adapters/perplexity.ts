@@ -94,7 +94,8 @@ function unquote(text: string): string {
  *   name, and its list is the row's `efforts`. A list that holds `none`
  *   or `off` says reasoning can be turned off; any other list leaves
  *   `mandatory` null.
- * - A card sentence that ends "… reasoning model(s)." or "… reasoning model
+ * - A card sentence "<names> — …", "<names> is …" or "<names>, a(n) …"
+ *   that ends "… reasoning model(s)." or "… reasoning model
  *   with a N-token context window[ and up to N output tokens]." gives
  *   `reasoning` to every row of its tab, and only when it names as many
  *   models as the tab lists. Its context window and output tokens, when
@@ -160,7 +161,7 @@ export function parsePerplexityModelsPage(markdown: string): {
       const rest = parts.filter((s) => !said.includes(s))
       const sentence =
         said.length === 1 && !rest.some((s) => /reason|think/i.test(s))
-          ? /^(.+?) (?:—|is) .*\breasoning models?(?: with an? ([\d,]+)-token context window(?: and up to ([\d,]+) output tokens)?)?\.$/.exec(
+          ? /^(.+?)(?: (?:—|is) |, an? ).*\breasoning models?(?: with an? ([\d,]+)-token context window(?: and up to ([\d,]+) output tokens)?)?\.$/.exec(
               said[0] ?? '',
             )
           : null
