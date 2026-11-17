@@ -1,22 +1,16 @@
 import { bearerConnect } from '../connect.ts'
-import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import {
-  OPENCODE_GO_DOCS_URL,
   OPENCODE_GO_REQUIRED_HEADERS,
-  parseGoTraining,
+  goTrainsOnRequestData,
 } from '../opencode-go-facts.ts'
-import {
-  OPENCODE_GO_ROUTE_DOCS_URL,
-  classifyOpenCodeRoute,
-  openCodeRouteSpec,
-} from '../opencode-routes.ts'
+import { classifyOpenCodeRoute, openCodeRouteSpec } from '../opencode-routes.ts'
 /** OpenCode Go: live ids and catalog routes. Subscription prices stay null. */
 import {
   loadOpenCodeCatalog,
   OPENCODE_CATALOG_URL,
   parseOpenCodeCatalog,
 } from '../opencode-catalog.ts'
-import { fetchJson, fetchText, sha256Text } from '../types.ts'
+import { fetchJson } from '../types.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -37,20 +31,11 @@ async function listModels(
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  const docs = docsRun()
-  const [payload, loaded, privacy] = await Promise.all([
+  const [payload, loaded] = await Promise.all([
     fetchJson(OPENCODE_GO_MODELS_URL, { signal }),
     loadOpenCodeCatalog(kv),
-    tryDocs(docs, OPENCODE_GO_ROUTE_DOCS_URL, async (cached) => {
-      const doc = await cached(kv, OPENCODE_GO_ROUTE_DOCS_URL, async () => {
-        const text = await fetchText(OPENCODE_GO_ROUTE_DOCS_URL, {
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        })
-        return { text, hash: await sha256Text(text) }
-      })
-      return { training: parseGoTraining(doc.text), hash: doc.hash }
-    }),
   ])
+  const training = goTrainsOnRequestData(payload)
   const catalog = parseOpenCodeCatalog(
     loaded.payload,
     'opencode-go',
@@ -59,26 +44,28 @@ async function listModels(
   const models = parseOpencodeModels(payload, 'opencode-go').map(
     (model): ModelInfo => {
       const facts = catalog[model.rawId]
-      const stated = privacy?.training.get(model.rawId)
-      const trainsOnRequestData = stated === true ? true : null
-      const factSources =
-        stated === true
-          ? {
-              ...facts?.factSources,
-              trainsOnRequestData: {
-                derivation: 'docs-derived' as const,
-                sourceUrl: OPENCODE_GO_DOCS_URL,
-                sourceHash: privacy?.hash,
-                path: 'Privacy',
-              },
-            }
-          : facts?.factSources
-      const absent = {
-        ...(facts?.releasedAt == null
-          ? { releasedAt: 'cleared' as const }
-          : {}),
-        ...(privacy ? {} : { trainsOnRequestData: 'unavailable' as const }),
+      const stated = training.get(model.rawId)
+      if (stated === undefined) {
+        throw new Error(
+          `opencode-go: ${model.rawId} has no go.training boolean`,
+        )
       }
+      // A stated no is stored as null, the same as the old "Not used" cell.
+      const trainsOnRequestData = stated ? true : null
+      const factSources = stated
+        ? {
+            ...facts?.factSources,
+            trainsOnRequestData: {
+              derivation: 'listing' as const,
+              sourceUrl: OPENCODE_GO_MODELS_URL,
+              path: 'go.training',
+            },
+          }
+        : facts?.factSources
+      const absent =
+        facts?.releasedAt == null
+          ? { releasedAt: 'cleared' as const }
+          : undefined
       if (!facts) {
         return {
           ...model,
@@ -94,14 +81,14 @@ async function listModels(
         // models.dev `cost` is left unread: it is not a confirmed billed price.
         pricing: null,
         ...(factSources ? { factSources } : {}),
-        ...(Object.keys(absent).length > 0 ? { absent } : {}),
+        ...(absent ? { absent } : {}),
       }
     },
   )
   if (!models.some((model) => model.activity === 'chat')) {
     throw new Error('opencode-go: catalog classified 0 listed models')
   }
-  return { models, docsFailures: docsReport(docs) }
+  return { models }
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {

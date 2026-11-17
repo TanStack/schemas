@@ -822,7 +822,7 @@ export type Model = {
     description: string
   }> | null
   /**
-   * true when this model's own source states it trains on request data and the workspace must opt in. OpenCode Go reads the Privacy table on https://opencode.ai/docs/console/go/ (Yes). An id that table does not name can still be true from that id's probe record. null when the table says Not used, or no source states it for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.
+   * true when this model's own source states it trains on request data and the workspace must opt in. OpenCode Go reads go.training on https://opencode.ai/inference/go/v1/models (the boolean the console privacy view shows). An id that list does not name can still be true from that id's probe record. null when go.training is false, or no source states it for this id. Never inferred from an id suffix or from a retention period. factSources.trainsOnRequestData is the source.
    */
   trainsOnRequestData: boolean | null
   /**
@@ -947,7 +947,7 @@ export type ExportModel = {
     description: string
   }> | null
   /**
-   * true when this model's own source states it trains on request data and the workspace must opt in. OpenCode Go reads the Privacy table on https://opencode.ai/docs/console/go/ (Yes). An id that table does not name can still be true from that id's probe record. null when the table says Not used, or no source states it for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.
+   * true when this model's own source states it trains on request data and the workspace must opt in. OpenCode Go reads go.training on https://opencode.ai/inference/go/v1/models (the boolean the console privacy view shows). An id that list does not name can still be true from that id's probe record. null when go.training is false, or no source states it for this id. Never inferred from an id suffix or from a retention period. factSources.trainsOnRequestData is the source.
    */
   trainsOnRequestData: boolean | null
   /**

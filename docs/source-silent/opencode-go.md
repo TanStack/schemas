@@ -28,6 +28,15 @@ The ten live ids absent from the public catalog remain activity-null. There is
 no documented credential-gated source that supplies their missing model facts;
 credentials are not substituted for the unavailable public evidence.
 
+The Go docs privacy table states data retention, not whether a model trains
+(checked 2026-11-17, #675). `trainsOnRequestData` is the live listing's
+`go.training` boolean at https://opencode.ai/inference/go/v1/models, the same
+value https://opencode.ai/console/go#privacy shows. A false boolean is a stated
+no and is stored as null. Retention is not a catalog field, and a retention
+period is not that no. The docs notes still say Muse Spark Contributor and
+Iceman Contributor Free may use prompts and completions to train or improve
+the model; the listing boolean agrees.
+
 - opencode-go/minimax-m3: requestMap — Own exact-model catalog publishes no request map; native endpoint docs identify routes/protocol packages without publishing this model’s request-body wire fields (#265), https://opencode.ai/docs/go, checked 2026-10-09
 - opencode-go/minimax-m3: replayReasoningContent — Own exact-model catalog publishes no reasoning_content interleaving field; native endpoint docs publish no exact-model replay requirement or exclusion (#265/#270), https://opencode.ai/docs/go, checked 2026-10-09
 - opencode-go/minimax-m3: priced — Go bills a monthly subscription; per-token tables account against the plan usage allowance and are not billed token prices (#265), https://opencode.ai/docs/go, checked 2026-10-09

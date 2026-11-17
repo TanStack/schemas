@@ -1,7 +1,9 @@
 /**
  * Facts OpenCode publishes for every Go request, plus training on request
- * data where the Go privacy table names that id (issue #463). A probe
- * record still states it for an id the table does not mention.
+ * data. The live models list states it as `go.training` (issue #675). The
+ * Go docs privacy table used to (issue #463) and now states retention only;
+ * its notes still name the models that train. A probe record still states
+ * it for an id the list does not mention.
  */
 import { markdownSection, markdownTableRows } from './model-facts.ts'
 import { requiredHeaderParameters } from './connect.ts'
@@ -44,15 +46,44 @@ function cellId(cell: string | undefined): string {
   return (cell ?? '').replace(/^`|`$/g, '').trim()
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /**
- * Privacy table joined to the Endpoints table on the model name.
- * `true` is "Yes". `false` is "Not used". Throws when a section, a row,
- * or a training cell is not the shape the page publishes.
+ * `go.training` on each id of `GET /v1/models` for Go. That boolean is what
+ * https://opencode.ai/console/go#privacy shows. `true` trains. `false` is a
+ * stated no. Throws when a listed id has no boolean: a missing field is an
+ * unknown shape, not an unstated fact.
  */
-export function parseGoTraining(text: string): Map<string, boolean> {
+export function goTrainsOnRequestData(payload: unknown): Map<string, boolean> {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw new Error('opencode-go: models payload has no data array')
+  }
+  const training = new Map<string, boolean>()
+  for (const row of payload.data) {
+    if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
+      continue
+    }
+    const go = row.go
+    if (!isRecord(go) || typeof go.training !== 'boolean') {
+      throw new Error(`opencode-go: ${row.id} has no go.training boolean`)
+    }
+    training.set(row.id, go.training)
+  }
+  if (training.size === 0) {
+    throw new Error('opencode-go: models payload listed no ids')
+  }
+  return training
+}
+
+const RETENTION_CELL = /^(?:\d+ days(?:\*)?|Not ZDR)$/
+const TRAINS_ON_REQUESTS =
+  /permission to use your prompts and completions to (?:train\b|improve the model)/i
+
+function endpointIds(text: string): Map<string, string> {
   const endpoints = markdownSection(text, 'Endpoints')
-  const privacy = markdownSection(text, 'Privacy')
-  if (endpoints === '' || privacy === '') {
+  if (endpoints === '') {
     throw new Error('opencode-go: go docs have no Endpoints or Privacy section')
   }
   const ids = new Map<string, string>()
@@ -63,25 +94,106 @@ export function parseGoTraining(text: string): Map<string, boolean> {
     if (!name || id === '') continue
     ids.set(name, id)
   }
+  return ids
+}
+
+function idFor(ids: Map<string, string>, name: string): string {
+  const id = ids.get(name)
+  if (!id) {
+    throw new Error(`opencode-go: privacy model ${name} has no endpoint id`)
+  }
+  return id
+}
+
+/** A privacy note that states training, or false when it states none. */
+function noteTrains(body: string): boolean {
+  if (TRAINS_ON_REQUESTS.test(body)) return true
+  if (
+    /\btrain(?:s|ing|ed)?\b/i.test(body) ||
+    /\bimprove the model\b/i.test(body)
+  ) {
+    throw new Error(
+      `opencode-go: privacy note states training in an unknown way: ${body.slice(0, 120)}`,
+    )
+  }
+  return false
+}
+
+/**
+ * Privacy table joined to the Endpoints table on the model name.
+ * A "Model training" column: `true` is "Yes", `false` is "Not used".
+ * A "Data retention" column does not state training. `true` is only a
+ * note that says the model may use prompts and completions to train or
+ * improve the model. Other rows are left out (unstated). A retention
+ * period is not a no. Throws when a section, a row, a cell, or a note
+ * is not a shape the page publishes.
+ */
+export function parseGoTraining(text: string): Map<string, boolean> {
+  const privacy = markdownSection(text, 'Privacy')
+  if (privacy === '') {
+    throw new Error('opencode-go: go docs have no Endpoints or Privacy section')
+  }
+  const rows = markdownTableRows(privacy)
+  const header = rows[0]
+  if (header?.[0] !== 'Model') {
+    throw new Error('opencode-go: privacy table has no Model column')
+  }
+  const trainingCol = header.indexOf('Model training')
+  const retentionCol = header.indexOf('Data retention')
+  if (trainingCol < 0 && retentionCol < 0) {
+    throw new Error(
+      'opencode-go: privacy table has no training or retention column',
+    )
+  }
+  const ids = endpointIds(text)
   const training = new Map<string, boolean>()
-  for (const cells of markdownTableRows(privacy)) {
+  if (trainingCol >= 0) {
+    for (const cells of rows) {
+      if (cells[0] === 'Model') continue
+      const name = cells[0]
+      const stated = cells[trainingCol]
+      if (!name) continue
+      if (stated !== 'Yes' && stated !== 'Not used') {
+        throw new Error(
+          `opencode-go: privacy training cell ${JSON.stringify(stated)} for ${name}`,
+        )
+      }
+      training.set(idFor(ids, name), stated === 'Yes')
+    }
+    if (training.size === 0) {
+      throw new Error('opencode-go: privacy table names no models')
+    }
+    return training
+  }
+  const named = new Set<string>()
+  for (const cells of rows) {
     if (cells[0] === 'Model') continue
     const name = cells[0]
-    const stated = cells[1]
     if (!name) continue
-    if (stated !== 'Yes' && stated !== 'Not used') {
+    const stated = cells[retentionCol]
+    if (!stated || !RETENTION_CELL.test(stated)) {
       throw new Error(
-        `opencode-go: privacy training cell ${JSON.stringify(stated)} for ${name}`,
+        `opencode-go: privacy retention cell ${JSON.stringify(stated)} for ${name}`,
       )
     }
-    const id = ids.get(name)
-    if (!id) {
-      throw new Error(`opencode-go: privacy model ${name} has no endpoint id`)
-    }
-    training.set(id, stated === 'Yes')
+    named.add(name)
   }
-  if (training.size === 0) {
+  if (named.size === 0) {
     throw new Error('opencode-go: privacy table names no models')
+  }
+  for (const match of privacy.matchAll(/^- \*\*([^*]+):\*\* (.*)$/gm)) {
+    const body = match[2] ?? ''
+    if (!noteTrains(body)) continue
+    for (const name of (match[1] ?? '')
+      .split(' / ')
+      .map((part) => part.trim())) {
+      if (!named.has(name)) {
+        throw new Error(
+          `opencode-go: privacy note names ${name}, missing from the table`,
+        )
+      }
+      training.set(idFor(ids, name), true)
+    }
   }
   return training
 }

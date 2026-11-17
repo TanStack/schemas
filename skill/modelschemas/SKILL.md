@@ -23,7 +23,8 @@ availability and schema questions.
      (OpenCode Go: `x-opencode-session` and `User-Agent`). Constant
      headers stay on `GET /v1/openapi/{provider}`.
      `trainsOnRequestData: true` means that id's own source says it trains
-     on request data (OpenCode Go: the Privacy table, else that id's probe).
+     on request data (OpenCode Go: `go.training` on its models list, else
+     that id's probe). A retention period is not a no.
      A row's `capabilities` is a map: `true` = the provider states
      support, `false` = it states none, key absent = unknown (never read a
      missing key as false). `?capability=tools` keeps rows where it is true.
