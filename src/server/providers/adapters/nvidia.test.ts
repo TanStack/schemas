@@ -671,6 +671,145 @@ updatedAt: test
       'parsed 0 generation specs',
     )
   })
+
+  it('reports a listed embed-qa-4 whose retrieval index page 404s, and does not fetch a stale index row', async () => {
+    const infer =
+      'https://docs.api.nvidia.com/nim/reference/nvidia-embedding-2b-infer'
+    const retired =
+      'https://docs.api.nvidia.com/nim/reference/nvidia-embed-qa-retired-infer'
+    const glm = 'z-ai/glm-5.3-flash'
+    const glmInfer =
+      'https://docs.api.nvidia.com/nim/reference/z-ai-glm-5-3-flash-infer'
+    const openapi = `# OpenAPI definition
+
+\`\`\`json
+${JSON.stringify({
+  openapi: '3.1.0',
+  paths: {
+    '/chat/completions': {
+      post: {
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  model: { type: 'string', default: glm },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+})}
+\`\`\`
+`
+    const urls = stubFetch({
+      [NVIDIA_MODELS_URL]: JSON.stringify({
+        object: 'list',
+        data: [
+          {
+            id: 'nvidia/embed-qa-4',
+            object: 'model',
+            created: 735790403,
+            owned_by: 'nvidia',
+          },
+          {
+            id: glm,
+            object: 'model',
+            created: 735790403,
+            owned_by: 'z-ai',
+          },
+        ],
+      }),
+      'https://build.nvidia.com/nvidia/embed-qa-4.md': `---
+title: "embed-qa-4"
+canonical: "https://build.nvidia.com/nvidia/embed-qa-4"
+---
+
+${EMBED_CARD}`,
+      'https://build.nvidia.com/z-ai/glm-5-3-flash.md': GLM_CARD,
+      [NVIDIA_REFERENCE_INDEXES[0]!]: `---
+updatedAt: test
+---
+
+| Model | Endpoint |
+| --- | --- |
+| [z-ai / glm-5.3-flash](https://docs.api.nvidia.com/nim/reference/z-ai-glm-5-3-flash) | [chat](${glmInfer}) |
+`,
+      [`${glmInfer}.md`]: openapi,
+      // The live retrieval index row. Its infer page, and the model page,
+      // 404. The retired row is not in the models list.
+      [NVIDIA_REFERENCE_INDEXES[1]!]: `---
+updatedAt: test
+---
+
+| Model | Endpoint |
+| --- | --- |
+| [nvidia / embed-qa-4](https://docs.api.nvidia.com/nim/reference/nvidia-embed-qa-4) | [Create embedding vector (embed-qa-4)](${infer}) |
+| [nvidia / embed-qa-retired](https://docs.api.nvidia.com/nim/reference/nvidia-embed-qa-retired) | [Create embedding vector (embed-qa-retired)](${retired}) |
+`,
+    })
+    const store = new Map<string, string>()
+    const kv = {
+      get: (key: string) => Promise.resolve(store.get(key) ?? null),
+      put: (key: string, value: string) => {
+        store.set(key, value)
+        return Promise.resolve()
+      },
+    } as KVNamespace
+    const first = await provider.listModels({}, kv)
+    const embed = first.models.find(
+      (model) => model.rawId === 'nvidia/embed-qa-4',
+    )
+    expect(embed?.activity).toBe('embeddings')
+    expect(embed?.absent).toEqual({
+      maxOutput: 'unavailable',
+      reasoning: 'unavailable',
+      schemaEndpointId: 'unavailable',
+    })
+    expect(first.docsFailures).toMatchObject({
+      failed: 1,
+      skipped: 0,
+      first: [
+        {
+          source: `${infer}.md`,
+          error: `nvidia: nvidia/embed-qa-4 has no published spec: ${infer}.md returned 404`,
+        },
+      ],
+    })
+    expect(
+      first.models.find((model) => model.rawId === glm)?.schemaEndpointId,
+    ).toBe(glm)
+    expect(urls.filter((url) => url === `${infer}.md`)).toHaveLength(1)
+    expect(urls).not.toContain(`${retired}.md`)
+    expect(urls).not.toContain(
+      'https://docs.api.nvidia.com/nim/reference/nvidia-embed-qa-4.md',
+    )
+    expect(urls).not.toContain(
+      'https://docs.api.nvidia.com/nim/reference/nvidia-embed-qa-4-infer.md',
+    )
+    expect(urls).not.toContain('https://build.nvidia.com/nvidia/embed-qa-4')
+    expect(urls).not.toContain(NVIDIA_SITEMAP_URL)
+
+    const second = await provider.listModels({}, kv)
+    expect(second.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
+    expect(
+      second.models.find((model) => model.rawId === 'nvidia/embed-qa-4')?.absent
+        ?.schemaEndpointId,
+    ).toBe('unavailable')
+    expect(urls.filter((url) => url === `${infer}.md`)).toHaveLength(1)
+
+    const spec = await provider.fetchSpec({})
+    expect(spec.bundledEndpoints?.map((endpoint) => endpoint.publicId)).toEqual(
+      [glm],
+    )
+    expect(spec.warnings?.join('\n')).toContain(
+      'nvidia/embed-qa-4 has no published spec',
+    )
+  })
 })
 
 it('reads hosted replay instructions rather than copying maker behavior', () => {
