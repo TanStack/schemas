@@ -1,5 +1,5 @@
 import { bodyText, requestUrl } from '#/lib/text.ts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { assertParsed } from '#/server/providers/model-facts.ts'
 
@@ -256,5 +256,22 @@ describe('posthog capture', () => {
       /parsed 0 model rows/,
     )
     expect(takeIngestEvents()).toEqual([])
+  })
+  it('logs each event as one JSON line, even with no PostHog key', async () => {
+    takeIngestEvents()
+    noteIngest(ingestFailedEvent('models-poll', 'nvidia', 'GET → 404'))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await captureIngestEvents(undefined)
+    expect(
+      log.mock.calls.map(([line]) => JSON.parse(String(line)) as unknown),
+    ).toEqual([
+      {
+        event: 'ingest_failed',
+        job: 'models-poll',
+        providerId: 'nvidia',
+        error: 'GET → 404',
+      },
+    ])
+    log.mockRestore()
   })
 })

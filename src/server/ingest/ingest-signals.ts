@@ -213,6 +213,10 @@ export async function captureIngestEvents(
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const events = takeIngestEvents()
+  // One JSON line per event, so Workers Logs can answer when PostHog can't.
+  for (const { event, properties } of events) {
+    console.log(JSON.stringify({ event, ...properties }))
+  }
   if (!apiKey || events.length === 0) return
   const colo = events.some((event) => event.event === 'ingest_failed')
     ? await traceColo(fetchImpl)
