@@ -113,7 +113,16 @@ describe('reactor listModels', () => {
                 rate: { amount_per_sec: 17, unit: 'credits' },
               },
               {
-                name: 'x2',
+                name: 'xmax/x2',
+                rate: {
+                  amount_per_sec: 17,
+                  amount_per_sec_usd: '0.0017',
+                  currency_code: 'USD',
+                  unit: 'credits',
+                },
+              },
+              {
+                name: 'reactor/xmax-x2-1',
                 rate: {
                   amount_per_sec: 17,
                   amount_per_sec_usd: '0.0017',
@@ -134,6 +143,8 @@ describe('reactor listModels', () => {
       const ids = result.models.map((m) => m.rawId)
       expect(ids).toContain('reactor/helios')
       expect(ids).toContain('x2')
+      expect(ids).not.toContain('xmax/x2')
+      expect(ids).toContain('reactor/xmax-x2-1')
       expect(ids).not.toContain('reactor/happy-oyster')
       expect(ids).toContain('reactor/happy-oyster-adventure')
       expect(new Set(ids).size).toBe(ids.length)
@@ -141,31 +152,34 @@ describe('reactor listModels', () => {
       expect(
         result.models.find((m) => m.rawId === 'reactor/helios')?.pricing,
       ).toBeUndefined()
+      const perSecond = {
+        price: { '*': [{ var: 'video_seconds' }, 0.0017] },
+      }
       expect(
         result.models.find((m) => m.rawId === 'x2')?.pricing,
-      ).toMatchObject({
-        price: { '*': [{ var: 'video_seconds' }, 0.0017] },
-      })
+      ).toMatchObject(perSecond)
+      expect(
+        result.models.find((m) => m.rawId === 'reactor/xmax-x2-1')?.pricing,
+      ).toMatchObject(perSecond)
     } finally {
       globalThis.fetch = original
     }
   })
 
-  it('falls back to the curated catalog when /pricing fails', async () => {
+  it('throws when /pricing fails or lists no models', async () => {
     const original = globalThis.fetch
-    globalThis.fetch = () =>
-      Promise.resolve(new Response('nope', { status: 500 }))
+    const bodies = ['nope', 'not json', JSON.stringify({ settings: {} })]
     try {
-      const result = await provider.listModels({})
-      expect(result.skipped).toBeUndefined()
-      expect(result.models.map((m) => m.rawId)).toEqual(
-        expect.arrayContaining([
-          'reactor/helios',
-          'reactor/fast-h3',
-          'x2',
-          'reactor/happy-oyster-director',
-        ]),
-      )
+      for (const body of bodies) {
+        globalThis.fetch = () =>
+          Promise.resolve(
+            new Response(body, {
+              status: body === 'nope' ? 500 : 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+          )
+        await expect(provider.listModels({})).rejects.toThrow(/pricing|fetch/)
+      }
     } finally {
       globalThis.fetch = original
     }
