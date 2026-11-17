@@ -6,6 +6,7 @@
   },
   "ignorePatterns": [
     "src/routeTree.gen.ts",
+    ".source/**",
     "packages/*/dist/**",
     "packages/client/src/generated/**",
     "examples/*/src/routeTree.gen.ts",

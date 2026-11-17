@@ -6,6 +6,8 @@ pre-commit:
       run: pnpm exec oxfmt --check {staged_files}
     - name: lint
       glob: '*.{js,ts,tsx}'
+      # Source workflows import @tanstack-source/ci, which only the forge has.
+      exclude: ['.source/**']
       run: pnpm exec oxlint --type-aware {staged_files}
     - name: typecheck
       run: pnpm run typecheck
