@@ -42,6 +42,28 @@ Below are the prices **per 1M tokens**.
 ## Privacy
 `
 
+/** The three live Image pricing rows (issue #100007), on the fixture page. */
+const IMAGE_PAGE = PAGE.replace(
+  '| Pickle          | pickle       |',
+  `| GPT Image 2.5 Sunburst | gpt-image-2.5-sunburst | \`https://opencode.ai/inference/openai/v1/images/generations\` | \`@ai-sdk/openai\` |
+| Nano Banana 2.1        | gemini-nano-banana-2.1 | \`https://opencode.ai/inference/google/v1beta/models/gemini-nano-banana-2.1:generateContent\` | \`@ai-sdk/google\` |
+| Grok Imagine Image 2.0 | grok-imagine-image-2.0 | \`https://opencode.ai/inference/xai/v1/images/generations\` | \`@ai-sdk/xai\` |
+| Pickle          | pickle       |`,
+).replace(
+  '\n## Privacy\n',
+  `
+### Image pricing
+
+| Model                  | Price                                | Notes                                                                                        |
+| ---------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------- |
+| GPT Image 2.5 Sunburst | $1.00 / image                        | Plus $8 / $30 per 1M input / output tokens, and $2 per 1M cached input tokens.              |
+| Nano Banana 2.1        | $1.50 / $7.50 / $30.00 per 1M tokens | Input / text output / image output. About $0.034 per 1K image, $0.050 per 2K, $0.113 per 4K. |
+| Grok Imagine Image 2.0 | $0.04 / image                        | $0.01 per input image; quality and resolution can raise the output price to $0.05\u2013$0.08. |
+
+## Privacy
+`,
+)
+
 const doc = (text: string) => ({
   text,
   hash: 'a'.repeat(64),
@@ -93,6 +115,77 @@ describe('parseOpenCodePricing', () => {
     expect(
       price(card('pickle'), {}, { input_tokens: 10, output_tokens: 10 }),
     ).toBe(0)
+  })
+
+  it('prices the three image rows and leaves an unruled band out', () => {
+    const cards = parseOpenCodePricing(doc(IMAGE_PAGE))
+    expect(cards.has('opus')).toBe(true)
+    const sun = cards.get('gpt-image-2.5-sunburst') as Card
+    const banana = cards.get('gemini-nano-banana-2.1') as Card
+    const grok = cards.get('grok-imagine-image-2.0') as Card
+    expect(sun.tables.rate).toEqual({
+      base: {
+        input_tokens: 8 / 1e6,
+        output_tokens: 30 / 1e6,
+        cache_read_tokens: 2 / 1e6,
+      },
+    })
+    expect(sun.inputs.num_images).toEqual({
+      param: 'num_images',
+      bound: 'usage',
+      kind: 'number',
+    })
+    // $1.00 per image plus $8 / $30 / $2 per 1M tokens.
+    expect(
+      price(
+        sun,
+        {},
+        {
+          num_images: 1,
+          input_tokens: 1_000_000,
+          output_tokens: 1_000_000,
+          cache_read_tokens: 1_000_000,
+        },
+      ),
+    ).toBeCloseTo(41)
+    expect(
+      price(sun, {}, { num_images: 2, input_tokens: 0, output_tokens: 0 }),
+    ).toBeCloseTo(2)
+    expect(banana.tables.rate).toEqual({
+      base: {
+        input_tokens: 1.5 / 1e6,
+        output_tokens: 7.5 / 1e6,
+        image_output_tokens: 30 / 1e6,
+      },
+    })
+    // The "About $0.034 per 1K" clause is not a resolution price.
+    expect(banana.inputs).not.toHaveProperty('resolution')
+    expect(
+      price(
+        banana,
+        {},
+        {
+          input_tokens: 1_000_000,
+          output_tokens: 1_000_000,
+          image_output_tokens: 1_000_000,
+        },
+      ),
+    ).toBeCloseTo(39)
+    expect(Object.keys(grok.inputs).sort()).toEqual([
+      'input_images',
+      'num_images',
+    ])
+    expect(grok.inputs.input_images).toMatchObject({ default: 0 })
+    // $0.04 per image and $0.01 per input image. $0.05–$0.08 is not applied.
+    expect(price(grok, {}, { num_images: 1 })).toBeCloseTo(0.04)
+    expect(price(grok, {}, { num_images: 1, input_images: 1 })).toBeCloseTo(
+      0.05,
+    )
+    expect(price(grok, {}, { num_images: 2, input_images: 3 })).toBeCloseTo(
+      0.11,
+    )
+    expect(grok.inputs).not.toHaveProperty('quality')
+    expect(grok.inputs).not.toHaveProperty('resolution')
   })
 
   it.each([
@@ -151,6 +244,59 @@ describe('parseOpenCodePricing', () => {
       'no Pricing section',
       PAGE.replace('## Pricing', '## Prices'),
       /has no Pricing/,
+    ],
+    [
+      'an image endpoint with no image price',
+      PAGE.replace(
+        '| Pickle          | pickle       |',
+        '| Sunburst        | sunburst     | `https://opencode.ai/inference/openai/v1/images/generations` | `@ai-sdk/openai` |\n| Pickle          | pickle       |',
+      ),
+      /Sunburst has an endpoint but no price row/,
+    ],
+    [
+      'an unreadable image price',
+      IMAGE_PAGE.replace('$1.00 / image', '$1.00 / picture'),
+      /unreadable image price row GPT Image 2.5 Sunburst/,
+    ],
+    [
+      'a resolution schedule instead of an approximation',
+      IMAGE_PAGE.replace(
+        'About $0.034 per 1K image, $0.050 per 2K, $0.113 per 4K.',
+        '1K is $0.034, 2K is $0.050 and 4K is $0.113.',
+      ),
+      /unreadable image price row Nano Banana 2.1/,
+    ],
+    [
+      'a quality rule instead of an unruled band',
+      IMAGE_PAGE.replace(
+        'quality and resolution can raise the output price to $0.05\u2013$0.08.',
+        'low quality is $0.05 and high quality is $0.08.',
+      ),
+      /unreadable image price row Grok Imagine Image 2.0/,
+    ],
+    [
+      'an image price naming no id',
+      IMAGE_PAGE.replace(
+        '| GPT Image 2.5 Sunburst | gpt-image-2.5-sunburst |',
+        '| GPT Image 9 | gpt-image-2.5-sunburst |',
+      ),
+      /price row GPT Image 2.5 Sunburst names no model id/,
+    ],
+    [
+      'an image model priced in both tables',
+      IMAGE_PAGE.replace(
+        '| Pickle                            | Free',
+        '| GPT Image 2.5 Sunburst            | $1.00           | $1.00           | -               | -            |\n| Pickle                            | Free',
+      ),
+      /GPT Image 2.5 Sunburst is priced twice/,
+    ],
+    [
+      'a changed image header',
+      IMAGE_PAGE.replace(
+        '| Price                                |',
+        '| Cost                                 |',
+      ),
+      /Image pricing header changed/,
     ],
     [
       'an empty table',
