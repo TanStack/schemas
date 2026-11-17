@@ -529,7 +529,9 @@ Do not add `NPM_TOKEN` / `NODE_AUTH_TOKEN` to GitHub Secrets. Token
      page) → a docs page stopped loading or changed shape. Polls go on and
      `status` stays as it was; the docs-derived facts are frozen at their
      stored values. `sources` and `error` name the page: fix its parser in
-     the provider's adapter. The next poll whose docs all load clears it.
+     the provider's adapter. The next poll that reports no docs failures
+     clears it, including one whose adapter no longer loads docs. A
+     skipped listing leaves it.
    - `priceClearsRefused` on a `/v1/status` provider (a `prices` marker) →
      a poll asked to clear `refused` of `priced` stored prices and none was
      cleared. Either the adapter misreads a reshaped listing (fix it), or

@@ -695,22 +695,29 @@ export async function pollProviderModels(
   // A docs source that failed does not fail the poll: its rows carry
   // `absent: unavailable` and keep what is stored. Every failing poll says
   // so again, here and in the outcome, so an outage never goes quiet.
+  // No `docsFailures` is a healthy run. An adapter that stopped loading
+  // docs (OpenCode Go after #676 returns `{ models }` only) must still
+  // delete its old `docs-failing` row. A skipped listing returned above
+  // and leaves the record alone.
   const docs = listed.docsFailures
-  if (docs) {
+  try {
     // Kept across polls (`docs-failing.ts`): when it began, how long.
     // The record describes the poll; it must never be what fails it.
-    try {
-      const failing = await recordDocsFailing(db, provider.id, docs, now)
-      if (failing) outcome.docsFailing = failing
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          job: 'models-poll',
-          providerId: provider.id,
-          error: `docs-failing record not written: ${errorMessage(error)}`,
-        }),
-      )
-    }
+    const failing = await recordDocsFailing(
+      db,
+      provider.id,
+      docs ?? { failed: 0, skipped: 0, first: [] },
+      now,
+    )
+    if (failing) outcome.docsFailing = failing
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        job: 'models-poll',
+        providerId: provider.id,
+        error: `docs-failing record not written: ${errorMessage(error)}`,
+      }),
+    )
   }
   if (docs && docs.failed + docs.skipped > 0) {
     outcome.docsFailures = docs
