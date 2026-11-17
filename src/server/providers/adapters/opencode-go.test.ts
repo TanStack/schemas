@@ -11,6 +11,7 @@ const LISTING = {
     id,
     object: 'model',
     owned_by: 'opencode',
+    go: { training: id === 'mini' },
   })),
 }
 
@@ -114,10 +115,11 @@ describe('opencode-go', () => {
       schemaEndpointId: 'inference/go/anthropic/v1/messages',
     })
     expect(byId.mini?.factSources?.trainsOnRequestData).toMatchObject({
-      derivation: 'docs-derived',
-      sourceUrl: 'https://opencode.ai/docs/console/go/',
-      path: 'Privacy',
+      derivation: 'listing',
+      sourceUrl: OPENCODE_GO_MODELS_URL,
+      path: 'go.training',
     })
+    expect(byId.kimi?.absent?.trainsOnRequestData).toBeUndefined()
     expect(byId.kimi?.trainsOnRequestData).toBeNull()
     expect(byId.gpt?.trainsOnRequestData).toBeNull()
     expect(byId.mini?.factSources?.schemaEndpointId).toMatchObject({
@@ -170,7 +172,6 @@ describe('opencode-go', () => {
     expect(spec.specs[0]?.paths?.['/v1/messages']).toBeUndefined()
     expect(urls.filter((url) => url.includes('/docs/'))).toEqual([
       OPENCODE_GO_ROUTE_DOCS_URL,
-      OPENCODE_GO_ROUTE_DOCS_URL,
     ])
     expect(urls).toContain(OPENCODE_GO_MODELS_URL)
     expect(urls).toContain(OPENCODE_CATALOG_URL)
@@ -208,11 +209,17 @@ describe('opencode-go', () => {
             JSON.stringify({
               object: 'list',
               data: [
-                { id: 'gemini', object: 'model', owned_by: 'opencode' },
+                {
+                  id: 'gemini',
+                  object: 'model',
+                  owned_by: 'opencode',
+                  go: { training: false },
+                },
                 {
                   id: 'gemini-4-argon-contributor',
                   object: 'model',
                   owned_by: 'opencode',
+                  go: { training: false },
                 },
               ],
             }),
@@ -283,5 +290,22 @@ describe('opencode-go', () => {
       )
     }) as typeof fetch
     await expect(provider.listModels({})).rejects.toThrow(/classified 0/)
+  })
+
+  it('throws when a listed id has no go.training boolean', async () => {
+    stubFetch()
+    const fetchListing = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (String(url) !== OPENCODE_GO_MODELS_URL) return fetchListing(url, init)
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [{ id: 'mini', object: 'model', owned_by: 'opencode' }],
+          }),
+        ),
+      )
+    }) as typeof fetch
+    await expect(provider.listModels({})).rejects.toThrow(/go\.training/)
   })
 })

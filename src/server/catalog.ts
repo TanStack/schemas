@@ -123,8 +123,8 @@ function modelFactSources(
   const stored = (row.factSources as ModelFactSources | null) ?? null
   const go = openCodeGoFacts(row.providerId, row.rawId).factSources
   const withGo = Object.keys(go).length === 0 ? stored : { ...stored, ...go }
-  // A privacy-table yes is stored on the row and wins over the probe.
-  // A probe still fills an id the table does not name.
+  // A listing yes is stored on the row and wins over the probe.
+  // A probe still fills an id the listing does not name.
   const trainingSource =
     row.trainsOnRequestData === true && stored?.trainsOnRequestData
       ? stored.trainsOnRequestData

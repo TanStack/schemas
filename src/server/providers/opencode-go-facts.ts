@@ -1,9 +1,8 @@
 /**
  * Facts OpenCode publishes for every Go request, plus training on request
- * data where the Go privacy table names that id (issue #463). A probe
- * record still states it for an id the table does not mention.
+ * data. The live models list states it as `go.training` (issue #675). A
+ * probe record still states it for an id the list does not mention.
  */
-import { markdownSection, markdownTableRows } from './model-facts.ts'
 import { requiredHeaderParameters } from './connect.ts'
 import { probesFor } from './probes/index.ts'
 import type { FactSource, ModelFactSources, RequiredHeader } from './types.ts'
@@ -40,48 +39,33 @@ const HEADER_SOURCE: FactSource = {
   path: 'Where can I use it?',
 }
 
-function cellId(cell: string | undefined): string {
-  return (cell ?? '').replace(/^`|`$/g, '').trim()
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
- * Privacy table joined to the Endpoints table on the model name.
- * `true` is "Yes". `false` is "Not used". Throws when a section, a row,
- * or a training cell is not the shape the page publishes.
+ * `go.training` on each id of `GET /v1/models` for Go. That boolean is what
+ * https://opencode.ai/console/go#privacy shows. `true` trains. `false` is a
+ * stated no. Throws when a listed id has no boolean: a missing field is an
+ * unknown shape, not an unstated fact.
  */
-export function parseGoTraining(text: string): Map<string, boolean> {
-  const endpoints = markdownSection(text, 'Endpoints')
-  const privacy = markdownSection(text, 'Privacy')
-  if (endpoints === '' || privacy === '') {
-    throw new Error('opencode-go: go docs have no Endpoints or Privacy section')
-  }
-  const ids = new Map<string, string>()
-  for (const cells of markdownTableRows(endpoints)) {
-    if (cells[0] === 'Model') continue
-    const name = cells[0]
-    const id = cellId(cells[1])
-    if (!name || id === '') continue
-    ids.set(name, id)
+export function goTrainsOnRequestData(payload: unknown): Map<string, boolean> {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw new Error('opencode-go: models payload has no data array')
   }
   const training = new Map<string, boolean>()
-  for (const cells of markdownTableRows(privacy)) {
-    if (cells[0] === 'Model') continue
-    const name = cells[0]
-    const stated = cells[1]
-    if (!name) continue
-    if (stated !== 'Yes' && stated !== 'Not used') {
-      throw new Error(
-        `opencode-go: privacy training cell ${JSON.stringify(stated)} for ${name}`,
-      )
+  for (const row of payload.data) {
+    if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
+      continue
     }
-    const id = ids.get(name)
-    if (!id) {
-      throw new Error(`opencode-go: privacy model ${name} has no endpoint id`)
+    const go = row.go
+    if (!isRecord(go) || typeof go.training !== 'boolean') {
+      throw new Error(`opencode-go: ${row.id} has no go.training boolean`)
     }
-    training.set(id, stated === 'Yes')
+    training.set(row.id, go.training)
   }
   if (training.size === 0) {
-    throw new Error('opencode-go: privacy table names no models')
+    throw new Error('opencode-go: models payload listed no ids')
   }
   return training
 }

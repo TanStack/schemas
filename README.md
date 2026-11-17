@@ -152,10 +152,11 @@ only: the row's price, limits, and other facts stay its own provider's.
   ([Go docs](https://opencode.ai/docs/console/go/), "Where can I use it?"). The
   same headers are parameters on each Go operation.
 - `trainsOnRequestData` (`true | null`): true when that model's own source
-  states it trains on request data. OpenCode Go reads the Privacy table
-  (Yes). An id that table does not name can still be true from that id's
-  probe record. Null when the table says Not used, or no source states it.
-  Never inferred from an id suffix.
+  states it trains on request data. OpenCode Go reads `go.training` on
+  `GET https://opencode.ai/inference/go/v1/models` (the boolean the console
+  privacy view shows). An id that list does not name can still be true from
+  that id's probe record. Null when `go.training` is false, or no source
+  states it. Never inferred from an id suffix or from a retention period.
 
 `knowledgeCutoff` and `openWeights` are null on every row until provider
 adapters fill them. A row's first `releasedAt` and first `providerMetadata`
