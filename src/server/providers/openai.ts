@@ -13,7 +13,7 @@ import {
 } from './model-meta.ts'
 import { docsReport, docsRun } from './model-facts.ts'
 import { openaiModelFacts } from './openai-model-docs.ts'
-import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
+import { fetchOpenApi, fetchWithRetry, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiOperation,
@@ -81,9 +81,12 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('openai', 'OPENAI_API_KEY') }
   }
-  const body = (await fetchJson(OPENAI_MODELS_URL, {
-    headers: { Authorization: `Bearer ${key}` },
-  })) as OpenAiModelList
+  // One transient 504 on the listing used to sink the whole poll (#100004).
+  const body = await fetchWithRetry(
+    OPENAI_MODELS_URL,
+    () => ({ headers: { Authorization: `Bearer ${key}` } }),
+    async (response) => (await response.json()) as OpenAiModelList,
+  )
   const listed = body.data ?? []
   const docs = docsRun()
   // developers.openai.com answered 403 to docs loads from Cloudflare's hkg1
