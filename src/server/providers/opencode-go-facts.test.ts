@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { goTrainsOnRequestData, openCodeGoFacts } from './opencode-go-facts.ts'
+import {
+  goListingRoutes,
+  goTrainsOnRequestData,
+  openCodeGoFacts,
+} from './opencode-go-facts.ts'
 
 describe('openCodeGoFacts', () => {
   it('requires the session header and User-Agent on every Go row', () => {
@@ -56,5 +60,78 @@ describe('goTrainsOnRequestData', () => {
         data: [{ id: 'grok-4.7', go: { training: '30 days' } }],
       }),
     ).toThrow(/grok-4\.7/)
+  })
+})
+
+describe('goListingRoutes', () => {
+  it('reads routes from api.protocol.base_url and ignores other listing facts', () => {
+    const routes = goListingRoutes({
+      object: 'list',
+      data: [
+        {
+          id: 'deepseek-v4.1-flash',
+          cost: { input: 0.3, output: 1.2 },
+          limit: { context: 128000, output: 8192 },
+          capabilities: { tools: true },
+          api: {
+            'chat-completions': {
+              base_url: 'https://opencode.ai/inference/go/openai/v1',
+              sdk: {
+                aisdk: '@ai-sdk/openai-compatible',
+                opencodeai: '@opencode/ai/providers/openai-compatible',
+              },
+            },
+          },
+        },
+        {
+          id: 'grok-4.7',
+          api: {
+            responses: {
+              base_url: 'https://opencode.ai/inference/go/openai/v1/',
+              sdk: { aisdk: '@ai-sdk/openai' },
+            },
+          },
+        },
+        {
+          id: 'gemini-4-argon',
+          api: {
+            'generate-content': {
+              base_url: 'https://opencode.ai/inference/go/google/v1beta',
+              sdk: { aisdk: '@ai-sdk/google' },
+              capabilities: { tools: { choice: ['auto'] } },
+            },
+          },
+        },
+      ],
+    })
+    expect(routes).toEqual([
+      '/inference/go/google/v1beta/models/gemini-4-argon:generateContent',
+      '/inference/go/openai/v1/chat/completions',
+      '/inference/go/openai/v1/responses',
+    ])
+  })
+
+  it('throws when api is missing or the protocol key is unknown', () => {
+    expect(() =>
+      goListingRoutes({
+        object: 'list',
+        data: [{ id: 'grok-4.7', go: { training: false } }],
+      }),
+    ).toThrow('opencode-go: grok-4.7 has no api entry')
+    expect(() =>
+      goListingRoutes({
+        object: 'list',
+        data: [
+          {
+            id: 'grok-4.7',
+            api: {
+              embeddings: {
+                base_url: 'https://opencode.ai/inference/go/openai/v1',
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('opencode-go: grok-4.7 has unknown api protocol embeddings')
   })
 })

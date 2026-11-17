@@ -94,7 +94,8 @@ function schemaEndpointId(
 ): string | null {
   const suffix = PACKAGE_SUFFIX[npm]?.(id) ?? null
   if (!suffix) return null
-  // go.mdx lists the base path and no method. Bind only an exact probe record.
+  // The models list names `generate-content` without choosing Google's
+  // method. Bind only an exact probe record.
   if (provider === 'opencode-go' && npm === '@ai-sdk/google') {
     return probedRoute(provider, id)
   }

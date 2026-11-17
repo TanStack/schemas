@@ -1,6 +1,10 @@
 /** Native OpenCode routes, with unpublished request/response schemas absent. */
 import { markdownSection, markdownTableRows } from './model-facts.ts'
-import { openCodeGoHeaderParameters } from './opencode-go-facts.ts'
+import {
+  goListingRoutes,
+  OPENCODE_GO_MODELS_URL,
+  openCodeGoHeaderParameters,
+} from './opencode-go-facts.ts'
 import { probesFor } from './probes/index.ts'
 import { fetchText, PROVENANCE_MARKER, sha256Text } from './types.ts'
 import type {
@@ -15,8 +19,6 @@ const DOCS_ROOT =
   'https://raw.githubusercontent.com/anomalyco/opencode/dev/services/site/src/docs/content/console/'
 /** Source of https://opencode.ai/docs/console/api/inference/: Zen's Endpoints table. */
 export const OPENCODE_ROUTE_DOCS_URL = `${DOCS_ROOT}api/inference.mdx`
-/** Source of https://opencode.ai/docs/console/go/: Go's per-model Endpoints table. */
-export const OPENCODE_GO_ROUTE_DOCS_URL = `${DOCS_ROOT}go.mdx`
 const ORIGIN = 'https://opencode.ai'
 
 interface RouteRow {
@@ -37,6 +39,17 @@ export function documentedRoutes(text: string, url: string): Array<string> {
   if (routes.length === 0)
     throw new Error(`opencode: ${url} documents no endpoint paths`)
   return routes
+}
+
+/** Go routes from a models-list body. */
+function listingRoutes(text: string, url: string): Array<string> {
+  let payload: unknown
+  try {
+    payload = JSON.parse(text) as unknown
+  } catch {
+    throw new Error(`opencode-go: ${url} is not JSON`)
+  }
+  return goListingRoutes(payload)
 }
 
 /** A documented path as a matcher for a stored path. A `<placeholder>` matches one path segment. */
@@ -84,10 +97,18 @@ export async function openCodeRouteSpec(
   }
   if (routes.length === 0)
     throw new Error('opencode: catalog names no verified chat routes')
-  const url = go ? OPENCODE_GO_ROUTE_DOCS_URL : OPENCODE_ROUTE_DOCS_URL
+  // Zen still publishes an Endpoints table. Go's page points at the models
+  // list: each row's `api.<protocol>.base_url` is the route (issue #679).
+  const url = go ? OPENCODE_GO_MODELS_URL : OPENCODE_ROUTE_DOCS_URL
   const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
-  const documented = documentedRoutes(text, url).map(routePattern)
-  const method = { url, hash: await sha256Text(text) }
+  const stated = go ? listingRoutes(text, url) : documentedRoutes(text, url)
+  const documented = stated.map(routePattern)
+  // Hash the route list, not the whole models payload. Cost, limits, and
+  // capabilities ride on the same rows and are not part of this document.
+  const method = {
+    url,
+    hash: await sha256Text(go ? stated.join('\n') : text),
+  }
   const headers = go ? openCodeGoHeaderParameters() : undefined
   const paths: NonNullable<OpenApiDocument['paths']> = {}
   for (const path of routes) {
@@ -98,8 +119,11 @@ export async function openCodeRouteSpec(
       }
       continue
     }
-    if (!documented.some((pattern) => pattern.test(path)))
-      throw new Error(`opencode: ${url} documents no ${path} route`)
+    if (!documented.some((pattern) => pattern.test(path))) {
+      const verb = go ? 'states' : 'documents'
+      const tag = go ? 'opencode-go' : 'opencode'
+      throw new Error(`${tag}: ${url} ${verb} no ${path} route`)
+    }
     paths[path] = {
       post: {
         [ROUTE_ONLY_MARKER]: true,
