@@ -169,7 +169,11 @@ ones).
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). An id that page
   names nowhere is `cleared` (the "Retiring models" tables left it on
-  2026-11-12, #646); one it names but no table prices keeps its card. FAL cards come from `extract-fal-pricing.ts`:
+  2026-11-12, #646); one it names but no table prices keeps its card. Seed
+  Speech cards come from the voice billing pages
+  (`byteplus-speech-pricing.ts`): Seed Audio bills the response's
+  `original_duration` and estimates it at the published 120 second
+  maximum; `seed-asr` is the "Audio File ASR Fast Mode" rate. FAL cards come from `extract-fal-pricing.ts`:
   `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no
   model call, leftovers go to one extract model per distinct Pricing-section
   hash and are copied onto every row sharing it. A priced leftover must

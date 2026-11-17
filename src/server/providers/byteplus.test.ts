@@ -19,6 +19,11 @@ import {
   BYTEPLUS_VIDEO_GUIDE_URL,
   compileSeedreamProCard,
 } from './byteplus-pricing.ts'
+import {
+  BYTEPLUS_ASR_PRICING_URL,
+  BYTEPLUS_AUDIO_API_URL,
+  BYTEPLUS_AUDIO_PRICING_URL,
+} from './byteplus-speech-pricing.ts'
 import { SEEDANCE_DURATION_DOCS } from './byteplus-video-duration.ts'
 import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
 import { pricingDoc, routerHtml } from './fixtures/byteplus-pricing-doc.ts'
@@ -87,6 +92,25 @@ const DOC_FIXTURES: Record<string, () => string> = {
   [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
   [BYTEPLUS_REASONING_URL]: reasoningFixtureHtml,
   [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
+  [BYTEPLUS_AUDIO_PRICING_URL]: () =>
+    docFixtureHtml([
+      [
+        ['Payment', 'Package', 'Fee (USD)', 'Unit', 'Valid Period'],
+        ['Pay-as-you-go', '-', '0.15', 'minute', '-'],
+      ],
+    ]),
+  [BYTEPLUS_AUDIO_API_URL]: () =>
+    docFixtureHtml([
+      'This is also the duration used for billing, with a maximum of 120s.',
+    ]),
+  [BYTEPLUS_ASR_PRICING_URL]: () =>
+    docFixtureHtml([
+      'Audio File ASR Fast Mode:',
+      [
+        ['Payment', 'Package', 'Fee (USD)', 'Unit', 'Valid Period'],
+        ['Pay-as-you-go', '-', '0.36', 'USD / Hour', '-'],
+      ],
+    ]),
 }
 
 const PRICING_TABLES: Array<PricingTable> = [
@@ -483,6 +507,40 @@ describe('byteplus pricing pages failing', () => {
   })
 })
 
+describe('byteplus Seed Speech cards (#672)', () => {
+  it('prices both rows from the voice billing pages', async () => {
+    const { models } = await listWith({})
+    const audio = models.find((m) => m.rawId === 'seed-audio-1.0')
+    expect(audio?.absent?.pricing).toBeUndefined()
+    expect(audio?.pricing).toMatchObject({
+      inputs: {
+        original_duration: {
+          bound: 'usage',
+          estimate: { value: 120, source: { url: BYTEPLUS_AUDIO_API_URL } },
+        },
+      },
+      source: { url: BYTEPLUS_AUDIO_PRICING_URL },
+    })
+    expect(models.find((m) => m.rawId === 'seed-asr')?.pricing).toMatchObject({
+      inputs: { audio_seconds: { bound: 'usage' } },
+      source: { url: BYTEPLUS_ASR_PRICING_URL },
+    })
+  })
+
+  it('keeps the stored card and reports the page when one is down', async () => {
+    const { models, docsFailures } = await listWith({
+      [BYTEPLUS_AUDIO_API_URL]: null,
+    })
+    const audio = models.find((m) => m.rawId === 'seed-audio-1.0')
+    expect(audio?.pricing).toBeFalsy()
+    expect(audio?.absent?.pricing).toBe('unavailable')
+    expect(docsFailures?.first.map((f) => f.source)).toContain(
+      BYTEPLUS_AUDIO_API_URL,
+    )
+    expect(models.find((m) => m.rawId === 'seed-asr')?.pricing).toBeTruthy()
+  })
+})
+
 describe('byteplus ids the pricing page no longer names (#646)', () => {
   // 2026-11-12: the page dropped its "Retiring models" tables. Eight listed
   // ids (seed-1-8-251228, glm-4-7-251222, …) are named nowhere on it.
@@ -619,9 +677,9 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
     expect(priced('seedream-5-0-260128')).toMatchObject({
       inputs: { generated_images: { bound: 'usage' } },
     })
-    // No speech table on the ModelArk pricing page.
-    expect(priced('seed-asr')).toBeUndefined()
-    expect(priced('seed-audio-1.0')).toBeUndefined()
+    // Seed Speech is priced from the voice billing pages (#672).
+    expect(priced('seed-asr')).toBeTruthy()
+    expect(priced('seed-audio-1.0')).toBeTruthy()
     // Undated Seed Speech ids keep their poll-time firstSeenAt.
     const asr = models.find((m) => m.rawId === 'seed-asr')
     expect(asr?.releasedAt).toBeNull()
