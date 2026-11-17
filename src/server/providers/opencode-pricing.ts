@@ -33,10 +33,10 @@ const TOKEN_TRIPLE =
 const TOKEN_TRIPLE_NOTES =
   /^Input \/ text output \/ image output\.(?: About \$\d+(?:\.\d+)? per 1K image, \$\d+(?:\.\d+)? per 2K, \$\d+(?:\.\d+)? per 4K\.)?$/
 /**
- * Per output image, plus per input image. The raised band has no quality
- * or resolution rule, so those amounts are not a rate.
+ * A floor per image, a per-input-image fee, and a higher output band with
+ * no quality or resolution rule. That row is unverified: no card.
  */
-const INPUT_IMAGE_NOTES =
+const UNRULED_BAND_NOTES =
   /^\$(\d+(?:\.\d+)?) per input image; quality and resolution can raise the output price to \$(\d+(?:\.\d+)?)(?:–|-)\$(\d+(?:\.\d+)?)\.$/
 
 export interface OpenCodePricingDoc {
@@ -126,49 +126,21 @@ function addPerImage(card: RateCard, usdEach: number): RateCard {
   }
 }
 
-/**
- * Output images at the stated per-image price, plus input images. The
- * notes' raised band is checked and then dropped: the page gives no rule
- * that turns quality or resolution into one of those amounts.
- */
-function perImageAndInput(
-  outputEach: number,
-  inputEach: number,
-  source: RateCard['source'],
-): RateCard {
-  return {
-    inputs: {
-      num_images: { param: 'num_images', bound: 'usage', kind: 'number' },
-      input_images: {
-        param: 'input_images',
-        bound: 'usage',
-        kind: 'number',
-        default: 0,
-      },
-    },
-    tables: {},
-    price: {
-      '+': [
-        { '*': [{ var: 'num_images' }, outputEach] },
-        { '*': [{ var: 'input_images' }, inputEach] },
-      ],
-    },
-    examples: [],
-    source,
-  }
-}
-
 function imageRowUnreadable(name: string): Error {
   return new Error(`opencode: unreadable image price row ${name}`)
 }
 
-/** One Image pricing row. A shape this does not recognise throws. */
+/**
+ * One Image pricing row. A shape this does not recognise throws.
+ * `'unverified'` is an explicit absence: the row was read, and no card
+ * is stored because a price would be a fallback.
+ */
 function compileImagePrice(
   name: string,
   priceCell: string,
   notes: string,
   source: RateCard['source'],
-): RateCard {
+): RateCard | 'unverified' {
   const triple = TOKEN_TRIPLE.exec(priceCell)
   if (triple) {
     if (!TOKEN_TRIPLE_NOTES.test(notes)) throw imageRowUnreadable(name)
@@ -185,7 +157,6 @@ function compileImagePrice(
   }
   const each = PER_IMAGE.exec(priceCell)
   if (!each) throw imageRowUnreadable(name)
-  const perImage = Number(each[1])
   const withTokens = IMAGE_TOKEN_NOTES.exec(notes)
   if (withTokens) {
     return addPerImage(
@@ -199,17 +170,19 @@ function compileImagePrice(
         name,
         source,
       ),
-      perImage,
+      Number(each[1]),
     )
   }
-  const withInput = INPUT_IMAGE_NOTES.exec(notes)
-  if (!withInput) throw imageRowUnreadable(name)
-  const low = Number(withInput[2])
-  const high = Number(withInput[3])
-  // A band with no quality or resolution rule is not a rate. Either end,
-  // or a point between them, would be a price the page does not state.
+  const unruled = UNRULED_BAND_NOTES.exec(notes)
+  if (!unruled) throw imageRowUnreadable(name)
+  const low = Number(unruled[2])
+  const high = Number(unruled[3])
   if (!(low < high)) throw imageRowUnreadable(name)
-  return perImageAndInput(perImage, Number(withInput[1]), source)
+  // The floor and the per-input-image fee are stated, and so is a higher
+  // output band. Nothing maps quality or resolution onto that band, so a
+  // card at $0.04 would bill every request at a price the page says can
+  // be higher. Same outcome as a FAL extract that returns unverified.
+  return 'unverified'
 }
 
 /** Cells of the first markdown table under `##` or `### <heading>`. `###` may be absent. */
@@ -355,16 +328,24 @@ export function parseOpenCodePricing(
       : []
     cards.set(id, compileOpenCodeCost(row.base, tiers, id, source))
   }
+  const imagePriced = new Set<string>()
+  const unverified = new Set<string>()
   for (const [name, cells] of imageRows) {
     const id = idByName.get(name)
     if (!id) throw new Error(`opencode: price row ${name} names no model id`)
-    cards.set(id, compileImagePrice(name, cells.price, cells.notes, source))
+    const card = compileImagePrice(name, cells.price, cells.notes, source)
+    if (card === 'unverified') unverified.add(name)
+    else {
+      imagePriced.add(name)
+      cards.set(id, card)
+    }
   }
   // The Endpoints table names the model set. A price table that ends early
   // (a blank line, a split table) would otherwise clear the rows after it.
   // An image model is priced in Image pricing, not in the token table.
+  // An unverified image row is an explicit absence, not a missing row.
   for (const name of idByName.keys()) {
-    if (!rows.has(name) && !imageRows.has(name)) {
+    if (!rows.has(name) && !imagePriced.has(name) && !unverified.has(name)) {
       throw new Error(`opencode: ${name} has an endpoint but no price row`)
     }
   }

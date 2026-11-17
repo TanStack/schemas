@@ -117,12 +117,14 @@ describe('parseOpenCodePricing', () => {
     ).toBe(0)
   })
 
-  it('prices the three image rows and leaves an unruled band out', () => {
+  it('prices stated image rows and stores no card for an unruled band', () => {
     const cards = parseOpenCodePricing(doc(IMAGE_PAGE))
     expect(cards.has('opus')).toBe(true)
     const sun = cards.get('gpt-image-2.5-sunburst') as Card
     const banana = cards.get('gemini-nano-banana-2.1') as Card
-    const grok = cards.get('grok-imagine-image-2.0') as Card
+    // $0.04 is the floor. Quality and resolution can raise it to $0.05–$0.08
+    // with no rule, so the row is unverified rather than billed at $0.04.
+    expect(cards.has('grok-imagine-image-2.0')).toBe(false)
     expect(sun.tables.rate).toEqual({
       base: {
         input_tokens: 8 / 1e6,
@@ -171,21 +173,6 @@ describe('parseOpenCodePricing', () => {
         },
       ),
     ).toBeCloseTo(39)
-    expect(Object.keys(grok.inputs).sort()).toEqual([
-      'input_images',
-      'num_images',
-    ])
-    expect(grok.inputs.input_images).toMatchObject({ default: 0 })
-    // $0.04 per image and $0.01 per input image. $0.05–$0.08 is not applied.
-    expect(price(grok, {}, { num_images: 1 })).toBeCloseTo(0.04)
-    expect(price(grok, {}, { num_images: 1, input_images: 1 })).toBeCloseTo(
-      0.05,
-    )
-    expect(price(grok, {}, { num_images: 2, input_images: 3 })).toBeCloseTo(
-      0.11,
-    )
-    expect(grok.inputs).not.toHaveProperty('quality')
-    expect(grok.inputs).not.toHaveProperty('resolution')
   })
 
   it.each([
@@ -265,6 +252,11 @@ describe('parseOpenCodePricing', () => {
         '1K is $0.034, 2K is $0.050 and 4K is $0.113.',
       ),
       /unreadable image price row Nano Banana 2.1/,
+    ],
+    [
+      'an unruled band removed from the image table',
+      IMAGE_PAGE.replace(/\| Grok Imagine Image 2\.0 \| \$0\.04.*\n/, ''),
+      /Grok Imagine Image 2\.0 has an endpoint but no price row/,
     ],
     [
       'a quality rule instead of an unruled band',

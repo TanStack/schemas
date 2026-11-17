@@ -17,7 +17,9 @@ Native live listing: https://opencode.ai/inference/v1/models
 Routes are read from https://models.dev/api.json (`npm`). Zen prices are read
 only from the console page, https://opencode.ai/docs/console/models/ (its
 source: https://raw.githubusercontent.com/anomalyco/opencode/dev/services/site/src/docs/content/console/models.mdx,
-Pricing table, issue #314); an id it does not price has no price. The per-row checks
+Pricing table, issue #314); an id it does not price has no price.
+`grok-imagine-image-2.0` is in Image pricing, and no card is stored: the output
+price is a quality and resolution band with no rule (#100007). The per-row checks
 below cited https://opencode.ai/docs/zen, removed upstream on 2026-10-12.
 Checked 2026-10-13. Among activity-null rows,
 no own catalog record was published for: `jev-1.13`, `jev-1.13-free`,
@@ -126,6 +128,7 @@ current activity enum does not represent that task, so their activity is null.
 - opencode/grok-4.6: replayReasoningContent — Own exact-model catalog publishes no reasoning_content interleaving field; native endpoint docs publish no exact-model replay requirement or exclusion (#265/#270), https://opencode.ai/docs/zen, checked 2026-10-09
 - opencode/grok-4.5: requestMap — Own exact-model catalog publishes no request map; native endpoint docs identify routes/protocol packages without publishing this model’s request-body wire fields (#265), https://opencode.ai/docs/zen, checked 2026-10-09
 - opencode/grok-4.5: replayReasoningContent — Own exact-model catalog publishes no reasoning_content interleaving field; native endpoint docs publish no exact-model replay requirement or exclusion (#265/#270), https://opencode.ai/docs/zen, checked 2026-10-09
+- opencode/grok-imagine-image-2.0: priced — Image pricing states $0.04 per image and $0.01 per input image, and says quality and resolution can raise the output price to $0.05–$0.08 with no rule. No card is stored; the floor would bill every request at a price the page says can be higher (#100007), https://opencode.ai/docs/console/models/, checked 2026-11-18
 - opencode/muse-spark-1.3: requestMap — Own exact-model catalog publishes no request map; native endpoint docs identify routes/protocol packages without publishing this model’s request-body wire fields (#265), https://opencode.ai/docs/zen, checked 2026-10-09
 - opencode/muse-spark-1.3: replayReasoningContent — Own exact-model catalog publishes no reasoning_content interleaving field; native endpoint docs publish no exact-model replay requirement or exclusion (#265/#270), https://opencode.ai/docs/zen, checked 2026-10-09
 - opencode/muse-spark-1.2: requestMap — Own exact-model catalog publishes no request map; native endpoint docs identify routes/protocol packages without publishing this model’s request-body wire fields (#265), https://opencode.ai/docs/zen, checked 2026-10-09
