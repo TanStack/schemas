@@ -271,16 +271,40 @@ export function applyLovableVideoSchema(
     verifiedAt: LOVABLE_VIDEO_LIMITS_CHECKED,
   }
 
-  const video = JSON.stringify({
-    post,
-    request: schemas.CreateVideoMultipartBody,
-    json: schemas.CreateVideoJsonBody,
-    branches: branchNames.map((name) => schemas[name]),
-    model: schemas.VideoModel,
-    seconds: schemas.VideoSeconds,
-    size: schemas.VideoSize,
-  })
-  if (/sora/i.test(video)) {
-    throw new Error('lovable: video schema still mentions Sora')
+  // OpenAI's own examples: a curl to api.openai.com with `model=sora-2`.
+  // Lovable's video page publishes no request example to put in its place.
+  delete post['x-oaiMeta']
+
+  const found = soraPaths(
+    {
+      post,
+      request: schemas.CreateVideoMultipartBody,
+      json: schemas.CreateVideoJsonBody,
+      branches: Object.fromEntries(
+        branchNames.map((name) => [name, schemas[name]]),
+      ),
+      model: schemas.VideoModel,
+      seconds: schemas.VideoSeconds,
+      size: schemas.VideoSize,
+    },
+    '',
+  )
+  if (found.length > 0) {
+    throw new Error(
+      `lovable: video schema still mentions Sora at ${found.join(', ')}`,
+    )
   }
+}
+
+/** JSON paths of every key or string under `value` that says Sora. */
+function soraPaths(value: unknown, path: string): Array<string> {
+  if (typeof value === 'string') return /sora/i.test(value) ? [path] : []
+  if (Array.isArray(value)) {
+    return value.flatMap((item, i) => soraPaths(item, `${path}[${i}]`))
+  }
+  if (!isRecord(value)) return []
+  return Object.entries(value).flatMap(([key, item]) => {
+    const child = path === '' ? key : `${path}.${key}`
+    return [...(/sora/i.test(key) ? [child] : []), ...soraPaths(item, child)]
+  })
 }

@@ -20,6 +20,17 @@ function soraSpec(): OpenApiDocument {
       '/videos': {
         post: {
           summary: 'Create a video',
+          // The live OpenAI operation carries its own examples (#680).
+          'x-oaiMeta': {
+            name: 'Create video',
+            examples: {
+              request: {
+                curl: 'curl https://api.openai.com/v1/videos \\\n  -H "Authorization: Bearer $OPENAI_API_KEY" \\\n  -F "model=sora-2" \\\n  -F "prompt=A calico cat playing a piano on stage"\n',
+              },
+              response:
+                '{\n  "id": "video_123",\n  "object": "video",\n  "model": "sora-2",\n  "size": "1024x1792",\n  "seconds": "8"\n}\n',
+            },
+          },
           requestBody: {
             content: {
               'multipart/form-data': {
@@ -248,6 +259,19 @@ describe('lovable video schema', () => {
         size: '1280x720',
       }),
     ).toBe(true)
+  })
+
+  it('drops the OpenAI examples and names the path of any Sora text left', () => {
+    const { spec } = bundledInput()
+    expect(JSON.stringify(spec.paths?.['/videos']?.post)).not.toMatch(/sora/i)
+
+    const leftover = soraSpec()
+    const post = leftover.paths?.['/videos']?.post
+    if (!post) throw new Error('fixture has no POST /videos')
+    post.description = 'Create a video with Sora.'
+    expect(() => applyLovableVideoSchema(leftover, LISTED)).toThrow(
+      'lovable: video schema still mentions Sora at post.description',
+    )
   })
 
   it('throws when a listed video model has no limits', () => {
