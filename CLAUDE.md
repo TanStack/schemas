@@ -93,6 +93,14 @@ so each shard gets its own invocation budgets; see `SPEC_SYNC_SHARD_CRONS`;
 FAL `llms.txt` rate-card extract hourly 06:00–11:00 UTC —
 `FAL_PRICING_EXTRACT_CRONS`).
 
+`.source/` holds the TanStack Source CI definitions: `workflows/deploy.ts`
+deploys on push to `main` (skipped, not failed, without the `main` branch
+rule or the `production` token), and `agent-workflows/monitor.ts` reads
+PostHog every 15 minutes and opens one fix PR per recurring ingest failure
+(branch `monitor/<provider>-<event>`). They import `@tanstack-source/ci`,
+which is not installed here, so tsc, oxlint and the lefthook lint skip
+`.source/**`; only oxfmt checks it.
+
 Request path: route files in `src/routes/` (server handlers via
 `server.handlers`) → service functions in `src/server/` → drizzle/D1 +
 KV. Bindings come from `import { env, waitUntil } from 'cloudflare:workers'` —

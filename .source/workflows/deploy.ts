@@ -13,7 +13,8 @@ export default defineWorkflow('deploy', {
 }).job('deploy', {
   environment: 'production',
   secrets: { CLOUDFLARE_API_TOKEN: {} },
-  // Public build config (`secrets:build` reads the same names from Doppler).
+  // Public config. `secrets:build` reads the two VITE_PUBLIC_* names from
+  // Doppler; wrangler reads CLOUDFLARE_ACCOUNT_ID.
   vars: [
     'CLOUDFLARE_ACCOUNT_ID',
     'VITE_PUBLIC_POSTHOG_PROJECT_TOKEN',
@@ -26,6 +27,13 @@ export default defineWorkflow('deploy', {
   ],
   timeoutMinutes: 20,
   steps: [
+    {
+      // An unset variable is undefined, and a production build with no
+      // PostHog values turns analytics off without an error. The same
+      // check as scripts/build-with-secrets.ts.
+      name: 'Check variables',
+      run: 'for n in CLOUDFLARE_ACCOUNT_ID VITE_PUBLIC_POSTHOG_PROJECT_TOKEN VITE_PUBLIC_POSTHOG_HOST; do [ -n "$(printenv "$n")" ] || { echo "CI variable $n is not set (src variable set $n)" >&2; exit 1; }; done',
+    },
     setup.node({ version: 24 }),
     setup.pnpm(),
     { name: 'Install', run: 'pnpm install --frozen-lockfile' },

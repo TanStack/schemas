@@ -374,26 +374,28 @@ AI Gateway) and load credits on the account. Without them every
 leftover fails and the cursor rewinds, as it does for any extract
 error. Re-pick the model with `pnpm run compare-fal --`.
 
-### Continuous deploys (Workers Builds)
+### Continuous deploys (Source CI)
 
-Pushes to `main` deploy via Cloudflare Workers Builds (dashboard → Workers
-& Pages → `modelschemas` → Settings → Build → connect
-`TanStack/modelschemas`). The previous connection was
-`modelschemas/modelschemas` and does not follow the transfer.
+Pushes to `main` deploy through `.source/workflows/deploy.ts` on TanStack
+Source. The job runs only as a protected run in the `production` CI
+environment: with no branch rule on `main`, or no `CLOUDFLARE_API_TOKEN`
+in `production`, it is skipped, not failed. Check `src run list` after a
+merge.
 
-Settings:
+Steps:
 
-- **Node.js version:** 24
-- **Build command:** `pnpm run build`
-- **Deploy command:** `pnpm run deploy:ci` — applies pending D1 migrations
+- **Check variables:** fails when `CLOUDFLARE_ACCOUNT_ID` or a
+  `VITE_PUBLIC_POSTHOG_*` CI variable is unset.
+- **Build:** `pnpm run build`
+- **Deploy:** `pnpm run deploy:ci` — applies pending D1 migrations
   (`wrangler d1 migrations apply modelschemas --remote`, by database name so
   a binding rename can't retarget it) and then `wrangler deploy`, which
   follows the build-emitted redirect (`.wrangler/deploy/config.json`) to the
   real worker config at `dist/server/wrangler.json`. Deploying the repo-root
   `wrangler.jsonc` directly will not work.
-- **Non-production branch deploy command:** leave as the default
-  `npx wrangler versions upload` — preview versions share the production D1
-  binding, so migrations must never run from non-production branches.
+
+Only `main` deploys: preview versions would share the production D1
+binding, so migrations must never run from another branch.
 
 `pnpm run deploy` remains the manual/emergency path (build + the same
 migrate-then-deploy).
