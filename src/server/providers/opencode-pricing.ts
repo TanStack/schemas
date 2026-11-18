@@ -1,7 +1,8 @@
 /**
  * OpenCode Zen prices from OpenCode's own console models page (issue #314).
- * It is the only Zen price source: models.dev `cost` is not read, and an id
- * the page does not price states no price.
+ * Token rows are the Pricing table. Image models are the Image pricing
+ * table (issue #100007). It is the only Zen price source: models.dev
+ * `cost` is not read, and an id the page does not price states no price.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
@@ -14,12 +15,29 @@ export const OPENCODE_PRICING_URL =
   'https://raw.githubusercontent.com/anomalyco/opencode/dev/services/site/src/docs/content/console/models.mdx'
 
 const PRICE_HEADER = ['Model', 'Input', 'Output', 'Cached Read', 'Cached Write']
+const IMAGE_HEADER = ['Model', 'Price', 'Notes']
 const PRICE_LEVERS = [
   'input_tokens',
   'output_tokens',
   'cache_read_tokens',
   'cache_write_tokens',
 ] as const
+
+/** `$1.00 / image` plus token add-ons, as the Image pricing notes state them. */
+const PER_IMAGE = /^\$(\d+(?:\.\d+)?) \/ image$/
+const IMAGE_TOKEN_NOTES =
+  /^Plus \$(\d+(?:\.\d+)?) \/ \$(\d+(?:\.\d+)?) per 1M input \/ output tokens, and \$(\d+(?:\.\d+)?) per 1M cached input tokens\.$/
+/** Input / text output / image output. An "About …" clause is an approximation, not a rate. */
+const TOKEN_TRIPLE =
+  /^\$(\d+(?:\.\d+)?) \/ \$(\d+(?:\.\d+)?) \/ \$(\d+(?:\.\d+)?) per 1M tokens$/
+const TOKEN_TRIPLE_NOTES =
+  /^Input \/ text output \/ image output\.(?: About \$\d+(?:\.\d+)? per 1K image, \$\d+(?:\.\d+)? per 2K, \$\d+(?:\.\d+)? per 4K\.)?$/
+/**
+ * A floor per image, a per-input-image fee, and a higher output band with
+ * no quality or resolution rule. That row is unverified: no card.
+ */
+const UNRULED_BAND_NOTES =
+  /^\$(\d+(?:\.\d+)?) per input image; quality and resolution can raise the output price to \$(\d+(?:\.\d+)?)(?:–|-)\$(\d+(?:\.\d+)?)\.$/
 
 export interface OpenCodePricingDoc {
   text: string
@@ -92,11 +110,103 @@ export function compileOpenCodeCost(
   return card
 }
 
-/** Cells of the first markdown table under `## <heading>`. */
-function sectionTable(page: string, heading: string): Array<Array<string>> {
+/** `$ per image` added to a token card. The count has no default: 1 would be a guess. */
+function addPerImage(card: RateCard, usdEach: number): RateCard {
+  const tokenPrice = card.price
+  if (typeof tokenPrice !== 'object' || 'currency' in tokenPrice) {
+    throw new Error('opencode: image prices are USD')
+  }
+  return {
+    ...card,
+    inputs: {
+      num_images: { param: 'num_images', bound: 'usage', kind: 'number' },
+      ...card.inputs,
+    },
+    price: { '+': [{ '*': [{ var: 'num_images' }, usdEach] }, tokenPrice] },
+  }
+}
+
+function imageRowUnreadable(name: string): Error {
+  return new Error(`opencode: unreadable image price row ${name}`)
+}
+
+/**
+ * One Image pricing row. A shape this does not recognise throws.
+ * `'unverified'` is an explicit absence: the row was read, and no card
+ * is stored because a price would be a fallback.
+ */
+function compileImagePrice(
+  name: string,
+  priceCell: string,
+  notes: string,
+  source: RateCard['source'],
+): RateCard | 'unverified' {
+  const triple = TOKEN_TRIPLE.exec(priceCell)
+  if (triple) {
+    if (!TOKEN_TRIPLE_NOTES.test(notes)) throw imageRowUnreadable(name)
+    return compileOpenCodeCost(
+      {
+        input_tokens: Number(triple[1]),
+        output_tokens: Number(triple[2]),
+        image_output_tokens: Number(triple[3]),
+      },
+      [],
+      name,
+      source,
+    )
+  }
+  const each = PER_IMAGE.exec(priceCell)
+  if (!each) throw imageRowUnreadable(name)
+  const withTokens = IMAGE_TOKEN_NOTES.exec(notes)
+  if (withTokens) {
+    return addPerImage(
+      compileOpenCodeCost(
+        {
+          input_tokens: Number(withTokens[1]),
+          output_tokens: Number(withTokens[2]),
+          cache_read_tokens: Number(withTokens[3]),
+        },
+        [],
+        name,
+        source,
+      ),
+      Number(each[1]),
+    )
+  }
+  const unruled = UNRULED_BAND_NOTES.exec(notes)
+  if (!unruled) throw imageRowUnreadable(name)
+  const low = Number(unruled[2])
+  const high = Number(unruled[3])
+  if (!(low < high)) throw imageRowUnreadable(name)
+  // The floor and the per-input-image fee are stated, and so is a higher
+  // output band. Nothing maps quality or resolution onto that band, so a
+  // card at $0.04 would bill every request at a price the page says can
+  // be higher. Same outcome as a FAL extract that returns unverified.
+  return 'unverified'
+}
+
+/** Cells of the first markdown table under `##` or `### <heading>`. `###` may be absent. */
+function sectionTable(
+  page: string,
+  heading: string,
+  level?: 2,
+): Array<Array<string>>
+function sectionTable(
+  page: string,
+  heading: string,
+  level: 3,
+): Array<Array<string>> | null
+function sectionTable(
+  page: string,
+  heading: string,
+  level: 2 | 3 = 2,
+): Array<Array<string>> | null {
   const text = `\n${page}`
-  const start = text.indexOf(`\n## ${heading}\n`)
-  if (start < 0) throw new Error(`opencode: pricing page has no ${heading}`)
+  const start = text.indexOf(`\n${'#'.repeat(level)} ${heading}\n`)
+  if (start < 0) {
+    if (level === 3) return null
+    throw new Error(`opencode: pricing page has no ${heading}`)
+  }
   const rows: Array<Array<string>> = []
   for (const line of text
     .slice(start + 1)
@@ -131,7 +241,7 @@ function usd(value: string, name: string): number | undefined {
   return Number(match[1])
 }
 
-/** Listed id → card. Joins the Pricing table to the Endpoints table by model name. */
+/** Listed id → card. Joins Pricing and Image pricing to the Endpoints table by model name. */
 export function parseOpenCodePricing(
   doc: OpenCodePricingDoc,
 ): Map<string, RateCard> {
@@ -176,6 +286,28 @@ export function parseOpenCodePricing(
     rows.set(name, row)
   }
 
+  const imageTable = sectionTable(doc.text, 'Image pricing', 3)
+  const imageRows = new Map<string, { price: string; notes: string }>()
+  if (imageTable) {
+    if (imageTable[0]!.join('|') !== IMAGE_HEADER.join('|')) {
+      throw new Error('opencode: pricing page Image pricing header changed')
+    }
+    for (const [name, price, notes, ...rest] of imageTable.slice(2)) {
+      if (
+        !name ||
+        price === undefined ||
+        notes === undefined ||
+        rest.length > 0
+      ) {
+        throw new Error(`opencode: unreadable image price row ${name ?? ''}`)
+      }
+      if (imageRows.has(name)) {
+        throw new Error(`opencode: duplicate image price row ${name}`)
+      }
+      imageRows.set(name, { price, notes })
+    }
+  }
+
   const source = {
     url: OPENCODE_PRICING_URL,
     hash: doc.hash,
@@ -183,6 +315,9 @@ export function parseOpenCodePricing(
   }
   const cards = new Map<string, RateCard>()
   for (const [name, row] of rows) {
+    if (imageRows.has(name)) {
+      throw new Error(`opencode: ${name} is priced twice`)
+    }
     const id = idByName.get(name)
     if (!id) throw new Error(`opencode: price row ${name} names no model id`)
     if (!row.base || row.upTo !== row.from) {
@@ -193,10 +328,24 @@ export function parseOpenCodePricing(
       : []
     cards.set(id, compileOpenCodeCost(row.base, tiers, id, source))
   }
+  const imagePriced = new Set<string>()
+  const unverified = new Set<string>()
+  for (const [name, cells] of imageRows) {
+    const id = idByName.get(name)
+    if (!id) throw new Error(`opencode: price row ${name} names no model id`)
+    const card = compileImagePrice(name, cells.price, cells.notes, source)
+    if (card === 'unverified') unverified.add(name)
+    else {
+      imagePriced.add(name)
+      cards.set(id, card)
+    }
+  }
   // The Endpoints table names the model set. A price table that ends early
   // (a blank line, a split table) would otherwise clear the rows after it.
+  // An image model is priced in Image pricing, not in the token table.
+  // An unverified image row is an explicit absence, not a missing row.
   for (const name of idByName.keys()) {
-    if (!rows.has(name)) {
+    if (!rows.has(name) && !imagePriced.has(name) && !unverified.has(name)) {
       throw new Error(`opencode: ${name} has an endpoint but no price row`)
     }
   }

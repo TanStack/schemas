@@ -145,6 +145,33 @@ describe('parsePerplexityModelsPage', () => {
     ])
   })
 
+  it('reads a card that states the reasoning model after a comma (#100006)', () => {
+    // The DeepSeek tab as served on 2026-11-18.
+    const deepseek = MODELS_DOC.replace(
+      /^> \[tab\] NVIDIA\n[^]*?(?=> \[tab\] Perplexity)/m,
+      [
+        '> [tab] DeepSeek',
+        ...quote([
+          '',
+          '> [card] DeepSeek',
+          '>',
+          '> DeepSeek V4 Pro, an open-weight reasoning model.',
+          '',
+          ...HEADER,
+          '| `perplexity/deepseek-v4-pro-0813` | 1.32 | 3.96 | 0.044 | — | — |',
+        ]),
+        '',
+        '',
+      ].join('\n'),
+    )
+    expect(deepseek).not.toBe(MODELS_DOC)
+    const page = parsePerplexityModelsPage(deepseek)
+    expect(page.flags.get('perplexity/deepseek-v4-pro-0813')).toEqual([
+      'reasoning',
+    ])
+    expect(page.limits.size).toBe(0)
+  })
+
   it('leaves the effort flag off when no tab states an effort', () => {
     const silent = MODELS_DOC.replace(
       /^>\n> > \[!NOTE\]\n> >\n> > Kimi K3[^\n]*\n/m,

@@ -45,13 +45,15 @@ export const REACTOR_PRICING_URL = `${REACTOR_API_BASE}/pricing`
 type Schema = Record<string, unknown>
 
 interface ReactorModel {
-  /** Pricing catalog `name` and `/models/{slug}/api` page slug. */
+  /** Pricing catalog `name`. */
   pricingName: string
-  /** Connect slug (`modelName`). */
+  /** Catalog row id. Usually the connect slug. */
   rawId: string
   displayName: string
   /** Override when the marketing page slug differs from pricingName. */
   pageSlug?: string
+  /** Session `modelName` passed to `POST /tokens` match. Defaults to rawId. */
+  connectSlug?: string
 }
 
 /** Billing parent row — not a connect slug. */
@@ -104,7 +106,23 @@ const REACTOR_MODELS: Array<ReactorModel> = [
     rawId: 'reactor/visko-orbis-dynamic',
     displayName: 'Visko Orbis Dynamic',
   },
-  { pricingName: 'x2', rawId: 'x2', displayName: 'X2' },
+  {
+    // Same model as the stored `x2` row. /pricing and the connect slug
+    // renamed to `xmax/x2`; the marketing page stayed `/models/x2`.
+    pricingName: 'xmax/x2',
+    rawId: 'x2',
+    connectSlug: 'xmax/x2',
+    displayName: 'X2',
+    pageSlug: 'x2',
+  },
+  {
+    // XMAX X2.1, a separate editor. Pricing name is the connect slug;
+    // the page and CLI use the short slug.
+    pricingName: 'reactor/xmax-x2-1',
+    rawId: 'reactor/xmax-x2-1',
+    displayName: 'XMAX X2.1',
+    pageSlug: 'xmax-x2-1',
+  },
   {
     pricingName: 'happy-oyster-adventure',
     rawId: 'reactor/happy-oyster-adventure',
@@ -441,10 +459,6 @@ function modelInfo(
   }
 }
 
-function curatedCatalog(): Array<ModelInfo> {
-  return REACTOR_MODELS.map((model) => modelInfo(model))
-}
-
 function catalogFromPricing(
   rows: Array<PricingModel>,
   source: RateSource,
@@ -474,6 +488,11 @@ function catalogFromPricing(
   return models
 }
 
+/** Wire model name for a catalog raw id. Unknown ids pass through. */
+function sessionConnectSlug(rawId: string): string {
+  return MODEL_BY_RAW_ID.get(rawId)?.connectSlug ?? rawId
+}
+
 function matchItem(pinnedModel: string | undefined): Schema {
   return pinnedModel === undefined
     ? {
@@ -481,7 +500,7 @@ function matchItem(pinnedModel: string | undefined): Schema {
         description:
           'Connect slug (`reactor/helios`). No wildcard; list every model the token may start.',
       }
-    : { type: 'string', enum: [pinnedModel] }
+    : { type: 'string', enum: [sessionConnectSlug(pinnedModel)] }
 }
 
 /** Request body for `POST /tokens`. Optional fields are the documented ones. */
@@ -651,19 +670,24 @@ export function reactorPlatformOperations(
 }
 
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
+  const text = await fetchText(REACTOR_PRICING_URL)
+  let body: unknown
   try {
-    const text = await fetchText(REACTOR_PRICING_URL)
-    const rows = parsePricing(JSON.parse(text) as unknown)
-    if (rows.length === 0) return { models: curatedCatalog() }
-    const source = {
-      url: REACTOR_PRICING_URL,
-      hash: await sha256Text(text),
-      extractedAt: new Date().toISOString(),
-    }
-    return { models: catalogFromPricing(rows, source) }
-  } catch {
-    return { models: curatedCatalog() }
+    body = JSON.parse(text) as unknown
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`reactor: /pricing is not JSON (${message})`)
   }
+  const rows = parsePricing(body)
+  if (rows.length === 0) {
+    throw new Error('reactor: /pricing lists no models')
+  }
+  const source = {
+    url: REACTOR_PRICING_URL,
+    hash: await sha256Text(text),
+    extractedAt: new Date().toISOString(),
+  }
+  return { models: catalogFromPricing(rows, source) }
 }
 
 export const provider: ProviderConfig = {
