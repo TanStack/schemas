@@ -155,11 +155,11 @@ export default defineAgentWorkflow('monitor', {
           const client = forge(ctx)
           const failures = []
           for (const item of ctx.needs.check.output.failures) {
-            const open = await client.pulls.list({
-              head: `agent/monitor/${fixBranch(item)}`,
-              state: 'open',
-            })
-            if (open.length === 0) failures.push(item)
+            const head = `agent/monitor/${fixBranch(item)}`
+            const open = await client.pulls.list({ head, state: 'open' })
+            // A pull request from a fork has the head `owner:branch`, so
+            // it never equals `head` and never counts as an existing fix.
+            if (!open.some((pull) => pull.head === head)) failures.push(item)
           }
           ctx.setOutput({ failures })
         },
@@ -193,7 +193,7 @@ export default defineAgentWorkflow('monitor', {
           `<untrusted_posthog_data>\n${inertJson(ctx.item)}\n</untrusted_posthog_data>\n\n` +
           `Find the root cause in src/, fix it, add a test, and open a pull request into main. ` +
           // One branch per failure: open_pr keeps the open PR of its branch,
-          // and the check job finds the PR by this title prefix.
+          // and the pending job finds the PR by that branch.
           `Work on the branch "${fixBranch(ctx.item)}", and start the title with "monitor(${ctx.item.providerId}/${ctx.item.event}): " followed by the error. ` +
           `Put the evidence above in the pull request body. ` +
           `If the cause is upstream and nothing in this repository should change, open no pull request and say why.\n\n${FIX_RULES}`,
