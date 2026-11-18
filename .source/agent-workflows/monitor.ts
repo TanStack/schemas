@@ -1,16 +1,18 @@
 // The production monitor: what the local 15-minute Claude Code loop did.
 //
 // `check` reads PostHog (MCP connection `posthog`, project 643425) for
-// recurring ingest failures that no open issue or pull request covers.
-// `fix` runs once per new failure and opens a fix pull request with the
-// evidence. Agent-workflow jobs have no tool that creates an issue, so the
-// PR is the record. `.source/workflows/deploy.ts` deploys after the merge.
+// recurring ingest failures. `pending` drops the ones whose fix branch has
+// an open pull request. `fix` runs once per failure left and opens a fix
+// pull request with the evidence. Agent-workflow jobs have no tool that
+// creates an issue, so the PR is the record. `.source/workflows/deploy.ts`
+// deploys after the merge.
 //
 // Admin setup (people only): connect PostHog and give it to the check job:
 //   src mcp tools posthog --agent workflow:monitor/check
 import {
   agent,
   defineAgentWorkflow,
+  forge,
   manual,
   schedule,
   setup,
@@ -60,9 +62,14 @@ const checkOutput = z.object({
   failures: z.array(failure).max(3),
 })
 
-/** The branch and title prefix of the fix for one failure: the dedupe key. */
+/**
+ * The branch of the fix for one failure: the dedupe key. The forge lets a
+ * job of this workflow push only to `agent/monitor/<branch>`, and nobody
+ * else can push there, so an open pull request from that head cannot be
+ * faked by an outside issue or pull request.
+ */
 const fixBranch = (item: z.infer<typeof failure>) =>
-  `monitor/${item.providerId}-${item.event}`
+  `${item.providerId}-${item.event}`
 
 const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repository).
 
@@ -93,11 +100,9 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
    - known residuals: llmgateway pricing_lost parser_miss (discount, peak,
      image, audio and per-second keys are refused on purpose); huggingface
      "native recommendation section missing" (the source does not publish
-     it: docs/source-silent/huggingface.md);
-   - anything already in hand. A fix pull request has a title that starts
-     "monitor(<provider id>/<event>)": search the issue and pull request
-     titles for that prefix and for the provider id, and drop the failure
-     when an open one covers it.
+     it: docs/source-silent/huggingface.md).
+   Do not look for an existing issue or pull request: the next job drops
+   a failure that already has an open fix.
 
 3. Answer with queryOk, parseRowsEvents (the liveness count) and at most
    the 3 failures with the highest count. For each: the provider id, the
@@ -132,15 +137,37 @@ export default defineAgentWorkflow('monitor', {
         name: 'Check PostHog',
         model: checkModel,
         prompt: CHECK_PROMPT,
-        // `search` reads the checkout; `search_items` reads issue and PR titles.
-        tools: ['read_file', 'list_files', 'search', 'search_items'],
+        tools: ['read_file', 'list_files', 'search'],
         mcp: ['posthog'],
         output: 'job',
       }),
     ],
   })
-  .job('fix', {
+  // Dedupe in code, not by a model reading titles anyone can write: drop a
+  // failure whose fix branch already has an open pull request.
+  .job('pending', {
     needs: ['check'],
+    output: z.object({ failures: z.array(failure) }),
+    steps: [
+      {
+        name: 'Drop failures with an open fix',
+        do: async (ctx) => {
+          const client = forge(ctx)
+          const failures = []
+          for (const item of ctx.needs.check.output.failures) {
+            const open = await client.pulls.list({
+              head: `agent/monitor/${fixBranch(item)}`,
+              state: 'open',
+            })
+            if (open.length === 0) failures.push(item)
+          }
+          ctx.setOutput({ failures })
+        },
+      },
+    ],
+  })
+  .job('fix', {
+    needs: ['pending'],
     // Checked in code, not by the model: the provider must have an adapter.
     // The 8 core providers sit in providers/, the rest in providers/adapters/.
     if: (ctx) =>
@@ -149,7 +176,7 @@ export default defineAgentWorkflow('monitor', {
           `${ctx.workspace}/src/server/providers/${dir}${ctx.item.providerId}.ts`,
         ),
       ),
-    forEach: { job: 'check', path: 'failures' },
+    forEach: { job: 'pending', path: 'failures' },
     permissions: { contents: 'write' },
     budget: { maxCostUsd: 5, maxMinutes: 90 },
     egress: ['registry.npmjs.org'],
