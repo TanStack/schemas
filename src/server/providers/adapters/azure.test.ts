@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AZURE_MODELS_URL, AZURE_REASONING_URL } from '../azure-models.ts'
 import { AZURE_PRICES_URL, AZURE_PRICING_PAGE_URL } from '../azure-pricing.ts'
@@ -96,8 +96,12 @@ function stubFetch(
   urls: Array<string> = [],
   pricingPage = PRICING_PAGE,
   reasoning = REASONING,
-  prices: Record<string, unknown> | 'throttle-page-2' = PRICES,
+  prices:
+    | Record<string, unknown>
+    | 'throttle-page-2'
+    | 'throttle-page-2-once' = PRICES,
 ) {
+  let pageTwoCalls = 0
   globalThis.fetch = ((input: string, init?: RequestInit) => {
     const url = String(input)
     urls.push(url)
@@ -107,7 +111,12 @@ function stubFetch(
         new Response(url === AZURE_MODELS_URL ? models : reasoning),
       )
     }
-    if (prices === 'throttle-page-2' && url === PAGE_TWO) {
+    if (url === PAGE_TWO) pageTwoCalls++
+    if (
+      url === PAGE_TWO &&
+      (prices === 'throttle-page-2' ||
+        (prices === 'throttle-page-2-once' && pageTwoCalls === 1))
+    ) {
       return Promise.resolve(
         new Response('Too many requests at this point. Please retry later.', {
           status: 429,
@@ -115,7 +124,10 @@ function stubFetch(
         }),
       )
     }
-    const priceDoc = prices === 'throttle-page-2' ? PRICES : prices
+    const priceDoc =
+      prices === 'throttle-page-2' || prices === 'throttle-page-2-once'
+        ? PRICES
+        : prices
     if (url in priceDoc) return Promise.resolve(Response.json(priceDoc[url]))
     if (url === AZURE_PRICING_PAGE_URL) {
       return Promise.resolve(new Response(pricingPage))
@@ -173,27 +185,63 @@ describe('azure', () => {
     expect(docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
   })
 
-  it('keeps the poll when a later retail prices page is throttled', async () => {
-    stubFetch(MODELS, [], PRICING_PAGE, REASONING, 'throttle-page-2')
-    const { models, docsFailures } = await provider.listModels({})
+  /** Advance the price-list retry sleeps without waiting on the clock. */
+  async function flushed<T>(promise: Promise<T>): Promise<T> {
+    void promise.catch(() => undefined)
+    await vi.runAllTimersAsync()
+    return promise
+  }
 
-    expect(models.map((model) => model.rawId)).toEqual(['o3', 'gpt-image-2'])
-    expect(models[0]).toMatchObject({
-      contextWindow: 200_000,
-      reasoning: {
-        mode: 'effort',
-        mandatory: null,
-        efforts: ['low', 'medium', 'high'],
-      },
-      absent: { pricing: 'unavailable' },
-    })
-    expect(models[0]?.pricing).toBeNull()
-    expect(docsFailures).toMatchObject({ failed: 1, skipped: 0 })
-    expect(docsFailures?.first).toHaveLength(1)
-    expect(docsFailures?.first[0]?.source).toBe(AZURE_PRICES_URL)
-    expect(docsFailures?.first[0]?.error).toContain(
-      `${PAGE_TWO} → 429 Too Many Requests`,
-    )
+  it('retries a 429 on a later retail prices page and keeps the price', async () => {
+    const urls: Array<string> = []
+    stubFetch(MODELS, urls, PRICING_PAGE, REASONING, 'throttle-page-2-once')
+    vi.useFakeTimers()
+    try {
+      const { models, docsFailures } = await flushed(provider.listModels({}))
+
+      expect(urls.filter((url) => url === PAGE_TWO)).toHaveLength(2)
+      expect(docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
+      expect(models[0]).toMatchObject({
+        pricing: {
+          tables: {
+            rate: { base: { input_tokens: 2e-6, output_tokens: 8e-6 } },
+          },
+        },
+      })
+      expect(models[0]?.absent).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the poll when every retry of a later retail prices page is throttled', async () => {
+    const urls: Array<string> = []
+    stubFetch(MODELS, urls, PRICING_PAGE, REASONING, 'throttle-page-2')
+    vi.useFakeTimers()
+    try {
+      const { models, docsFailures } = await flushed(provider.listModels({}))
+
+      expect(urls.filter((url) => url === PAGE_TWO)).toHaveLength(5)
+      expect(models.map((model) => model.rawId)).toEqual(['o3', 'gpt-image-2'])
+      expect(models[0]).toMatchObject({
+        contextWindow: 200_000,
+        reasoning: {
+          mode: 'effort',
+          mandatory: null,
+          efforts: ['low', 'medium', 'high'],
+        },
+        absent: { pricing: 'unavailable' },
+      })
+      expect(models[0]?.pricing).toBeNull()
+      expect(docsFailures).toMatchObject({ failed: 1, skipped: 0 })
+      expect(docsFailures?.first).toHaveLength(1)
+      expect(docsFailures?.first[0]?.source).toBe(AZURE_PRICES_URL)
+      expect(docsFailures?.first[0]?.error).toContain(
+        `fetch failed after 5 attempts: ${PAGE_TWO} → 429 Too Many Requests`,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports a docs failure when the pricing page labels no threshold', async () => {

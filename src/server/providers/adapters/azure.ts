@@ -75,8 +75,9 @@ async function listModels(
         hash: await sha256Text(markdown),
       }
     }),
-    // One throttled page throws. That keeps the stored cards; the next
-    // poll is the retry. The models article stays outside this wrapper.
+    // Each price-list page retries 429 and 5xx. When every attempt on a
+    // page fails the load throws, which keeps the stored cards. The models
+    // article stays outside this wrapper.
     tryDocs(docs, AZURE_PRICES_URL, (cached) =>
       cached(kv, AZURE_PRICES_URL, fetchAzurePrices),
     ),
