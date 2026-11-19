@@ -283,7 +283,7 @@ describe('Xiaomi native documentation', () => {
     expect(() =>
       xiaomiSpec([
         {
-          text: fixture('openai-api.md').replace(
+          text: fixture('openai-api-post.md').replace(
             '## Request Address',
             '## Missing',
           ),

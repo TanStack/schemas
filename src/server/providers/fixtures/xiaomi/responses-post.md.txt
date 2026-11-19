@@ -94,7 +94,7 @@ Content-Type: application/json
                     "name": "ResponseInputMessageContentList",
                     "type": "array",
                     "isBold": false,
-                    "description": "A list of one or many input items to the model, containing different content types.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                    "description": "A list of one or many input items to the model, containing different content types.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models support image, audio or video input.</blockquote>",
                     "children": [
                       {
                         "name": "ResponseInputText",
@@ -231,7 +231,7 @@ Content-Type: application/json
                 "type": "array",
                 "isBold": true,
                 "required": true,
-                "description": "A list of one or many input items to the model, containing different content types.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                "description": "A list of one or many input items to the model, containing different content types.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models support image, audio or video input.</blockquote>",
                 "children": [
                   {
                     "name": "ResponseInputText",
@@ -519,7 +519,7 @@ Content-Type: application/json
                     "name": "OutputContentList",
                     "type": "array",
                     "isBold": false,
-                    "description": "An array of content outputs for the function tool call.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                    "description": "An array of content outputs for the function tool call.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models support image, audio or video input.</blockquote>",
                     "children": [
                       {
                         "name": "ResponseInputTextContent",
@@ -670,7 +670,7 @@ Content-Type: application/json
                 "type": "array",
                 "isBold": true,
                 "required": true,
-                "description": "Plaintext, image, audio, video or encrypted content sent between agents.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                "description": "Plaintext, image, audio, video or encrypted content sent between agents.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models support image, audio or video input.</blockquote>",
                 "children": [
                   {
                     "name": "ResponseInputTextContent",
@@ -1275,7 +1275,7 @@ Content-Type: application/json
                     "name": "OutputContentList",
                     "type": "array",
                     "isBold": false,
-                    "description": "An array of content outputs for the function tool call.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                    "description": "An array of content outputs for the function tool call.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models support image, audio or video input.</blockquote>",
                     "children": [
                       {
                         "name": "ResponseInputText",
@@ -1466,14 +1466,14 @@ Content-Type: application/json
     "type": "integer",
     "isBold": true,
     "required": false,
-    "description": "An upper bound for the number of tokens that can be generated for a response, including visible output tokens and reasoning tokens.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">32768</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[1, 131072]</code>"
+    "description": "An upper bound for the number of tokens that can be generated for a response, including visible output tokens and reasoning tokens.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">131072</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[1, 131072]</code>"
   },
   {
     "name": "model",
     "type": "string",
     "isBold": true,
     "required": true,
-    "description": "Model ID used to generate the response.<br />Available options: <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>"
+    "description": "Model ID used to generate the response.<br />Available options: <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>"
   },
   {
     "name": "stream",
@@ -1488,14 +1488,14 @@ Content-Type: application/json
     "type": "object",
     "isBold": true,
     "required": false,
-    "description": "Configuration options for reasoning models.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns the reasoning content alongside the tool calls field. To continue the conversation, it is recommended to keep all previous reasoning content in the <code class=\\"schema-inline-code\\">input</code> array for each subsequent request to achieve the best performance.</blockquote><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> and <code class=\\"schema-inline-code\\">top_p</code> parameters. Even if these parameters are passed in, the actual effective values will be forcibly set by the model to its recommended default values of <code class=\\"schema-inline-code\\">1.0</code> and <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>",
+    "description": "Configuration options for reasoning models.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns the reasoning content alongside the tool calls field. To continue the conversation, it is recommended to keep all previous reasoning content in the <code class=\\"schema-inline-code\\">input</code> array for each subsequent request to achieve the best performance.</blockquote><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> and <code class=\\"schema-inline-code\\">top_p</code> parameters. Even if these parameters are passed in, the actual effective values will be forcibly set by the model to its recommended default values of <code class=\\"schema-inline-code\\">1.0</code> and <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>",
     "children": [
       {
         "name": "effort",
         "type": "string",
         "isBold": true,
         "required": true,
-        "description": "Constrains effort on reasoning for reasoning models. Reducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response.<br /><blockquote class=\\"schema-blockquote\\">Custom tuning of reasoning effort is currently unsupported. When set to <code class=\\"schema-inline-code\\">none</code>, reasoning is disabled; all other valid values map to enabled reasoning. The value <code class=\\"schema-inline-code\\">minimal</code> is mapped to <code class=\\"schema-inline-code\\">low</code>. Values <code class=\\"schema-inline-code\\">xhigh</code>, <code class=\\"schema-inline-code\\">max</code> and <code class=\\"schema-inline-code\\">ultra</code> are mapped to <code class=\\"schema-inline-code\\">high</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">enabled</code></li></ul>Available options: <code class=\\"schema-inline-code\\">none</code>, <code class=\\"schema-inline-code\\">minimal</code>, <code class=\\"schema-inline-code\\">low</code>, <code class=\\"schema-inline-code\\">medium</code>, <code class=\\"schema-inline-code\\">high</code>, <code class=\\"schema-inline-code\\">xhigh</code>, <code class=\\"schema-inline-code\\">max</code>, <code class=\\"schema-inline-code\\">ultra</code>"
+        "description": "Constrains effort on reasoning for reasoning models. Reducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response.<br /><blockquote class=\\"schema-blockquote\\">Custom tuning of reasoning effort is currently unsupported. When set to <code class=\\"schema-inline-code\\">none</code>, reasoning is disabled; all other valid values map to enabled reasoning. The value <code class=\\"schema-inline-code\\">minimal</code> is mapped to <code class=\\"schema-inline-code\\">low</code>. Values <code class=\\"schema-inline-code\\">xhigh</code>, <code class=\\"schema-inline-code\\">max</code> and <code class=\\"schema-inline-code\\">ultra</code> are mapped to <code class=\\"schema-inline-code\\">high</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">enabled</code></li></ul>Available options: <code class=\\"schema-inline-code\\">none</code>, <code class=\\"schema-inline-code\\">minimal</code>, <code class=\\"schema-inline-code\\">low</code>, <code class=\\"schema-inline-code\\">medium</code>, <code class=\\"schema-inline-code\\">high</code>, <code class=\\"schema-inline-code\\">xhigh</code>, <code class=\\"schema-inline-code\\">max</code>, <code class=\\"schema-inline-code\\">ultra</code>"
       }
     ]
   },
@@ -1504,7 +1504,7 @@ Content-Type: application/json
     "type": "number",
     "isBold": true,
     "required": false,
-    "description": "What sampling temperature to use, between 0 and 1.5. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. We generally recommend altering this or <code class=\\"schema-inline-code\\">top_p</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">1.0</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">1.0</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[0, 1.5]</code>"
+    "description": "What sampling temperature to use, between 0 and 1.5. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. We generally recommend altering this or <code class=\\"schema-inline-code\\">top_p</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">1.0</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">1.0</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[0, 1.5]</code>"
   },
   {
     "name": "text",
@@ -1878,7 +1878,7 @@ Content-Type: application/json
     "isBold": true,
     "required": false,
     "defaultValue": "0.95",
-    "description": "An alternative to sampling with temperature, called nucleus sampling. We generally recommend altering this or <code class=\\"schema-inline-code\\">temperature</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">top_p</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>Required range: <code class=\\"schema-inline-code\\">[0.01, 1.0]</code>"
+    "description": "An alternative to sampling with temperature, called nucleus sampling. We generally recommend altering this or <code class=\\"schema-inline-code\\">temperature</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> models do not support customizing the <code class=\\"schema-inline-code\\">top_p</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>Required range: <code class=\\"schema-inline-code\\">[0.01, 1.0]</code>"
   }
 ]`} />
 
