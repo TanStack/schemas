@@ -26,6 +26,7 @@ import {
   parseMistralPricing,
   parseMistralSamePrice,
   parseMistralWebSearchTools,
+  MISTRAL_WEBSEARCH_URL,
   withDocumentInput,
 } from './mistral-pricing.ts'
 
@@ -755,8 +756,7 @@ describe('mistral model page price and max output', () => {
         ),
       'https://docs.mistral.ai/models/mistral-medium-3-5-26-04.md':
         '- Pricing: Input $1.5 /M Tokens; Output $7.5 /M Tokens\n',
-      'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md':
-        MISTRAL_WEBSEARCH_GUIDE,
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
     }
     globalThis.fetch = ((url: string) => {
       const body = docs[String(url)]
@@ -830,8 +830,7 @@ describe('mistral model page price and max output', () => {
       ),
       'https://docs.mistral.ai/models/leanstral-1-5.md':
         '- Pricing: Free; Input $0 /M Tokens; Output $0 /M Tokens\n',
-      'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md':
-        MISTRAL_WEBSEARCH_GUIDE,
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
     }
     globalThis.fetch = ((url: string) => {
       const body = docs[String(url)]
@@ -1027,6 +1026,27 @@ describe('mistral web search tools', () => {
         MISTRAL_WEBSEARCH_GUIDE.replace('There are two versions:', 'Versions'),
       ),
     ).toThrow('names no tool id')
+  })
+
+  it('reads the rendered guide and ignores later schema bullets', () => {
+    const html = `<!DOCTYPE html><html><main>
+<p>Our built-in <a href="/studio/agents/agent-tools#built-in-tools">tool</a> for websearch allows any of our models to access the web at any point.</p>
+<p>There are two versions:</p>
+<ul>
+<li><code>web_search</code>: A simple web search tool.</li>
+<li><code>web_search_premium</code>: A more complex web search tool.</li>
+</ul>
+<p><code>web_search</code> and <code>web_search_premium</code> work with the <a href="/studio/connectors/conversations">Conversations API</a> (<code>/v1/conversations</code>).</p>
+<h2>Response</h2>
+<ul>
+<li><code>name</code>: The name of the tool.</li>
+<li><code>type</code>: The type of entry.</li>
+</ul>
+</main></html>`
+    expect(parseMistralWebSearchTools(html)).toEqual([
+      'web_search',
+      'web_search_premium',
+    ])
   })
 
   it('gives them only to a page that lists agents-conversations', () => {

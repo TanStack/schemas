@@ -9,6 +9,8 @@ import {
 } from '../fixtures/mistral-model-page.ts'
 import { provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
+import { MISTRAL_WEBSEARCH_URL } from '../mistral-pricing.ts'
+import { MISTRAL_REASONING_URL } from '../reasoning-config.ts'
 
 const MODELS_PAGE = readFileSync(
   new URL('../fixtures/mistral-models.md.txt', import.meta.url),
@@ -145,8 +147,7 @@ describe('mistral listModels modalities', () => {
 <tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.1</td><td>—</td><td>$0.3</td></tr>
 </table>`,
       'https://docs.mistral.ai/resources/changelogs': '',
-      'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md':
-        MISTRAL_WEBSEARCH_GUIDE,
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
       'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
         mistralModelPage(
           ['mistral-small-2603', 'mistral-small-latest'],
@@ -159,7 +160,7 @@ describe('mistral listModels modalities', () => {
             ],
           ],
         ),
-      'https://docs.mistral.ai/studio/conversations/reasoning.md':
+      [MISTRAL_REASONING_URL]:
         '- `mistral-small-latest`: Supports adjustable reasoning via the `reasoning_effort` parameter.',
       'https://docs.mistral.ai/models':
         '<a href="/models/not-a-listed-id">x</a>',
@@ -281,7 +282,7 @@ describe('mistral listModels docs failures', () => {
       expect(docsFailures?.first.map((failure) => failure.source)).toEqual(
         expect.arrayContaining([
           'https://docs.mistral.ai/inference/pricing',
-          'https://docs.mistral.ai/studio/conversations/reasoning.md',
+          MISTRAL_REASONING_URL,
         ]),
       )
     } finally {

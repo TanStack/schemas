@@ -38,6 +38,7 @@ import type { Expr, RateCard } from '@modelschemas/rate-card'
 import { MISTRAL_DEPRECATIONS_URL } from './deprecations.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
+import { mistralDocsMarkdown } from './reasoning-config.ts'
 import { parseMistralPageTools } from './server-tools.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { FactSource, ModelInfo } from './types.ts'
@@ -1234,29 +1235,42 @@ export interface MistralPricingLookup {
   seen: ReadonlySet<string>
 }
 
+/**
+ * The rendered web-search guide. `llms.txt` still links
+ * `https://docs.mistral.ai/studio/agents/agent-tools/websearch.md`, which
+ * 404s (checked 2026-11-19). This HTML page is what serves the guide.
+ */
 export const MISTRAL_WEBSEARCH_URL =
-  'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md'
+  'https://docs.mistral.ai/studio/agents/agent-tools/websearch'
 
 /**
  * The web search guide's tool ids (#409). It states the tool "allows any
  * of our models to access the web" and that it works with the
  * Conversations API (`/v1/conversations`), not Chat Completions; the ids
- * are the bullets under "There are two versions:". Without the any-model
+ * are the bullets directly under "There are two versions:". Later schema
+ * bullets (`name`, `type`, …) are not tool ids. Without the any-model
  * sentence, the Conversations scope, or an id, it throws. Mistral's other
  * built-in tools (code interpreter, image generation, libraries) make no
  * any-model statement, so they are not read.
  */
 export function parseMistralWebSearchTools(markdown: string): Array<string> {
-  if (!/allows any of our models to access the web/.test(markdown)) {
+  const page = mistralDocsMarkdown(markdown)
+  if (!/allows any of our models to access the web/.test(page)) {
     throw new Error('mistral websearch guide: no any-model statement')
   }
-  if (!/work with the \[Conversations API\]/.test(markdown)) {
+  if (!/work with the \[Conversations API\]/.test(page)) {
     throw new Error('mistral websearch guide: no Conversations API scope')
   }
-  const versions = markdown.split(/^There are two versions:$/m)[1] ?? ''
-  const ids = [...versions.matchAll(/^- `([a-z][a-z0-9_]*)`:/gm)].map(
-    (match) => match[1] ?? '',
-  )
+  const versions = page.split(/^There are two versions:$/m)[1] ?? ''
+  const ids: Array<string> = []
+  for (const line of versions.split('\n')) {
+    const match = /^- `([a-z][a-z0-9_]*)`:/.exec(line)
+    if (match?.[1]) {
+      ids.push(match[1])
+      continue
+    }
+    if (ids.length > 0 && line.trim() !== '') break
+  }
   if (ids.length === 0) {
     throw new Error('mistral websearch guide: names no tool id')
   }

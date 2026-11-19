@@ -21,8 +21,61 @@ import type { ByteplusDoc } from './byteplus-pricing.ts'
 import { fetchText, reasoningViolation, sha256Text } from './types.ts'
 import type { ModelFactSources, ModelInfo, ModelReasoning } from './types.ts'
 
+/**
+ * The rendered reasoning guide. `https://docs.mistral.ai/llms.txt` links
+ * `https://docs.mistral.ai/inference/conversations/reasoning.md`, and the
+ * old `/studio/conversations/reasoning.md` redirects there, but that
+ * markdown twin 404s (checked 2026-11-19). This HTML page is what serves
+ * the guide.
+ */
 export const MISTRAL_REASONING_URL =
-  'https://docs.mistral.ai/studio/conversations/reasoning.md'
+  'https://docs.mistral.ai/inference/conversations/reasoning'
+
+/**
+ * Mistral's docs site returns a full HTML document where `llms.txt` still
+ * names a `.md` twin. The reasoning and web-search parsers read the
+ * markdown shape, so a rendered page becomes that shape: code becomes
+ * backticks, links become `[text]`, list items become bullets. A markdown
+ * body is returned unchanged.
+ */
+export function mistralDocsMarkdown(body: string): string {
+  if (!/<!doctype html|<html[\s>]/i.test(body)) return body
+  let text = body
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+  const main = text.match(/<main\b[^>]*>[\s\S]*?<\/main>/i)
+  text = main?.[0] ?? text
+  // Code before links, so a linked code span is still a backtick.
+  // Links need brackets: the web-search parser matches `[Conversations API]`.
+  text = text
+    .replace(/<code\b[^>]*>/gi, '`')
+    .replace(/<\/code>/gi, '`')
+    .replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '[$1]')
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(
+      /<h([1-6])\b[^>]*>/gi,
+      (_, level: string) => `\n${'#'.repeat(Number(level))} `,
+    )
+    .replace(/<\/h[1-6]>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|ul|ol|section)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, digits: string) =>
+      String.fromCodePoint(Number(digits)),
+    )
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&amp;/g, '&')
+  return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
+}
+
 export const GROQ_REASONING_URL = 'https://console.groq.com/docs/reasoning.md'
 export const COHERE_REASONING_URL = 'https://docs.cohere.com/docs/reasoning.md'
 export const BYTEPLUS_REASONING_URL =
@@ -200,18 +253,20 @@ export function openRouterReasoning(
 /**
  * Mistral's reasoning guide. Bullets that name `reasoning_effort` are effort
  * mode. Effort names are the `reasoning_effort = "…"` values, unless the
- * same bullet publishes its own list. Native "always on, no parameter"
+ * same bullet publishes its own list. A bullet that names its own effort
+ * levels ("Supports `low`, `medium`, and `high` reasoning effort") is that
+ * model's list, not the shared one. Native "always on, no parameter"
  * prose names no mode and contributes nothing.
  */
 export function parseMistralReasoning(
   markdown: string,
 ): Map<string, ModelReasoning> {
   const out = new Map<string, ModelReasoning>()
-  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const prose = mistralDocsMarkdown(markdown).replace(/```[\s\S]*?```/g, '')
   const preludeEnd = prose.search(/handling thinking chunks/i)
   const prelude = preludeEnd < 0 ? prose : prose.slice(0, preludeEnd)
   const bullet =
-    /`([a-z0-9][a-z0-9.-]*)`:\s*Supports adjustable reasoning via the `reasoning_effort`/g
+    /`([a-z0-9][a-z0-9.-]*)`\)?:\s*Supports adjustable reasoning via the `reasoning_effort`/g
   // `reasoning_effort = "none"` omits the thinking chunk for Mistral models.
   // Example assignments are still not an allowlist. A model's own value list
   // below replaces this.
@@ -272,7 +327,61 @@ export function parseMistralReasoning(
       efforts,
     })
   }
+  // Own effort names on the bullet itself. Applied after the shared
+  // high/none list so that list does not replace them. A list with no
+  // `none` leaves mandatory null until prose says the model always reasons.
+  const namedEfforts = new Set<string>()
+  const named =
+    /`([a-z0-9][a-z0-9.-]*)`\)?:\s*Supports\s+([^.\n]{0,200}?)\sreasoning effort/g
+  for (const match of prose.matchAll(named)) {
+    const id = match[1]
+    const efforts = [...(match[2] ?? '').matchAll(/`([a-z]+)`/g)].flatMap(
+      (found) => (found[1] ? [found[1]] : []),
+    )
+    if (!id || efforts.length === 0) continue
+    out.set(id, { mode: 'effort', mandatory: null, efforts })
+    namedEfforts.add(id)
+  }
+  // "`mistral-large-4` / `mistral-large-4-0`) supports three reasoning levels"
+  const sharedLadder =
+    /`([a-z0-9][a-z0-9.-]*)`\s*\/\s*`([a-z0-9][a-z0-9.-]*)`\)\s*supports three reasoning levels/gi
+  for (const match of prose.matchAll(sharedLadder)) {
+    const leftId = match[1]
+    const rightId = match[2]
+    if (!leftId || !rightId) continue
+    const left = out.get(leftId)
+    const right = out.get(rightId)
+    if (left && !right) {
+      out.set(rightId, { ...left })
+      namedEfforts.add(rightId)
+    } else if (right && !left) {
+      out.set(leftId, { ...right })
+      namedEfforts.add(leftId)
+    }
+  }
+  for (const id of namedEfforts) {
+    const reasoning = out.get(id)
+    if (!reasoning || reasoning.efforts?.includes('none')) continue
+    if (!statesAlwaysReasons(prose, id)) continue
+    out.set(id, { ...reasoning, mandatory: true })
+  }
   return out
+}
+
+/** The id's section says reasoning cannot be turned off. */
+function statesAlwaysReasons(prose: string, id: string): boolean {
+  const needle = '`' + id + '`'
+  let from = 0
+  while (from < prose.length) {
+    const at = prose.indexOf(needle, from)
+    if (at < 0) return false
+    const rest = prose.slice(at)
+    const heading = rest.search(/\n#{2,3} /)
+    const block = heading < 0 ? rest.slice(0, 1600) : rest.slice(0, heading)
+    if (/always reasons/i.test(block)) return true
+    from = at + needle.length
+  }
+  return false
 }
 
 interface NamedModel {
