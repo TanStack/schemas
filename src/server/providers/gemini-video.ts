@@ -11,17 +11,16 @@
  * A page that states a resolution, fps and token rate (#697) is a
  * real-time stream. The Interactions document publishes no `world_setup`
  * or connect operation for it, so it gets no fixed-duration schema and a
- * named warning. A limit shape the parser does not know throws on that
- * page only: the Discovery spec and the other video models still sync.
+ * named warning. A page that fails to fetch, or a limit shape the parser
+ * does not know, rejects this whole fetch. A partial run would mark every
+ * missing video endpoint removed (`sync.ts`).
  *
  * Which pages: the models-index pages for the ids Google's video guide
  * names. Nothing here falls back: a document that lost the shape, or a
  * guide that leads to no output-video limit, throws with its URL, and the
  * sync keeps the stored schemas.
  */
-import { errorMessage } from '../errors.ts'
 import { extractEndpointSchemas } from '../ingest/bundle.ts'
-import { ingestFailedEvent, noteIngest } from '../ingest/ingest-signals.ts'
 import {
   GEMINI_MODELS_INDEX_URL,
   parseModelIndexDocs,
@@ -214,39 +213,23 @@ export async function geminiVideoEndpoints(): Promise<{
     fetchText(GEMINI_MODELS_INDEX_URL),
   ])
   const pages = videoModelPages(guide, index)
-  const parsed = await mapConcurrent(pages, 4, async (url) => {
-    try {
-      return {
-        url,
-        models: parseVideoModels(await fetchText(url), url),
-        error: null,
-      }
-    } catch (error) {
-      return { url, models: [], error: errorMessage(error) }
-    }
-  })
-  const warnings: Array<string> = []
-  for (const page of parsed) {
-    if (!page.error) continue
-    const warning = `gemini video: ${page.url}: ${page.error}`
-    warnings.push(warning)
-    noteIngest(ingestFailedEvent('spec-sync', 'gemini', page.error, page.url))
-    console.error(warning)
+  const models = (
+    await mapConcurrent(pages, 4, async (url) =>
+      parseVideoModels(await fetchText(url), url),
+    )
+  ).flat()
+  if (models.length === 0) {
+    throw new Error(
+      `gemini video: ${GEMINI_VIDEO_GUIDE_URL} leads to no model with an Output video limit (${String(pages.length)} model pages read: ${pages.join(', ') || 'none'})`,
+    )
   }
-  const models = parsed.flatMap((page) => page.models)
+  const warnings: Array<string> = []
   const clips = models.filter(isClipModel)
   for (const model of models) {
     if (isClipModel(model)) continue
     const warning = streamVideoWarning(model.rawId)
     warnings.push(warning)
     console.error(`gemini video: ${warning}`)
-  }
-  if (models.length === 0) {
-    const read = `(${String(pages.length)} model pages read: ${pages.join(', ') || 'none'})`
-    const base = `gemini video: ${GEMINI_VIDEO_GUIDE_URL} leads to no model with an Output video limit ${read}`
-    throw new Error(
-      warnings.length > 0 ? `${base}. ${warnings.join('; ')}` : base,
-    )
   }
   const spec = JSON.parse(specText) as OpenApiDocument
   const specHash = await sha256Text(specText)

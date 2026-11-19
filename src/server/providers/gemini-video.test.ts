@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { takeIngestEvents } from '../ingest/ingest-signals.ts'
 import {
   GEMINI_MODELS_INDEX_URL,
   parsePageOutputVideo,
@@ -253,7 +252,25 @@ describe('geminiVideoEndpoint', () => {
 
 describe('geminiVideoEndpoints', () => {
   const MYSTERY_URL = 'https://aistudio.google.com/docs/models/mystery-video.md'
-  const VIDEO_INDEX = `
+  const LIVE_INDEX = `
+{% table variant="model" %}
+  * Model
+  * Endpoint
+
+  ---
+
+  * [Gemini Omni Flash](/docs/models/gemini-omni-flash)
+  * \`gemini-omni-1.2-flash\`
+    \`gemini-omni-1.1-flash\`
+
+  ---
+
+  * [Genie 4](/docs/models/genie-4)
+  * \`genie-4\`
+{% /table %}
+`
+  const LIVE_GUIDE = 'Use `gemini-omni-1.2-flash` and `genie-4` for video.'
+  const UNREADABLE_INDEX = `
 {% table variant="model" %}
   * Model
   * Endpoint
@@ -275,8 +292,6 @@ describe('geminiVideoEndpoints', () => {
   * \`mystery-video\`
 {% /table %}
 `
-  const GUIDE =
-    'Use `gemini-omni-1.2-flash`, `genie-4`, and `mystery-video` for video.'
   const MYSTERY = `
 ## mystery-video
 
@@ -286,19 +301,20 @@ describe('geminiVideoEndpoints', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    takeIngestEvents()
   })
 
-  it('builds clip schemas, warns for a stream, and keeps going when one page is unreadable', async () => {
+  function stub(
+    pages: Record<string, string>,
+    guide = LIVE_GUIDE,
+    index = LIVE_INDEX,
+  ) {
     vi.stubGlobal('fetch', (input: string) => {
       const url = String(input)
       const body: Record<string, string> = {
         [GEMINI_INTERACTIONS_SPEC_URL]: JSON.stringify(spec()),
-        [GEMINI_VIDEO_GUIDE_URL]: GUIDE,
-        [GEMINI_MODELS_INDEX_URL]: VIDEO_INDEX,
-        [PAGE_URL]: OMNI_PAGE,
-        [GENIE_URL]: GENIE_PAGE,
-        [MYSTERY_URL]: MYSTERY,
+        [GEMINI_VIDEO_GUIDE_URL]: guide,
+        [GEMINI_MODELS_INDEX_URL]: index,
+        ...pages,
       }
       const text = body[url]
       return Promise.resolve(
@@ -307,6 +323,10 @@ describe('geminiVideoEndpoints', () => {
           : new Response(text),
       )
     })
+  }
+
+  it('builds clip schemas and warns for a real-time stream', async () => {
+    stub({ [PAGE_URL]: OMNI_PAGE, [GENIE_URL]: GENIE_PAGE })
 
     const result = await geminiVideoEndpoints()
 
@@ -315,20 +335,21 @@ describe('geminiVideoEndpoints', () => {
       'gemini-omni-1.1-flash',
     ])
     expect(result.warnings).toContain(streamVideoWarning('genie-4'))
-    expect(result.warnings).toContain(
-      `gemini video: ${MYSTERY_URL}: gemini model page: unreadable Output video limit "up to 15 seconds"`,
-    )
-    expect(takeIngestEvents()).toEqual([
+  })
+
+  it('rejects the sync when one page is unreadable', async () => {
+    stub(
       {
-        event: 'ingest_failed',
-        properties: {
-          job: 'spec-sync',
-          providerId: 'gemini',
-          error:
-            'gemini model page: unreadable Output video limit "up to 15 seconds"',
-          source: MYSTERY_URL,
-        },
+        [PAGE_URL]: OMNI_PAGE,
+        [GENIE_URL]: GENIE_PAGE,
+        [MYSTERY_URL]: MYSTERY,
       },
-    ])
+      `${LIVE_GUIDE} Also \`mystery-video\`.`,
+      UNREADABLE_INDEX,
+    )
+
+    await expect(geminiVideoEndpoints()).rejects.toThrow(
+      'unreadable Output video limit "up to 15 seconds"',
+    )
   })
 })
