@@ -141,6 +141,11 @@ describe('gemini video models (#658)', () => {
     new URL('./fixtures/gemini-omni-flash.md.txt', import.meta.url),
     'utf8',
   )
+  /** https://aistudio.google.com/docs/models/genie-4.md, 2026-11-20. */
+  const GENIE_PAGE = readFileSync(
+    new URL('./fixtures/gemini-genie-4.md.txt', import.meta.url),
+    'utf8',
+  )
   const INDEX = `
 {% table variant="model" %}
   * Model
@@ -164,7 +169,7 @@ describe('gemini video models (#658)', () => {
     ],
   })
 
-  function stub(pages: Record<string, string>) {
+  function stub(pages: Record<string, string>, listing = LISTING) {
     vi.stubGlobal('fetch', (input: string) => {
       const url = String(input)
       if (
@@ -172,7 +177,7 @@ describe('gemini video models (#658)', () => {
           'https://generativelanguage.googleapis.com/v1beta/models',
         )
       ) {
-        return Promise.resolve(new Response(LISTING))
+        return Promise.resolve(new Response(listing))
       }
       if (url === GEMINI_DISCOVERY_URL) {
         return Promise.resolve(
@@ -209,6 +214,64 @@ describe('gemini video models (#658)', () => {
         rawId: 'gemini-omni-1.2-flash',
         activity: 'video',
         schemaEndpointId: 'gemini-omni-1.2-flash',
+      }),
+    ])
+  })
+
+  it('lists genie-4 as video because the page states an output video stream (#697)', async () => {
+    stub(
+      {
+        [GEMINI_MODELS_INDEX_URL]: `
+{% table variant="model" %}
+  * Model
+  * Endpoint
+
+  ---
+
+  * [Genie 4](/docs/models/genie-4)
+  * \`genie-4\`
+
+  ---
+
+  * [Gemini 2.5 Flash](/docs/models/gemini-2.5-flash)
+  * \`gemini-2.5-flash\`
+{% /table %}
+`,
+        'https://aistudio.google.com/docs/models/genie-4.md': GENIE_PAGE,
+        'https://aistudio.google.com/docs/models/gemini-2.5-flash.md': `
+## gemini-2.5-flash
+
+| Model code | \`gemini-2.5-flash\` |
+| Supported data types | **Inputs** Text **Output** Text |
+`,
+      },
+      JSON.stringify({
+        models: [
+          {
+            name: 'models/genie-4',
+            displayName: 'Genie 4',
+            supportedGenerationMethods: ['generateContent'],
+          },
+          {
+            name: 'models/gemini-2.5-flash',
+            displayName: 'Gemini 2.5 Flash',
+            supportedGenerationMethods: ['generateContent'],
+          },
+        ],
+      }),
+    )
+
+    const result = await geminiProvider.listModels({ GEMINI_API_KEY: KEY })
+
+    expect(result.models).toEqual([
+      expect.objectContaining({
+        rawId: 'genie-4',
+        activity: 'video',
+        schemaEndpointId: 'genie-4',
+      }),
+      expect.objectContaining({
+        rawId: 'gemini-2.5-flash',
+        activity: 'chat',
       }),
     ])
   })
