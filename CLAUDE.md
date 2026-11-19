@@ -97,7 +97,11 @@ FAL `llms.txt` rate-card extract hourly 06:00–11:00 UTC —
 deploys on push to `main` (skipped, not failed, without the `main` branch
 rule or the `production` token), and `agent-workflows/monitor.ts` reads
 PostHog every 15 minutes and opens one fix PR per recurring ingest failure
-(branch `agent/monitor/<provider>-<event>`, which is also the dedupe key). They import `@tanstack-source/ci`,
+(branch `agent/monitor/<provider>-<event>`, which is also the dedupe key:
+an open PR, or one opened in the last 24 hours, stops a new fix). Fixes
+start only on the :07 tick of an even UTC hour. An upstream cause gets a
+PR that adds a file to `docs/monitor-residuals/`, which `check` then
+drops. They import `@tanstack-source/ci`,
 which is not installed here, so tsc, oxlint and the lefthook lint skip
 `.source/**`; only oxfmt checks it.
 

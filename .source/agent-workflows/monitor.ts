@@ -2,9 +2,11 @@
 //
 // `check` reads PostHog (MCP connection `posthog`, project 643425) for
 // recurring ingest failures. `pending` drops the ones whose fix branch has
-// an open pull request. `fix` runs once per failure left and opens a fix
-// pull request with the evidence. Agent-workflow jobs have no tool that
-// creates an issue, so the PR is the record. `.source/workflows/deploy.ts`
+// an open pull request, or one opened in the last 24 hours, and passes
+// failures on only one tick in every 2 hours. `fix` runs once per failure
+// left and always opens a pull request with the evidence: a fix, or a
+// file in docs/monitor-residuals/ when the cause is upstream. Agent-workflow
+// jobs have no tool that creates an issue, so the PR is the record. `.source/workflows/deploy.ts`
 // deploys after the merge.
 //
 // Admin setup (people only): connect PostHog and give it to the check job:
@@ -85,7 +87,9 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
    FROM events
    WHERE event IN ('ingest_failed', 'pricing_lost', 'update_storm')
      AND timestamp > now() - INTERVAL 6 HOUR
-   GROUP BY event, p, r, s HAVING polls >= 3 ORDER BY n DESC LIMIT 50
+   GROUP BY event, p, r, s
+   HAVING polls >= 3 AND latest > now() - INTERVAL 30 MINUTE
+   ORDER BY n DESC LIMIT 50
    Then count the liveness signal:
    SELECT count() FROM events
    WHERE event = 'parse_rows' AND timestamp > now() - INTERVAL 6 HOUR
@@ -94,13 +98,16 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
    errors, answer queryOk false. That fails this job, which is right:
    never answer an empty list for a check you could not run.
 
-2. Every row left is RECURRING: the same provider + error on at least 3
-   polls (the models poll runs every 15 minutes). Drop:
+2. Every row left is RECURRING and still happening: the same provider +
+   error on at least 3 polls (the models poll runs every 15 minutes), the
+   last one under 30 minutes ago. Drop:
    - upstream 5xx, 429, timeouts and "Network connection lost";
    - known residuals: llmgateway pricing_lost parser_miss (discount, peak,
      image, audio and per-second keys are refused on purpose); huggingface
      "native recommendation section missing" (the source does not publish
-     it: docs/source-silent/huggingface.md).
+     it: docs/source-silent/huggingface.md);
+   - every failure that a file in docs/monitor-residuals/ describes: list
+     that folder and read each file except README.md.
    Do not look for an existing issue or pull request: the next job drops
    a failure that already has an open fix.
 
@@ -144,7 +151,8 @@ export default defineAgentWorkflow('monitor', {
     ],
   })
   // Dedupe in code, not by a model reading titles anyone can write: drop a
-  // failure whose fix branch already has an open pull request.
+  // failure whose fix branch has an open pull request, or one opened in
+  // the last 24 hours (a closed or merged fix is not tried again at once).
   .job('pending', {
     needs: ['check'],
     output: z.object({ failures: z.array(failure) }),
@@ -152,14 +160,40 @@ export default defineAgentWorkflow('monitor', {
       {
         name: 'Drop failures with an open fix',
         do: async (ctx) => {
+          // ponytail: a clock throttle, because a job cannot see the runs
+          // of its workflow. A fix that fails, or that is still running
+          // (up to 90 minutes), leaves no pull request, so without this it
+          // starts again on every tick. Fixes start only on the :07 tick
+          // of an even UTC hour: at most 12 a day for one failure. Replace
+          // with a look at the running fix cells when forge() can list them.
+          const now = new Date()
+          if (now.getUTCHours() % 2 !== 0 || now.getUTCMinutes() >= 15) {
+            console.log('Not a fix tick (:07 of an even UTC hour): no fix.')
+            ctx.setOutput({ failures: [] })
+            return
+          }
           const client = forge(ctx)
+          const dayAgo = now.getTime() - 24 * 60 * 60 * 1000
           const failures = []
           for (const item of ctx.needs.check.output.failures) {
             const head = `agent/monitor/${fixBranch(item)}`
-            const open = await client.pulls.list({ head, state: 'open' })
-            // A pull request from a fork has the head `owner:branch`, so
-            // it never equals `head` and never counts as an existing fix.
-            if (!open.some((pull) => pull.head === head)) failures.push(item)
+            const pulls = [
+              ...(await client.pulls.list({ head, state: 'open' })),
+              // `closed` lists merged pull requests too.
+              ...(await client.pulls.list({ head, state: 'closed' })),
+            ]
+            const covered = pulls.some((pull) => {
+              // A pull request from a fork has the head `owner:branch`, so
+              // it never equals `head` and never counts as an existing fix.
+              if (pull.head !== head) return false
+              if (typeof pull.createdAt !== 'number') {
+                throw new Error(
+                  `pull #${pull.number} has no numeric createdAt: the dedupe cannot date it`,
+                )
+              }
+              return pull.state === 'open' || pull.createdAt > dayAgo
+            })
+            if (!covered) failures.push(item)
           }
           ctx.setOutput({ failures })
         },
@@ -196,7 +230,11 @@ export default defineAgentWorkflow('monitor', {
           // and the pending job finds the PR by that branch.
           `Work on the branch "${fixBranch(ctx.item)}", and start the title with "monitor(${ctx.item.providerId}/${ctx.item.event}): " followed by the error. ` +
           `Put the evidence above in the pull request body. ` +
-          `If the cause is upstream and nothing in this repository should change, open no pull request and say why.\n\n${FIX_RULES}`,
+          // Every outcome is a pull request: with none, the next fix tick
+          // would pay for the same answer again, and no person would hear.
+          `If the cause is upstream and nothing in src/ should change, change no code: open the pull request with one file, ` +
+          `docs/monitor-residuals/${fixBranch(ctx.item)}.md, that states the provider, the event, the error text to match, and why no fix is possible ` +
+          `(add to the file when it exists). The check job drops a failure that such a file describes.\n\n${FIX_RULES}`,
         tools: [
           'read_file',
           'list_files',
