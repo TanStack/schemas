@@ -334,6 +334,58 @@ describe('parseMistralReasoning', () => {
       undefined,
     )
   })
+
+  it('reads the rendered guide, including a model whose own levels replace the shared list', () => {
+    const html = `<!DOCTYPE html><html><main>
+<ul>
+<li>Mistral Small 4 (<code>mistral-small-2603</code>): Supports adjustable reasoning via the <code>reasoning_effort</code> parameter.</li>
+<li>Mistral Medium 3.5 (<code>mistral-medium-3-5</code>): Supports adjustable reasoning via the <code>reasoning_effort</code> parameter.</li>
+<li>Mistral Large 4 (<code>mistral-large-4-0</code>): Supports <code>low</code>, <code>medium</code>, and <code>high</code> reasoning effort.</li>
+<li><code>zai-glm-5-3</code>: Supports adjustable reasoning via the <code>reasoning_effort</code> parameter. Supported values are <code>low</code>, <code>high</code>, and <code>max</code> (see note below).</li>
+<li>GLM 5.3 Flash (<code>zai-glm-5-3-flash</code>): Supports <code>low</code>, <code>high</code>, and <code>max</code> reasoning effort. <code>none</code> is not supported.</li>
+</ul>
+<p>The <code>reasoning_effort</code> parameter controls how much compute the model spends reasoning. For <code>mistral-small-2603</code> and <code>mistral-medium-3-5</code>:</p>
+<ul>
+<li><code>reasoning_effort = &quot;high&quot;</code>: The response includes a full thinking chunk before the final answer.</li>
+<li><code>reasoning_effort = &quot;none&quot;</code>: The model thinks minimally and the thinking chunk is omitted from the response.</li>
+</ul>
+<p><code>zai-glm-5-3</code> supports <code>low</code>, <code>high</code>, and <code>max</code> — not <code>none</code>. <code>message.content</code> is always returned as a list of chunks (thinking + text).</p>
+<p>described in Handling thinking chunks.</p>
+<h3>Mistral Large 4 reasoning effort</h3>
+<p>Mistral Large 4 (<code>mistral-large-4</code> / <code>mistral-large-4-0</code>) supports three reasoning levels:</p>
+<p>Mistral Large 4 always reasons, so no level matches <code>none</code>.</p>
+<h2>Usage</h2>
+</main></html>`
+    const parsed = parseMistralReasoning(html)
+    expect(parsed.get('mistral-small-2603')).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['high', 'none'],
+    })
+    expect(parsed.get('mistral-medium-3-5')).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['high', 'none'],
+    })
+    expect(parsed.get('zai-glm-5-3')).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts: ['low', 'high', 'max'],
+    })
+    expect(parsed.get('zai-glm-5-3-flash')).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'high', 'max'],
+    })
+    expect(parsed.get('mistral-large-4-0')).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts: ['low', 'medium', 'high'],
+    })
+    expect(parsed.get('mistral-large-4')).toEqual(
+      parsed.get('mistral-large-4-0'),
+    )
+  })
 })
 
 describe('parseGroqReasoning', () => {

@@ -100,16 +100,24 @@ source URL, fixture or output; they make no inference calls.
 
 ## Mistral
 
-https://docs.mistral.ai/studio/conversations/reasoning.md
+https://docs.mistral.ai/inference/conversations/reasoning
+
+Checked 2026-11-19. `llms.txt` links the `.md` twin of this page, and the old
+`/studio/conversations/reasoning.md` path redirects to that twin, but the twin
+404s. The HTML page is the guide.
 
 The guide scopes adjustable reasoning to named model IDs, followed by a normative
 parameter-value section describing high and none. These values apply to that
-scope, while its explicit zai-glm-5-3 low/high/max list overrides them. Code
-assignments alone do not establish the values. The existing adapter retains native
-API alias relationships when copying these facts; no sibling relationships are
-invented. Models outside the guide's scope do not inherit its controls. Fenced
-examples cannot expand the normative values. The GLM always-thinking note
-explicitly establishes mandatory=true; a value list alone leaves it null.
+scope, while its explicit zai-glm-5-3 low/high/max list overrides them. A bullet
+that names its own levels (Supports `low`, `medium`, and `high` reasoning
+effort) is that model's list. Mistral Large 4's section says it always reasons,
+so `mistral-large-4` and `mistral-large-4-0` are mandatory. Code assignments
+alone do not establish the values. The existing adapter retains native API alias
+relationships when copying these facts; no sibling relationships are invented.
+Models outside the guide's scope do not inherit its controls. Fenced examples
+cannot expand the normative values. The GLM always-thinking note explicitly
+establishes mandatory=true; a value list alone leaves it null. A rendered HTML
+page is read as the same markdown shape.
 
 ## Dashscope
 
