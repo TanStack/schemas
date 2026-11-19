@@ -435,6 +435,59 @@ describe('parsePerplexityEffortLevels', () => {
     ])
   })
 
+  // Served since 2026-11-19: xhigh's Model bullet names one id and states
+  // there is no fallback. ultra still has no frozen configuration and names
+  // its runtime model only in that sentence. Trimmed to the bullets the
+  // parser reads, from https://docs.perplexity.ai/docs/agent-api/effort.md.
+  const NO_FALLBACK_DOC = [
+    '## Current effort level values',
+    '',
+    '> [accordion] fast — current effort level values',
+    '>',
+    '> * **Models:** `openai/gpt-6-luna`, with `openai/gpt-5.6-luna` as the [fallback model](https://docs.perplexity.ai/docs/agent-api/model-fallback.md)',
+    '> * **Reasoning effort:** `none`',
+    '> * **Tools:** `web_search`',
+    '',
+    '> [accordion] low — current effort level values',
+    '>',
+    '> * **Model:** `openai/gpt-6-luna`',
+    '> * **Reasoning effort:** `minimal`',
+    '> * **Tools:** `web_search`, `fetch_url` (`max_urls: 1`)',
+    '',
+    '> [accordion] medium — current effort level values',
+    '>',
+    '> * **Model:** `openai/gpt-6-luna`',
+    '> * **Reasoning effort:** `medium`',
+    '> * **Tools:** `web_search`, `fetch_url` (`max_urls: 1`)',
+    '',
+    '> [accordion] high — current effort level values',
+    '>',
+    '> * **Model:** `openai/gpt-6.1-terra`',
+    '> * **Reasoning effort:** `medium`',
+    '> * **Tools:** `web_search`, `fetch_url` (`max_urls: 1`)',
+    '',
+    '> [accordion] xhigh — current effort level values',
+    '>',
+    '> * **Model:** `openai/gpt-6.2-sol` (no fallback model)',
+    '> * **Reasoning effort:** `high`',
+    '> * **Tools:** `web_search`, `finance_search`, `sandbox`',
+    '',
+    '> [accordion] ultra: current effort level values',
+    '>',
+    '> `ultra` has no frozen configuration. It runs on `anthropic/claude-opus-5-5`, and its settings are not all part of the documented request schema, so call it by name.',
+    '',
+    '## Next Steps',
+  ].join('\n')
+
+  it("reads a Model bullet that states there is no fallback, and skips ultra's runtime model named only in prose", () => {
+    expect(NO_FALLBACK_DOC).toContain('(no fallback model)')
+    expect([...parsePerplexityEffortLevels(NO_FALLBACK_DOC)]).toEqual([
+      ['openai/gpt-6-luna', ['reasoning', 'reasoning_effort', 'tools']],
+      ['openai/gpt-6.1-terra', ['reasoning', 'reasoning_effort', 'tools']],
+      ['openai/gpt-6.2-sol', ['reasoning', 'reasoning_effort', 'tools']],
+    ])
+  })
+
   it.each([
     [
       'a fallback clause in another shape',
@@ -486,6 +539,11 @@ describe('parsePerplexityEffortLevels', () => {
       '* **LLM:** `openai',
     ],
     ['a model that is prose', '`anthropic/claude-opus-5-5`', 'Claude Opus 5.5'],
+    [
+      'text after a Model id other than (no fallback model)',
+      '`anthropic/claude-opus-5-5`',
+      '`anthropic/claude-opus-5-5` (preview)',
+    ],
     ['an effort that is prose', '`high`', 'high, or lower on retries'],
     [
       'tools that are prose',

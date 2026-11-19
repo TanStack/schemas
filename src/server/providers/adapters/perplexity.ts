@@ -268,13 +268,16 @@ export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
     const tools = bullet('Tools')
     const single = bullet('Model')
     const several = bullet('Models')
-    // `Models:` names the level's model, then the fallback the request
-    // carries. Only the first is the model the level is stated to run on.
+    // `Model:` is a bare backticked id, or that id plus `(no fallback model)`
+    // (xhigh since 2026-11-19). That note states there is no fallback; any
+    // other text after the id is unread. `Models:` names the level's model,
+    // then the fallback the request carries. Only the first is the model
+    // the level is stated to run on.
     const model =
       single !== null && several !== null
         ? undefined
         : single !== null
-          ? /^`([^`\s]+)`$/.exec(single)?.[1]
+          ? /^`([^`\s]+)`(?: \(no fallback model\))?$/.exec(single)?.[1]
           : /^`([^`\s]+)`, with `[^`\s]+` as the \[fallback model\]\([^)\s]+\)$/.exec(
               several ?? '',
             )?.[1]
