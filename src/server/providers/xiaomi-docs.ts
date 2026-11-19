@@ -7,11 +7,11 @@ export const XIAOMI_MODELS = `${XIAOMI_DOCS}quick-start/summary/model.md`
 export const XIAOMI_PRICING = `${XIAOMI_DOCS}price/pay-as-you-go.md`
 export const XIAOMI_THINKING = `${XIAOMI_DOCS}quick-start/usage-guide/text-generation/deep-thinking.md`
 export const XIAOMI_SCHEMA_URLS = [
-  'api/chat/openai-api.md',
-  'api/chat/responses.md',
-  'api/chat/anthropic-api.md',
-  'api/audio/Speech-Recognition.md',
-  'api/audio/tts.md',
+  'api/chat/openai-api-post.md',
+  'api/chat/responses-post.md',
+  'api/chat/anthropic-api-post.md',
+  'api/audio/Speech-Recognition-post.md',
+  'api/audio/tts-post.md',
 ].map((path) => `${XIAOMI_DOCS}${path}`)
 
 function fail(message: string): never {
