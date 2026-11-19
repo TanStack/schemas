@@ -5,7 +5,8 @@
 // an open pull request, or one opened in the last 24 hours, and passes
 // failures on only one tick in every 2 hours. `fix` runs once per failure
 // left and always opens a pull request with the evidence: a fix, or a
-// file in docs/monitor-residuals/ when the cause is upstream. Agent-workflow
+// file in docs/monitor-residuals/ when the cause is upstream (`pending`
+// drops what those files match). Agent-workflow
 // jobs have no tool that creates an issue, so the PR is the record. `.source/workflows/deploy.ts`
 // deploys after the merge.
 //
@@ -20,7 +21,7 @@ import {
   setup,
   z,
 } from '@tanstack-source/ci'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 
 /** PostHog text as JSON with no `<` or `>`, so it cannot close its tag. */
 function inertJson(value: unknown): string {
@@ -73,6 +74,38 @@ const checkOutput = z.object({
 const fixBranch = (item: z.infer<typeof failure>) =>
   `${item.providerId}-${item.event}`
 
+/**
+ * docs/monitor-residuals/<provider>-<event>.json: failures with an upstream
+ * cause that no change here fixes. Matched in code. No model reads these
+ * files: the fix job writes them from PostHog text, which is untrusted.
+ */
+const residuals = z.array(
+  z.object({
+    providerId: failure.shape.providerId,
+    event: failure.shape.event,
+    /** A piece of the error text. Long enough not to match everything. */
+    errorIncludes: z.string().min(8).max(300),
+    reason: z.string().max(500),
+  }),
+)
+
+function loadResiduals(workspace: string): z.infer<typeof residuals> {
+  const dir = `${workspace}/docs/monitor-residuals`
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.json'))
+    .flatMap((name) => {
+      const parsed = residuals.safeParse(
+        JSON.parse(readFileSync(`${dir}/${name}`, 'utf8')),
+      )
+      if (!parsed.success) {
+        throw new Error(
+          `${dir}/${name} is not a residual list: ${parsed.error}`,
+        )
+      }
+      return parsed.data
+    })
+}
+
 const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repository).
 
 1. In PostHog, switch to project 643425 (modelschemas). Run this HogQL:
@@ -105,9 +138,7 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
    - known residuals: llmgateway pricing_lost parser_miss (discount, peak,
      image, audio and per-second keys are refused on purpose); huggingface
      "native recommendation section missing" (the source does not publish
-     it: docs/source-silent/huggingface.md);
-   - every failure that a file in docs/monitor-residuals/ describes: list
-     that folder and read each file except README.md.
+     it: docs/source-silent/huggingface.md).
    Do not look for an existing issue or pull request: the next job drops
    a failure that already has an open fix.
 
@@ -174,8 +205,16 @@ export default defineAgentWorkflow('monitor', {
           }
           const client = forge(ctx)
           const dayAgo = now.getTime() - 24 * 60 * 60 * 1000
+          const known = loadResiduals(ctx.workspace)
           const failures = []
           for (const item of ctx.needs.check.output.failures) {
+            const residual = known.some(
+              (r) =>
+                r.providerId === item.providerId &&
+                r.event === item.event &&
+                item.error.includes(r.errorIncludes),
+            )
+            if (residual) continue
             const head = `agent/monitor/${fixBranch(item)}`
             const pulls = [
               ...(await client.pulls.list({ head, state: 'open' })),
@@ -233,8 +272,9 @@ export default defineAgentWorkflow('monitor', {
           // Every outcome is a pull request: with none, the next fix tick
           // would pay for the same answer again, and no person would hear.
           `If the cause is upstream and nothing in src/ should change, change no code: open the pull request with one file, ` +
-          `docs/monitor-residuals/${fixBranch(ctx.item)}.md, that states the provider, the event, the error text to match, and why no fix is possible ` +
-          `(add to the file when it exists). The check job drops a failure that such a file describes.\n\n${FIX_RULES}`,
+          `docs/monitor-residuals/${fixBranch(ctx.item)}.json: a JSON array of { "providerId", "event", "errorIncludes", "reason" }. ` +
+          `Copy providerId and event from the data. errorIncludes is the shortest piece of the error, 8 characters or more, that names this failure and no other. ` +
+          `reason is one sentence of your own, with no text from the data. Add to the array when the file exists.\n\n${FIX_RULES}`,
         tools: [
           'read_file',
           'list_files',

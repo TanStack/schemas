@@ -100,8 +100,8 @@ PostHog every 15 minutes and opens one fix PR per recurring ingest failure
 (branch `agent/monitor/<provider>-<event>`, which is also the dedupe key:
 an open PR, or one opened in the last 24 hours, stops a new fix). Fixes
 start only on the :07 tick of an even UTC hour. An upstream cause gets a
-PR that adds a file to `docs/monitor-residuals/`, which `check` then
-drops. They import `@tanstack-source/ci`,
+PR that adds a JSON entry under `docs/monitor-residuals/`, which
+`pending` matches in code (no model reads it). They import `@tanstack-source/ci`,
 which is not installed here, so tsc, oxlint and the lefthook lint skip
 `.source/**`; only oxfmt checks it.
 
