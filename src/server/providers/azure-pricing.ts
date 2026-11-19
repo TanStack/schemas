@@ -20,7 +20,7 @@
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
-import { fetchJson, fetchText, sha256Text } from './types.ts'
+import { fetchText, fetchWithRetry, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
 /**
@@ -110,6 +110,11 @@ interface RetailItem {
   skuName?: string
   unitOfMeasure?: string
   retailPrice?: number
+}
+
+interface RetailPage {
+  Items?: Array<RetailItem>
+  NextPageLink?: string | null
 }
 
 const UNIT_TOKENS: Record<string, number> = { '1K': 1e3, '1M': 1e6 }
@@ -251,10 +256,13 @@ async function fetchMeters(): Promise<Array<AzureMeter>> {
     if (page === MAX_PAGES) {
       throw new Error(`azure: price list runs past ${String(MAX_PAGES)} pages`)
     }
-    const body = (await fetchJson(url)) as {
-      Items?: Array<RetailItem>
-      NextPageLink?: string | null
-    }
+    // A 429 on any page used to fail the whole price load (#691). Retry
+    // that page; the last failure still throws with its URL.
+    const body: RetailPage = await fetchWithRetry(
+      url,
+      () => ({}),
+      async (response) => (await response.json()) as RetailPage,
+    )
     items.push(...(body.Items ?? []))
     url = body.NextPageLink ?? null
   }
