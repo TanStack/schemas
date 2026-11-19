@@ -1,12 +1,19 @@
 import { readFileSync } from 'node:fs'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { parsePageOutputVideo } from './gemini-features.ts'
+import { takeIngestEvents } from '../ingest/ingest-signals.ts'
+import {
+  GEMINI_MODELS_INDEX_URL,
+  parsePageOutputVideo,
+} from './gemini-features.ts'
 import {
   GEMINI_INTERACTIONS_SPEC_URL,
+  GEMINI_VIDEO_GUIDE_URL,
   geminiVideoEndpoint,
+  geminiVideoEndpoints,
   parseVideoModels,
+  streamVideoWarning,
   videoModelPages,
 } from './gemini-video.ts'
 import type { OpenApiDocument } from './types.ts'
@@ -16,7 +23,13 @@ const OMNI_PAGE = readFileSync(
   new URL('./fixtures/gemini-omni-flash.md.txt', import.meta.url),
   'utf8',
 )
+/** https://aistudio.google.com/docs/models/genie-4.md, 2026-11-20. */
+const GENIE_PAGE = readFileSync(
+  new URL('./fixtures/gemini-genie-4.md.txt', import.meta.url),
+  'utf8',
+)
 const PAGE_URL = 'https://aistudio.google.com/docs/models/gemini-omni-flash.md'
+const GENIE_URL = 'https://aistudio.google.com/docs/models/genie-4.md'
 
 const INDEX = `
 {% table variant="model" %}
@@ -125,9 +138,37 @@ describe('parsePageOutputVideo', () => {
       parsePageOutputVideo('| Limits | **Output video** up to 15 seconds |'),
     ).toThrow('unreadable Output video limit "up to 15 seconds"')
   })
+
+  it('reads a resolution, fps and token rate as a stream, with no duration', () => {
+    expect(parsePageOutputVideo(GENIE_PAGE)).toEqual({
+      stream: {
+        width: 1280,
+        height: 720,
+        fps: 24,
+        tokensPerFrame: 240,
+        tokensPerSecond: 5760,
+      },
+    })
+  })
 })
 
 describe('parseVideoModels', () => {
+  it('binds genie-4 to the stream limit on its live page', () => {
+    expect(parseVideoModels(GENIE_PAGE, GENIE_URL)).toEqual([
+      {
+        rawId: 'genie-4',
+        pageUrl: GENIE_URL,
+        stream: {
+          width: 1280,
+          height: 720,
+          fps: 24,
+          tokensPerFrame: 240,
+          tokensPerSecond: 5760,
+        },
+      },
+    ])
+  })
+
   it("binds each section's range to its own model code", () => {
     expect(parseVideoModels(OMNI_PAGE, PAGE_URL)).toEqual([
       {
@@ -207,5 +248,87 @@ describe('geminiVideoEndpoint', () => {
     expect(() =>
       geminiVideoEndpoint({ ...spec(), paths: {} }, model, 'h'),
     ).toThrow('has no POST /{api_version}/interactions')
+  })
+})
+
+describe('geminiVideoEndpoints', () => {
+  const MYSTERY_URL = 'https://aistudio.google.com/docs/models/mystery-video.md'
+  const VIDEO_INDEX = `
+{% table variant="model" %}
+  * Model
+  * Endpoint
+
+  ---
+
+  * [Gemini Omni Flash](/docs/models/gemini-omni-flash)
+  * \`gemini-omni-1.2-flash\`
+    \`gemini-omni-1.1-flash\`
+
+  ---
+
+  * [Genie 4](/docs/models/genie-4)
+  * \`genie-4\`
+
+  ---
+
+  * [Mystery](/docs/models/mystery-video)
+  * \`mystery-video\`
+{% /table %}
+`
+  const GUIDE =
+    'Use `gemini-omni-1.2-flash`, `genie-4`, and `mystery-video` for video.'
+  const MYSTERY = `
+## mystery-video
+
+| Model code | \`mystery-video\` |
+| Limits | **Output video** up to 15 seconds |
+`
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    takeIngestEvents()
+  })
+
+  it('builds clip schemas, warns for a stream, and keeps going when one page is unreadable', async () => {
+    vi.stubGlobal('fetch', (input: string) => {
+      const url = String(input)
+      const body: Record<string, string> = {
+        [GEMINI_INTERACTIONS_SPEC_URL]: JSON.stringify(spec()),
+        [GEMINI_VIDEO_GUIDE_URL]: GUIDE,
+        [GEMINI_MODELS_INDEX_URL]: VIDEO_INDEX,
+        [PAGE_URL]: OMNI_PAGE,
+        [GENIE_URL]: GENIE_PAGE,
+        [MYSTERY_URL]: MYSTERY,
+      }
+      const text = body[url]
+      return Promise.resolve(
+        text === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(text),
+      )
+    })
+
+    const result = await geminiVideoEndpoints()
+
+    expect(result.endpoints.map((endpoint) => endpoint.publicId)).toEqual([
+      'gemini-omni-1.2-flash',
+      'gemini-omni-1.1-flash',
+    ])
+    expect(result.warnings).toContain(streamVideoWarning('genie-4'))
+    expect(result.warnings).toContain(
+      `gemini video: ${MYSTERY_URL}: gemini model page: unreadable Output video limit "up to 15 seconds"`,
+    )
+    expect(takeIngestEvents()).toEqual([
+      {
+        event: 'ingest_failed',
+        properties: {
+          job: 'spec-sync',
+          providerId: 'gemini',
+          error:
+            'gemini model page: unreadable Output video limit "up to 15 seconds"',
+          source: MYSTERY_URL,
+        },
+      },
+    ])
   })
 })

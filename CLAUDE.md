@@ -118,7 +118,11 @@ ones).
   which the Discovery document lacks. `gemini-video.ts` builds one endpoint
   per video model at sync time: Google's Interactions OpenAPI request with
   `model` pinned and `response_format.duration` an enum from the model
-  page's `Output video 3s-15s` limit. The endpoint id is the model id and
+  page's `Output video 3s-15s` limit. A page that states resolution, fps
+  and a token rate instead (#697, Genie 4) is still video on the poll, and
+  the spec sync names it as a real-time stream with no fixed-duration
+  schema. One unreadable model page is an `ingest_failed` for that page;
+  the Discovery spec and the other video models still sync. The endpoint id is the model id and
   the path is shared, so `GET /v1/openapi/gemini` merges them into one
   operation whose body is an `anyOf` of components tagged
   `x-modelschemas-model` (`mergeModelBodies`). The Models API lists these

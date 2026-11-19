@@ -349,7 +349,9 @@ function backtickIds(line: string): Array<string> {
   const ids: Array<string> = []
   for (const chunk of chunks) {
     for (const token of chunk.split(/\s+/)) {
-      if (MODEL_ID.test(token)) ids.push(token)
+      // The Models API id drops a leading `models/` (`models/genie-4`).
+      const bare = token.replace(/^models\//, '')
+      if (MODEL_ID.test(bare)) ids.push(bare)
     }
   }
   return ids
@@ -404,15 +406,38 @@ export function parseModelIndex(markdown: string): Array<string> {
 }
 
 /** Whole seconds a model page's `Output video` limit states, both ends included. */
-export interface GeminiOutputVideo {
+export interface GeminiClipVideo {
   minSeconds: number
   maxSeconds: number
 }
 
 /**
- * `**Output video** 3s-15s (…)` in a model page's Limits row. Null when the
- * page has no such limit. A limit that is not `Ns-Ms` throws: a video model
- * with no range would publish an unbounded duration.
+ * A real-time stream. The page states a frame size and a token rate, and
+ * no clip duration. `Max session duration` on the same row is a session
+ * cap, not a duration to invent.
+ */
+export interface GeminiStreamVideo {
+  width: number
+  height: number
+  fps: number
+  tokensPerFrame: number
+  tokensPerSecond: number
+}
+
+/** A stated `Output video` limit: a fixed clip, or a real-time stream. */
+export type GeminiOutputVideo = GeminiClipVideo | { stream: GeminiStreamVideo }
+
+function wholeNumber(raw: string | undefined): number | null {
+  if (raw === undefined) return null
+  const value = Number(raw.replace(/,/g, ''))
+  return Number.isInteger(value) && value >= 1 ? value : null
+}
+
+/**
+ * `**Output video**` in a model page's limits row. Null when the page has
+ * no such limit. `Ns-Ms` is a clip. A resolution, fps and token rate is a
+ * stream and carries no duration. Anything else throws: an unknown shape
+ * must not publish an unbounded duration.
  */
 export function parsePageOutputVideo(
   markdown: string,
@@ -422,12 +447,32 @@ export function parsePageOutputVideo(
   const range = stated.match(/^(\d+)s\s*[-–]\s*(\d+)s\b/)
   const minSeconds = Number(range?.[1])
   const maxSeconds = Number(range?.[2])
-  if (!range || minSeconds < 1 || maxSeconds < minSeconds) {
-    throw new Error(
-      `gemini model page: unreadable Output video limit "${stated.trim().slice(0, 80)}"`,
-    )
+  if (range && minSeconds >= 1 && maxSeconds >= minSeconds) {
+    return { minSeconds, maxSeconds }
   }
-  return { minSeconds, maxSeconds }
+  const stream = stated.match(
+    /^`?(\d+)x(\d+)`?\s*\([^)]*\b(\d+)\s*fps\b[^)]*\)\s*,\s*`?([\d,]+)`?\s*video output tokens per frame\s*\(\s*`?([\d,]+)`?\s*tokens\/sec\)/i,
+  )
+  const width = wholeNumber(stream?.[1])
+  const height = wholeNumber(stream?.[2])
+  const fps = wholeNumber(stream?.[3])
+  const tokensPerFrame = wholeNumber(stream?.[4])
+  const tokensPerSecond = wholeNumber(stream?.[5])
+  if (
+    stream &&
+    width !== null &&
+    height !== null &&
+    fps !== null &&
+    tokensPerFrame !== null &&
+    tokensPerSecond !== null
+  ) {
+    return {
+      stream: { width, height, fps, tokensPerFrame, tokensPerSecond },
+    }
+  }
+  throw new Error(
+    `gemini model page: unreadable Output video limit "${stated.trim().slice(0, 80)}"`,
+  )
 }
 
 export interface GeminiPageSection {

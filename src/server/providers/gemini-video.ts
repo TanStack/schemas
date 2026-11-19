@@ -5,16 +5,23 @@
  * the Discovery document does not have. Google publishes it as OpenAPI.
  * That document's `VideoResponseFormat.duration` is an unbounded string;
  * the range is on each model's docs page (`Output video 3s-15s`). Each
- * model's schema is Google's create request with `model` pinned and
+ * clip model's schema is Google's create request with `model` pinned and
  * `duration` narrowed to that range.
  *
+ * A page that states a resolution, fps and token rate (#697) is a
+ * real-time stream. The Interactions document publishes no `world_setup`
+ * or connect operation for it, so it gets no fixed-duration schema and a
+ * named warning. A limit shape the parser does not know throws on that
+ * page only: the Discovery spec and the other video models still sync.
+ *
  * Which pages: the models-index pages for the ids Google's video guide
- * names. Every model section on those pages that states an output video
- * limit gets a schema. Nothing here falls back: a document that lost the
- * shape, or a guide that leads to no limit, throws with its URL, and the
+ * names. Nothing here falls back: a document that lost the shape, or a
+ * guide that leads to no output-video limit, throws with its URL, and the
  * sync keeps the stored schemas.
  */
+import { errorMessage } from '../errors.ts'
 import { extractEndpointSchemas } from '../ingest/bundle.ts'
+import { ingestFailedEvent, noteIngest } from '../ingest/ingest-signals.ts'
 import {
   GEMINI_MODELS_INDEX_URL,
   parseModelIndexDocs,
@@ -34,10 +41,18 @@ const CREATE_PATH = '/{api_version}/interactions'
 const REQUEST = 'CreateModelInteractionParams'
 const VIDEO_FORMAT = 'VideoResponseFormat'
 
-export interface GeminiVideoModel extends GeminiOutputVideo {
+export type GeminiVideoModel = {
   rawId: string
   /** The model page that states the limit. */
   pageUrl: string
+} & GeminiOutputVideo
+
+/** The clip half of {@link GeminiVideoModel}: a page that stated `Ns-Ms`. */
+interface GeminiClipModel {
+  rawId: string
+  pageUrl: string
+  minSeconds: number
+  maxSeconds: number
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -56,6 +71,15 @@ export function parseVideoModels(
   )
 }
 
+function isClipModel(model: GeminiVideoModel): model is GeminiClipModel {
+  return 'minSeconds' in model && 'maxSeconds' in model
+}
+
+/** Issue #697: the Interactions spec has no stream create body to narrow. */
+export function streamVideoWarning(rawId: string): string {
+  return `${rawId}: real-time stream, no fixed-duration create schema`
+}
+
 /**
  * One model's video route: Google's create-interaction request with `model`
  * pinned and `response_format.duration` an enum of whole seconds. The stored
@@ -64,7 +88,7 @@ export function parseVideoModels(
  */
 export function geminiVideoEndpoint(
   spec: OpenApiDocument,
-  model: GeminiVideoModel,
+  model: GeminiClipModel,
   specHash: string,
 ): { endpoint: BundledEndpoint; warnings: Array<string> } {
   const lost = (what: string) =>
@@ -190,23 +214,45 @@ export async function geminiVideoEndpoints(): Promise<{
     fetchText(GEMINI_MODELS_INDEX_URL),
   ])
   const pages = videoModelPages(guide, index)
-  const models = (
-    await mapConcurrent(pages, 4, async (url) =>
-      parseVideoModels(await fetchText(url), url),
-    )
-  ).flat()
+  const parsed = await mapConcurrent(pages, 4, async (url) => {
+    try {
+      return {
+        url,
+        models: parseVideoModels(await fetchText(url), url),
+        error: null,
+      }
+    } catch (error) {
+      return { url, models: [], error: errorMessage(error) }
+    }
+  })
+  const warnings: Array<string> = []
+  for (const page of parsed) {
+    if (!page.error) continue
+    const warning = `gemini video: ${page.url}: ${page.error}`
+    warnings.push(warning)
+    noteIngest(ingestFailedEvent('spec-sync', 'gemini', page.error, page.url))
+    console.error(warning)
+  }
+  const models = parsed.flatMap((page) => page.models)
+  const clips = models.filter(isClipModel)
+  for (const model of models) {
+    if (isClipModel(model)) continue
+    const warning = streamVideoWarning(model.rawId)
+    warnings.push(warning)
+    console.error(`gemini video: ${warning}`)
+  }
   if (models.length === 0) {
+    const read = `(${String(pages.length)} model pages read: ${pages.join(', ') || 'none'})`
+    const base = `gemini video: ${GEMINI_VIDEO_GUIDE_URL} leads to no model with an Output video limit ${read}`
     throw new Error(
-      `gemini video: ${GEMINI_VIDEO_GUIDE_URL} leads to no model with an Output video limit (${String(pages.length)} model pages read: ${pages.join(', ') || 'none'})`,
+      warnings.length > 0 ? `${base}. ${warnings.join('; ')}` : base,
     )
   }
   const spec = JSON.parse(specText) as OpenApiDocument
   const specHash = await sha256Text(specText)
-  const built = models.map((model) =>
-    geminiVideoEndpoint(spec, model, specHash),
-  )
+  const built = clips.map((model) => geminiVideoEndpoint(spec, model, specHash))
   return {
     endpoints: built.map((item) => item.endpoint),
-    warnings: built.flatMap((item) => item.warnings),
+    warnings: [...warnings, ...built.flatMap((item) => item.warnings)],
   }
 }
