@@ -61,9 +61,13 @@ const failure = z.object({
 const checkOutput = z.object({
   queryOk: z.literal(true),
   parseRowsEvents: z.number().int().min(1),
-  // Each element is one `fix` run of up to $5.
-  failures: z.array(failure).max(3),
+  // More than `fix` takes: `pending` drops the residuals and the failures
+  // with a fix, then keeps MAX_FIXES, so those cannot crowd out a new one.
+  failures: z.array(failure).max(20),
 })
+
+/** Each fix is one run of up to $5. */
+const MAX_FIXES = 3
 
 /**
  * The branch of the fix for one failure: the dedupe key. The forge lets a
@@ -121,7 +125,7 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
    WHERE event IN ('ingest_failed', 'pricing_lost', 'update_storm')
      AND timestamp > now() - INTERVAL 6 HOUR
    GROUP BY event, p, r, s
-   HAVING polls >= 3 AND latest > now() - INTERVAL 30 MINUTE
+   HAVING polls >= 3 AND latest > now() - INTERVAL 75 MINUTE
    ORDER BY n DESC LIMIT 50
    Then count the liveness signal:
    SELECT count() FROM events
@@ -133,7 +137,7 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
 
 2. Every row left is RECURRING and still happening: the same provider +
    error on at least 3 polls (the models poll runs every 15 minutes), the
-   last one under 30 minutes ago. Drop:
+   last one under 75 minutes ago (an hourly job counts too). Drop:
    - upstream 5xx, 429, timeouts and "Network connection lost";
    - known residuals: llmgateway pricing_lost parser_miss (discount, peak,
      image, audio and per-second keys are refused on purpose); huggingface
@@ -143,7 +147,7 @@ const CHECK_PROMPT = `You monitor the modelschemas Cloudflare Worker (this repos
    a failure that already has an open fix.
 
 3. Answer with queryOk, parseRowsEvents (the liveness count) and at most
-   the 3 failures with the highest count. For each: the provider id, the
+   the 20 failures with the highest count. For each: the provider id, the
    event, source (or null), rawIds (or an empty list), the count, the
    polls, the first and last timestamp (ISO 8601), and the error cut to
    300 characters. An update_storm has no error text: write
@@ -186,11 +190,13 @@ export default defineAgentWorkflow('monitor', {
   // the last 24 hours (a closed or merged fix is not tried again at once).
   .job('pending', {
     needs: ['check'],
-    output: z.object({ failures: z.array(failure) }),
+    output: z.object({ failures: z.array(failure).max(MAX_FIXES) }),
     steps: [
       {
         name: 'Drop failures with an open fix',
         do: async (ctx) => {
+          // Read before the throttle, so a bad file fails every tick.
+          const known = loadResiduals(ctx.workspace)
           // ponytail: a clock throttle, because a job cannot see the runs
           // of its workflow. A fix that fails, or that is still running
           // (up to 90 minutes), leaves no pull request, so without this it
@@ -205,17 +211,27 @@ export default defineAgentWorkflow('monitor', {
           }
           const client = forge(ctx)
           const dayAgo = now.getTime() - 24 * 60 * 60 * 1000
-          const known = loadResiduals(ctx.workspace)
           const failures = []
-          for (const item of ctx.needs.check.output.failures) {
+          // Two errors of one provider and event share a branch: one fix.
+          const taken = new Set<string>()
+          const byCount = ctx.needs.check.output.failures.toSorted(
+            (a, b) => b.count - a.count,
+          )
+          for (const item of byCount) {
+            if (failures.length === MAX_FIXES) break
             const residual = known.some(
               (r) =>
                 r.providerId === item.providerId &&
                 r.event === item.event &&
                 item.error.includes(r.errorIncludes),
             )
-            if (residual) continue
+            if (residual) {
+              console.log(`Residual, no fix: ${fixBranch(item)}`)
+              continue
+            }
             const head = `agent/monitor/${fixBranch(item)}`
+            if (taken.has(head)) continue
+            taken.add(head)
             const pulls = [
               ...(await client.pulls.list({ head, state: 'open' })),
               // `closed` lists merged pull requests too.
