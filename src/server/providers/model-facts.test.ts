@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
@@ -35,9 +36,10 @@ import {
 } from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
 import { evaluateCard } from '@modelschemas/rate-card/evaluator'
-import { parseStoredRateCard } from '../rate-card.ts'
+import { parseStoredRateCard, projectTokenPricing } from '../rate-card.ts'
 import { openAiCompatModelFacts } from './openai-compat.ts'
 import {
+  compileLiveSessionCard,
   pageSlugFor,
   parseModelIndex,
   parseModelPage,
@@ -853,6 +855,82 @@ Landscape: 1920x1080 | $0.7 | second |
         '1920x1080': 0.7,
       },
     })
+  })
+
+  it('prices active and standby seconds from both gpt-live pages', () => {
+    const source = {
+      url: 'https://developers.openai.com/api/docs/models/gpt-live-1.md',
+      hash: 'a'.repeat(64),
+      extractedAt: '2026-11-20T00:00:00.000Z',
+    }
+    for (const file of [
+      'openai-gpt-live-1.md.txt',
+      'openai-gpt-live-1.1.md.txt',
+    ]) {
+      const page = parseModelPage(
+        readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8'),
+      )
+      expect(page?.pricing?.session).toEqual({
+        activeSeconds: 0.05 / 60,
+        standbySeconds: 0.02 / 60,
+      })
+      expect(page?.pricing?.unit).toBeUndefined()
+      const card = page?.pricing?.session
+        ? compileLiveSessionCard(page.pricing.session, source)
+        : null
+      if (!card) throw new Error(`${file}: did not compile`)
+      expect(parseStoredRateCard(card)).toEqual(card)
+      expect(projectTokenPricing(card)).toEqual({
+        currency: 'USD',
+        per: 'second',
+      })
+      // A minute is not rounded up: 30s is half the per-minute rate.
+      expect(
+        price(card, {}, { active_seconds: 60, standby_seconds: 0 }),
+      ).toBeCloseTo(0.05, 9)
+      expect(
+        price(card, {}, { active_seconds: 0, standby_seconds: 60 }),
+      ).toBeCloseTo(0.02, 9)
+      expect(
+        price(card, {}, { active_seconds: 30, standby_seconds: 30 }),
+      ).toBeCloseTo(0.035, 9)
+      expect(() => price(card, {}, { active_seconds: 60 })).toThrow(
+        expect.objectContaining({ code: 'bad-input' }),
+      )
+    }
+  })
+
+  it('refuses a live table that drops either rate or names another metric', () => {
+    const live = (rows: string) =>
+      parseModelPricing(
+        pricing(`### Live session duration
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+${rows}
+`),
+      )
+    expect(
+      live(`| Active | $0.05 | minute |
+| Standby | $0.02 | minute |`),
+    ).toMatchObject({
+      session: { activeSeconds: 0.05 / 60, standbySeconds: 0.02 / 60 },
+    })
+    expect(live('| Active | $0.05 | minute |')).toBeNull()
+    expect(live('| Standby | $0.02 | minute |')).toBeNull()
+    expect(
+      live(`| Active | $0.05 | minute |
+| Listening | $0.02 | minute |`),
+    ).toBeNull()
+    expect(
+      live(`| Active | $0.05 | minute |
+| Standby | $0.02 | minute |
+| Extra | $0.01 | minute |`),
+    ).toBeNull()
+    expect(
+      live(`| First | $0.05 | minute |
+| Second | $0.02 | minute |`),
+    ).toBeNull()
   })
 
   it('refuses a page that mixes a token table with a per-unit one', () => {

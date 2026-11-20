@@ -256,6 +256,8 @@ function perMillion(
 const UNIT_OF_LEVER: Record<string, CompactPricing['per']> = {
   seconds: 'second',
   audio_seconds: 'second',
+  active_seconds: 'second',
+  standby_seconds: 'second',
   original_duration: 'second',
   session_seconds: 'second',
   video_seconds: 'second',
