@@ -13,7 +13,11 @@ import {
  * ~130 listed ids share a page), bounded-concurrency, memoised six hours.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
-import type { TokenRateTier, UnitCardSpec } from '@modelschemas/rate-card'
+import type {
+  RateCard,
+  TokenRateTier,
+  UnitCardSpec,
+} from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import {
@@ -158,6 +162,12 @@ export interface DocsPricing {
   expiresAt?: string
   /** Set instead of `rates` when the model is billed per unit. */
   unit?: UnitCardSpec
+  /**
+   * Active and standby session seconds, each USD per second. Set instead
+   * of `unit` when a live page states both rates. Neither rate alone is
+   * this card.
+   */
+  session?: { activeSeconds: number; standbySeconds: number }
   /** A Cached input cell was "-" or blank. Not a rate. */
   cacheReadNotOffered?: true
 }
@@ -170,13 +180,26 @@ const UNITS: Record<string, { param: string; per: number }> = {
 }
 
 /**
- * A per-unit section: one rate, or one per output size. The metric cell of
- * a video row names the sizes the rate covers ("Portrait: 720x1280
- * Landscape: 1280x720"), which are `size` values on the request.
+ * Metric names on a live-session table that are each their own usage
+ * quantity. Any other unsized name in a multi-row table refuses the model.
  */
-function parseUnitSection(block: string): UnitCardSpec | null {
+const LIVE_SESSION_METRICS = ['Active', 'Standby'] as const
+
+type ParsedUnit =
+  | { spec: UnitCardSpec }
+  | { session: { activeSeconds: number; standbySeconds: number } }
+
+/**
+ * A per-unit section: one rate, one per output size, or active and standby
+ * session time. The metric cell of a video row names the sizes the rate
+ * covers ("Portrait: 720x1280 Landscape: 1280x720"), which are `size`
+ * values on the request. Several unsized rows are a live session only when
+ * they are exactly Active and Standby; one of those names without the
+ * other refuses, and so does any other pair.
+ */
+function parseUnitSection(block: string): ParsedUnit | null {
   const rates: Record<string, number> = {}
-  let flat: number | null = null
+  const flats: Array<{ metric: string; perSecond: number }> = []
   let unit: { param: string; per: number } | undefined
   for (const [metric = '', price, cell] of markdownTableRows(block)) {
     if (metric === 'Metric') continue
@@ -195,25 +218,95 @@ function parseUnitSection(block: string): UnitCardSpec | null {
       ([size]) => size,
     )
     if (sizes.length === 0) {
-      if (flat !== null) return null
-      flat = rate / found.per
+      flats.push({ metric, perSecond: rate / found.per })
       continue
     }
     for (const size of sizes) rates[size] = rate / found.per
   }
   if (!unit) return null
   const sized = Object.keys(rates).length > 0
-  if (sized && flat !== null) return null
-  if (!sized && flat === null) return null
+  if (sized && flats.length > 0) return null
   // Duration and characters are measured after the call; a video's length
   // and size are fields of the request that asked for it.
   const bound = unit.param === 'seconds' ? 'request' : 'usage'
+  if (sized) {
+    return {
+      spec: {
+        quantity: { param: unit.param, bound },
+        keys: [{ param: 'size', values: Object.keys(rates) }],
+        rates,
+      },
+    }
+  }
+  const only = flats[0]
+  if (flats.length === 1 && only) {
+    // Active or Standby alone is half a live card, not the old single rate.
+    if (
+      only.metric === 'Active' ||
+      only.metric === 'Standby' ||
+      !(only.perSecond > 0)
+    ) {
+      return null
+    }
+    return {
+      spec: {
+        quantity: { param: unit.param, bound },
+        rates: only.perSecond,
+      },
+    }
+  }
+  if (
+    flats.length !== 2 ||
+    (unit.param !== 'audio_seconds' && unit.param !== 'seconds')
+  ) {
+    return null
+  }
+  const byMetric = new Map(flats.map((row) => [row.metric, row.perSecond]))
+  const active = byMetric.get('Active')
+  const standby = byMetric.get('Standby')
+  if (
+    byMetric.size !== LIVE_SESSION_METRICS.length ||
+    active === undefined ||
+    standby === undefined ||
+    !(active > 0) ||
+    !(standby > 0)
+  ) {
+    return null
+  }
+  return { session: { activeSeconds: active, standbySeconds: standby } }
+}
+
+/**
+ * Active and standby session seconds, summed. Each lever is the duration
+ * the caller measured; neither defaults, so an omitted one is not billed
+ * as zero. Rates are USD per second.
+ */
+export function compileLiveSessionCard(
+  rates: { activeSeconds: number; standbySeconds: number },
+  source: RateCard['source'],
+): RateCard | null {
+  const { activeSeconds, standbySeconds } = rates
+  if (!(activeSeconds > 0) || !(standbySeconds > 0)) return null
+  const lever = (param: 'active_seconds' | 'standby_seconds') =>
+    ({
+      param,
+      bound: 'usage' as const,
+      kind: 'number' as const,
+    }) satisfies RateCard['inputs'][string]
   return {
-    quantity: { param: unit.param, bound },
-    ...(sized && {
-      keys: [{ param: 'size', values: Object.keys(rates) }],
-    }),
-    rates: sized ? rates : (flat ?? 0),
+    inputs: {
+      active_seconds: lever('active_seconds'),
+      standby_seconds: lever('standby_seconds'),
+    },
+    tables: {},
+    price: {
+      '+': [
+        { '*': [{ var: 'active_seconds' }, activeSeconds] },
+        { '*': [{ var: 'standby_seconds' }, standbySeconds] },
+      ],
+    },
+    examples: [],
+    source,
   }
 }
 
@@ -287,8 +380,11 @@ export function parseModelPricing(markdown: string): DocsPricing | null {
       // A model is billed one way: a page mixing token tables with a
       // per-unit one is a shape this parser does not know.
       if (blocks.length !== 1) return null
-      const unit = parseUnitSection(block)
-      return unit ? { rates: {}, tiers: [], unit } : null
+      const parsed = parseUnitSection(block)
+      if (!parsed) return null
+      return 'session' in parsed
+        ? { rates: {}, tiers: [], session: parsed.session }
+        : { rates: {}, tiers: [], unit: parsed.spec }
     }
     const levers = PRICING_LEVERS[heading]
     if (!levers) return null
@@ -710,26 +806,32 @@ export async function openaiModelFacts(
     const url = OPENAI_MODEL_PAGE(loaded.slug)
     const withPricing: ModelFacts = {
       ...loaded.page.facts,
-      pricing: loaded.page.pricing?.unit
-        ? compileUnitCard(loaded.page.pricing.unit, {
+      pricing: loaded.page.pricing?.session
+        ? compileLiveSessionCard(loaded.page.pricing.session, {
             url,
             hash: loaded.page.hash,
             extractedAt: loaded.page.extractedAt,
           })
-        : loaded.page.pricing
-          ? compileTokenCard(
-              loaded.page.pricing.rates,
-              loaded.page.pricing.tiers,
-              {
-                url,
-                hash: loaded.page.hash,
-                extractedAt: loaded.page.extractedAt,
-                ...(loaded.page.pricing.expiresAt && {
-                  expiresAt: loaded.page.pricing.expiresAt,
-                }),
-              },
-            )
-          : null,
+        : loaded.page.pricing?.unit
+          ? compileUnitCard(loaded.page.pricing.unit, {
+              url,
+              hash: loaded.page.hash,
+              extractedAt: loaded.page.extractedAt,
+            })
+          : loaded.page.pricing
+            ? compileTokenCard(
+                loaded.page.pricing.rates,
+                loaded.page.pricing.tiers,
+                {
+                  url,
+                  hash: loaded.page.hash,
+                  extractedAt: loaded.page.extractedAt,
+                  ...(loaded.page.pricing.expiresAt && {
+                    expiresAt: loaded.page.pricing.expiresAt,
+                  }),
+                },
+              )
+            : null,
     }
     const facts: ModelFacts = {
       ...withPricing,
