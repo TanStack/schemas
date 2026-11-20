@@ -208,6 +208,53 @@ it.each([
     ),
   ).rejects.toThrow(`${go ? 'states' : 'documents'} no /${id} route`)
 })
+it('accepts the interactions route as route-only, with no request schema', async () => {
+  serve(
+    JSON.stringify({
+      object: 'list',
+      data: [
+        ...GO_LISTING.data,
+        {
+          id: 'gemini-4-argon',
+          api: {
+            'generate-content': {
+              base_url: 'https://opencode.ai/inference/go/google/v1beta',
+              sdk: { opencodeai: '@opencode/ai/providers/google' },
+            },
+            interactions: {
+              base_url: 'https://opencode.ai/inference/go/google/v1beta',
+              sdk: {
+                opencodeai: '@opencode/ai/providers/google/interactions',
+              },
+            },
+          },
+        },
+      ],
+    }),
+  )
+  const path = '/inference/go/google/v1beta/interactions'
+  const result = await openCodeRouteSpec(
+    [
+      {
+        schemaEndpointId: 'inference/go/openai/v1/responses',
+        activity: 'chat',
+      },
+      {
+        schemaEndpointId: 'inference/go/google/v1beta/interactions',
+        activity: 'chat',
+      },
+    ],
+    { url: 'docs', text: 'docs' },
+    true,
+  )
+  const operation = result.specs[0]?.paths?.[path]?.post ?? {}
+  expect(operation).not.toHaveProperty('requestBody')
+  expect(operation.responses).toEqual({})
+  expect(classifyOpenCodeRoute(path, operation)).toBe('chat')
+  expect(result.specs[0]?.paths).not.toHaveProperty(
+    '/inference/go/google/v1beta/models/gemini-4-argon:generateContent',
+  )
+})
 it('rejects a Go listing row with no api entry or an unknown protocol', async () => {
   serve(
     JSON.stringify({
