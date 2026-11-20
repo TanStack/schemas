@@ -111,6 +111,56 @@ describe('goListingRoutes', () => {
     ])
   })
 
+  it('reads the live gemini-4-argon interactions route with the model out of the path', () => {
+    // gemini-4-argon is GET https://opencode.ai/inference/go/v1/models on
+    // 2026-11-20. The contributor row is only here to show a shared base
+    // collapses to one interactions path.
+    const routes = goListingRoutes({
+      object: 'list',
+      data: [
+        {
+          id: 'gemini-4-argon',
+          api: {
+            'generate-content': {
+              base_url: 'https://opencode.ai/inference/go/google/v1beta',
+              sdk: {
+                aisdk: '@ai-sdk/google',
+                opencodeai: '@opencode/ai/providers/google',
+              },
+              capabilities: {
+                tools: { choice: ['auto', 'none', 'required', 'tool'] },
+              },
+            },
+            interactions: {
+              base_url: 'https://opencode.ai/inference/go/google/v1beta/',
+              sdk: {
+                aisdk: '@ai-sdk/google',
+                opencodeai: '@opencode/ai/providers/google/interactions',
+              },
+            },
+          },
+          cost: { input: 1, output: 2 },
+          limit: { context: 1000000 },
+        },
+        {
+          id: 'gemini-4-argon-contributor',
+          api: {
+            interactions: {
+              base_url: 'https://opencode.ai/inference/go/google/v1beta',
+              sdk: {
+                opencodeai: '@opencode/ai/providers/google/interactions',
+              },
+            },
+          },
+        },
+      ],
+    })
+    expect(routes).toEqual([
+      '/inference/go/google/v1beta/interactions',
+      '/inference/go/google/v1beta/models/gemini-4-argon:generateContent',
+    ])
+  })
+
   it('throws when api is missing or the protocol key is unknown', () => {
     expect(() =>
       goListingRoutes({
