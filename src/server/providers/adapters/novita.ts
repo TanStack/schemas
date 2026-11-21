@@ -18,6 +18,7 @@ import {
   listOpenAiCompatibleModels,
   OPENAI_OPENAPI_URL,
 } from '../openai-compat.ts'
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -89,6 +90,14 @@ export const provider: ProviderConfig = {
   specSourceUrl: OPENAI_OPENAPI_URL,
   modelsEndpoint: NOVITA_MODELS_URL,
   defaultDerivation: 'generated',
+  // `maker/model`: the id's namespace is the maker (`owned_by` is always
+  // `novita`, the host, so it names no maker).
+  upstreamModelIdentity: (rawId) =>
+    namespacedUpstreamIdentity(rawId, {
+      derivation: 'listing',
+      sourceUrl: NOVITA_MODELS_URL,
+      path: 'data[].id',
+    }),
   fetchSpec,
   listModels,
   classify: classifyOpenAiCompat,

@@ -37,6 +37,7 @@ const row: Model = {
   requiredRequestHeaders: null,
   trainsOnRequestData: null,
   aliases: null,
+  aliasOf: null,
   releasedAt: null,
   knowledgeCutoff: null,
   openWeights: null,

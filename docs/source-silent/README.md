@@ -8,8 +8,8 @@ One file per provider, `<provider>.md`, so two branches never edit the same
 file. One entry per list line: `- <provider>: <fact> — <why, with the issue>`.
 The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 `outputModalities`, `priced`, `cacheRead`, `capabilities`, `reasoning`,
-`efforts`, `requestMap`, `endpoint`, `replayReasoningContent`, `activity`,
-`originLink`). Remove an entry when the provider starts publishing the fact.
+`efforts`, `requestMap`, `endpoint`, `replayReasoningContent`,
+`originLink`). `activity` is scored but cannot be ledgered. Remove an entry when the provider starts publishing the fact.
 
 Each activity has its own fact set (`ACTIVITY_FACTS` in
 `src/lib/completeness.ts`). Chat rows are scored on the chat keys above.

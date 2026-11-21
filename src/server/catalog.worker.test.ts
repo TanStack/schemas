@@ -537,6 +537,99 @@ describe('stored sameAs relationships', () => {
   })
 })
 
+describe('stored alias links (#709)', () => {
+  const listing = (path: string) => ({
+    derivation: 'listing' as const,
+    sourceUrl: 'https://example.com/alias/models',
+    path,
+  })
+
+  beforeAll(async () => {
+    await db.insert(providers).values({
+      id: 'cat-alias',
+      displayName: 'Alias',
+      specSourceUrl: 'https://example.com/alias',
+    })
+    await db.insert(models).values([
+      {
+        id: 'alias-target',
+        providerId: 'cat-alias',
+        rawId: 'm-2026',
+        aliases: ['m-latest'],
+        factSources: { aliases: listing('aliases') },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'alias-latest',
+        providerId: 'cat-alias',
+        rawId: 'm-latest',
+        aliasOf: 'm-2026',
+        factSources: { aliasOf: listing('name') },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        // The stated target left the listing: the evidence stays stored.
+        id: 'alias-gone',
+        providerId: 'cat-alias',
+        rawId: 'g-latest',
+        aliasOf: 'g-old',
+        factSources: { aliasOf: listing('name') },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'alias-old',
+        providerId: 'cat-alias',
+        rawId: 'g-old',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+        deprecatedAt: NOW,
+      },
+      {
+        id: 'alias-silent',
+        providerId: 'cat-alias',
+        rawId: 's-latest',
+        factSources: { aliasOf: listing('unstated') },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+    ])
+  })
+
+  it('serves the target only while a live row has that id', async () => {
+    const alias = await getModelDetail(db, 'cat-alias', 'm-latest')
+    expect(alias?.aliasOf).toBe('m-2026')
+    expect(alias?.factSources?.aliasOf).toEqual(listing('name'))
+    const target = await getModelDetail(db, 'cat-alias', 'm-2026')
+    expect(target?.aliasOf).toBeNull()
+    expect(target?.aliases).toEqual(['m-latest'])
+    expect(target?.factSources?.aliases).toEqual(listing('aliases'))
+
+    const gone = await getModelDetail(db, 'cat-alias', 'g-latest')
+    expect(gone?.aliasOf).toBeNull()
+    expect(gone?.factSources?.aliasOf).toBeUndefined()
+
+    const silent = await getModelDetail(db, 'cat-alias', 's-latest')
+    expect(silent?.aliasOf).toBeNull()
+    expect(silent?.factSources?.aliasOf).toEqual(listing('unstated'))
+  })
+
+  it('joins the target on catalog and provider lists', async () => {
+    const listed = await listModelsCatalog(db, { provider: 'cat-alias' })
+    const byRaw = new Map(listed.models.map((row) => [row.rawId, row]))
+    expect(byRaw.get('m-latest')?.aliasOf).toBe('m-2026')
+    expect(byRaw.get('m-2026')?.aliasOf).toBeNull()
+    const provider = await listProviderModels(db, 'cat-alias')
+    const rows = new Map(provider?.models.map((row) => [row.rawId, row]))
+    expect(rows.get('m-latest')?.aliasOf).toBe('m-2026')
+    expect(rows.get('g-latest')?.aliasOf).toBeNull()
+    // One row per model: the join never duplicates.
+    expect(provider?.models).toHaveLength(5)
+  })
+})
+
 describe('source-silent catalog provenance', () => {
   it('serves verified ledger evidence on detail and default lists', async () => {
     await db

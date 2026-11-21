@@ -37,6 +37,7 @@ import type { Activity } from '#/db/schema.ts'
 
 import { hyperbolicListingCard } from '../catalog-prices.ts'
 import { bearerConnect } from '../connect.ts'
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 import type { DocsRun } from '../model-facts.ts'
 import { fetchJson, fetchText, sha256Text } from '../types.ts'
 import type {
@@ -477,6 +478,15 @@ export const provider: ProviderConfig = {
   specSourceUrl: HUGGINGFACE_SPEC_URL,
   modelsEndpoint: HUGGINGFACE_MODELS_URL,
   defaultDerivation: 'generated',
+  // A router id is the Hub repo, `owner/name`, and `owned_by` repeats the
+  // owner on every row. The owner is the repo's publisher: a quantised
+  // re-upload names its uploader, which no provider claims.
+  upstreamModelIdentity: (rawId) =>
+    namespacedUpstreamIdentity(rawId, {
+      derivation: 'listing',
+      sourceUrl: HUGGINGFACE_MODELS_URL,
+      path: 'data[].id',
+    }),
   connect: bearerConnect(SERVER_URL),
   fetchSpec,
   listModels,

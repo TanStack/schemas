@@ -176,4 +176,16 @@ describe('google-vertex-anthropic', () => {
     await expect(provider.listModels({})).rejects.toThrow('503')
     await expect(provider.fetchSpec({})).rejects.toThrow('503')
   })
+
+  it('states every card id as the Anthropic model it hosts', () => {
+    expect(provider.upstreamModelIdentity?.('claude-opus-4-5')).toEqual({
+      providerNamespace: 'anthropic',
+      rawId: 'claude-opus-4-5',
+      source: {
+        derivation: 'docs-derived',
+        sourceUrl: VERTEX_CLAUDE_URL,
+        path: 'Model ID',
+      },
+    })
+  })
 })
