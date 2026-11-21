@@ -93,6 +93,9 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'minimax',
+  // MiniMax's Hugging Face org, used in Together and Hugging Face ids
+  // (`MiniMaxAI/MiniMax-M3.1-Flash`).
+  modelNamespaces: ['MiniMaxAI'],
   displayName: 'MiniMax',
   specSourceUrl: MINIMAX_CHAT_SPEC_URL,
   modelsEndpoint: MINIMAX_MODELS_URL,

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { price } from '@modelschemas/rate-card'
 
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
+import { providerRegistry } from '#/server/providers/index.ts'
 
 import { provider, togetherRateCard } from './together.ts'
 
@@ -512,6 +513,46 @@ describe('together provider', () => {
       'reasoning',
       'reasoning_effort',
     ])
+  })
+
+  // Ids from the live /v1/models listing (2026-11-21).
+  it('names the maker in a two-segment id, through its namespace', () => {
+    const stated = (rawId: string) => {
+      const identity = provider.upstreamModelIdentity?.(rawId)
+      if (!identity) return null
+      const target = providerRegistry.find(
+        (p) =>
+          p.id === identity.providerNamespace ||
+          p.modelNamespaces?.includes(identity.providerNamespace),
+      )
+      return [target?.id ?? null, identity.rawId]
+    }
+    expect(stated('alibaba/happyhorse-1.0-t2v')).toEqual([
+      'dashscope',
+      'happyhorse-1.0-t2v',
+    ])
+    expect(stated('MiniMaxAI/MiniMax-M3.1-Flash')).toEqual([
+      'minimax',
+      'MiniMax-M3.1-Flash',
+    ])
+    expect(stated('google/gemini-3-pro-image')).toEqual([
+      'gemini',
+      'gemini-3-pro-image',
+    ])
+    expect(stated('openai/gpt-image-2')).toEqual(['openai', 'gpt-image-2'])
+    // A maker with no API row here is still stated; it just resolves nowhere.
+    expect(stated('deepcogito/cogito-v1-preview-llama-70B')).toEqual([
+      null,
+      'cogito-v1-preview-llama-70B',
+    ])
+    expect(stated('nim/meta/llama-3.3-70b-instruct')).toBeNull()
+    expect(
+      provider.upstreamModelIdentity?.('openai/gpt-image-2')?.source,
+    ).toEqual({
+      derivation: 'listing',
+      sourceUrl: 'https://api.together.xyz/v1/models',
+      path: 'id',
+    })
   })
 })
 
