@@ -6,8 +6,8 @@
  *
  * Each activity has its own fact set (`ACTIVITY_FACTS`). A row whose
  * activity is null is a gap (`unclassified`); a row whose activity has no
- * fact set is listed with `facts: null` and never scored. `originLink` is
- * scored on every row, whatever its activity.
+ * fact set is listed with `facts: null` and never scored. `originLinks`
+ * counts the rows with `sameAs` served; it is information, not a fact.
  *
  * `docs/source-silent/<provider>.md` lists facts a provider does not publish;
  * those are left out of that provider's score and listed under `silent`.
@@ -29,7 +29,6 @@ export const FACT_KEYS = [
   'replayReasoningContent',
   'outputModalities',
   'activity',
-  'originLink',
 ] as const
 
 export type FactKey = (typeof FACT_KEYS)[number]
@@ -93,7 +92,6 @@ export type ModelRow = {
   provider: string
   /** Exact native model id, never the slugged catalog id. */
   rawId?: string
-  aliases?: Array<string> | null
   /** The upstream row this one is linked to, as `/v1/models` serves it. */
   sameAs?: { provider: string; rawId: string } | null
   activity?: string | null
@@ -146,14 +144,18 @@ export type ProviderReport = {
   /** By activity, plus `unclassified` for rows with none. */
   activities: Partial<Record<string, ActivityReport>>
   /**
-   * Rows whose id matches a row at another provider and that no row links
-   * to, plus every row with `sameAs` set. `have` counts `sameAs` set.
+   * Rows with `sameAs` served: the links `reconcileSameAs`
+   * (`src/server/ingest/model-identity.ts`) wrote. A count, not a fact: the
+   * rules read what a served row does not carry (stated evidence that
+   * resolves to nothing, the namespace table, the maker declaration), so
+   * the scorer cannot tell which unlinked rows could be linked, and a
+   * "needs a link" read from `sameAs` would always equal this count.
    */
-  originLink: FactTally & { modelSilent: number }
+  originLinks: number
   silent: Array<FactKey>
   /**
-   * 0 to 1 over every scored activity and `originLink`. Null when nothing
-   * is scored: every row's activity has no fact set and no row needs a link.
+   * 0 to 1 over every scored activity. Null when nothing is scored: every
+   * row's activity has no fact set.
    */
   score: number | null
   /** Raw ids of the chat rows each flag matches. */
@@ -193,6 +195,12 @@ export function parseLedger(markdown: string): Ledger {
     const entry = parseLedgerEntry(line)
     if (!entry) continue
     const { scope, fact } = entry
+    // Origin links are a count, not a scored fact: nothing to ledger.
+    if (fact === 'originLink' || fact === 'originLinks') {
+      throw new Error(
+        `source-silent ledger: origin links are not scored, do not ledger them: ${line}`,
+      )
+    }
     if (!isLedgerKey(fact)) {
       throw new Error(
         `source-silent ledger: unknown fact "${fact}" in: ${line}`,
@@ -209,61 +217,6 @@ export function parseLedger(markdown: string): Ledger {
     ledger.set(scope, facts)
   }
   return ledger
-}
-
-/**
- * The ids a row matches another provider's row by: its raw id and aliases,
- * each also with dots read as hyphens. The same tiers `reconcileSameAs`
- * (`src/server/ingest/model-identity.ts`) links by.
- */
-export function originIdKeys(row: Pick<ModelRow, 'rawId' | 'aliases'>) {
-  const ids = row.rawId === undefined ? [] : [row.rawId]
-  ids.push(...(row.aliases ?? []))
-  return new Set(ids.flatMap((id) => [id, id.replaceAll('.', '-')]))
-}
-
-/** Which rows need an origin link; built once over the whole catalog. */
-export type OriginIndex = {
-  providersById: Map<string, Set<string>>
-  /** `provider/rawId` of every row some other row links to. */
-  targets: Set<string>
-}
-
-const NO_ORIGINS: OriginIndex = { providersById: new Map(), targets: new Set() }
-
-export function originIndex(rows: Array<ModelRow>): OriginIndex {
-  const providersById = new Map<string, Set<string>>()
-  const targets = new Set<string>()
-  for (const row of rows) {
-    for (const key of originIdKeys(row)) {
-      const set = providersById.get(key) ?? new Set<string>()
-      set.add(row.provider)
-      providersById.set(key, set)
-    }
-    if (row.sameAs)
-      targets.add(modelLedgerScope(row.sameAs.provider, row.sameAs.rawId))
-  }
-  return { providersById, targets }
-}
-
-/**
- * A row with `sameAs` set needs a link and has one. Otherwise it needs one
- * when an id key matches a row at another provider, unless a row links to
- * it: a link target is the origin, not the copy.
- */
-function needsOriginLink(row: ModelRow, origins: OriginIndex): boolean {
-  if (row.sameAs) return true
-  if (
-    row.rawId !== undefined &&
-    origins.targets.has(modelLedgerScope(row.provider, row.rawId))
-  ) {
-    return false
-  }
-  return [...originIdKeys(row)].some((key) =>
-    [...(origins.providersById.get(key) ?? [])].some(
-      (provider) => provider !== row.provider,
-    ),
-  )
 }
 
 /**
@@ -340,13 +293,12 @@ const nonEmpty = (value: unknown) => Array.isArray(value) && value.length > 0
 
 /**
  * `need`: the fact applies to this row. `have`: the row carries it. Only
- * the facts of the row's activity are asked (`ACTIVITY_FACTS`), and
- * `originLink` of every row.
+ * the facts of the row's activity are asked (`ACTIVITY_FACTS`).
  */
 const FACTS: Record<
   FactKey,
   {
-    need?: (row: ModelRow, origins: OriginIndex) => boolean
+    need?: (row: ModelRow) => boolean
     have: (row: ModelRow) => boolean
   }
 > = {
@@ -400,7 +352,6 @@ const FACTS: Record<
         .replayReasoningContent === 'boolean',
   },
   activity: { have: (row) => row.activity != null },
-  originLink: { need: needsOriginLink, have: (row) => row.sameAs != null },
 }
 
 /**
@@ -421,8 +372,7 @@ const FLAGS: Record<
   reasoningUnknown: {
     silencedBy: 'reasoning',
     match: (row) =>
-      FACTS.reasoning.need?.(row, NO_ORIGINS) === true &&
-      !FACTS.reasoning.have(row),
+      FACTS.reasoning.need?.(row) === true && !FACTS.reasoning.have(row),
   },
   // The catalog reads `[]` as unknown; an unknown list is stored as null.
   outputModalitiesEmpty: {
@@ -454,20 +404,16 @@ export function activityBucket(row: Pick<ModelRow, 'activity'>): string {
 
 /**
  * The facts that apply to one row and whether it carries each: its
- * activity's set, then `originLink`. Empty for an activity with no fact
- * set when no link applies. Without `origins` the link is asked only of a
- * row with `sameAs` set, which has it.
+ * activity's set. Empty for an activity with no fact set.
  */
 export function scoreRow(
   row: ModelRow,
   ledger: Ledger = new Map(),
-  origins: OriginIndex = NO_ORIGINS,
 ): Array<RowFact> {
   const bucket = activityBucket(row)
-  const keys: Array<FactKey> = [
-    ...(isScoredActivity(bucket) ? ACTIVITY_FACTS[bucket] : []),
-    'originLink',
-  ]
+  const keys: ReadonlyArray<FactKey> = isScoredActivity(bucket)
+    ? ACTIVITY_FACTS[bucket]
+    : []
   const providerSilent = ledger.get(row.provider)
   const modelSilent =
     row.rawId === undefined
@@ -475,7 +421,7 @@ export function scoreRow(
       : ledger.get(modelLedgerScope(row.provider, row.rawId))
   return keys.flatMap((fact): Array<RowFact> => {
     const { need, have } = FACTS[fact]
-    if (need && !need(row, origins)) return []
+    if (need && !need(row)) return []
     const has = have(row)
     const silent =
       providerSilent?.has(fact) === true ||
@@ -500,17 +446,13 @@ export function rowCompleteness(facts: Array<RowFact>): {
 
 /** Facts filled and needed across a provider, ledgered ones left out. */
 export function scoredFacts(
-  report: Pick<ProviderReport, 'activities' | 'originLink' | 'silent'>,
+  report: Pick<ProviderReport, 'activities'>,
 ): FactTally {
   let have = 0
   let need = 0
   for (const activity of Object.values(report.activities)) {
     have += activity?.filled ?? 0
     need += activity?.needed ?? 0
-  }
-  if (!report.silent.includes('originLink')) {
-    have += report.originLink.have
-    need += report.originLink.need - report.originLink.modelSilent
   }
   return { have, need }
 }
@@ -523,7 +465,6 @@ export function buildReport(
   ledger: Ledger = new Map(),
   now: Date = new Date(),
 ): GapReport {
-  const origins = originIndex(rows)
   const byProvider = new Map<string, Array<ModelRow>>()
   for (const row of rows) {
     const group = byProvider.get(row.provider)
@@ -534,7 +475,6 @@ export function buildReport(
   const providers = [...byProvider].map(([provider, group]): ProviderReport => {
     const silent = FACT_KEYS.filter((key) => ledger.get(provider)?.has(key))
     const activities: Record<string, ActivityReport> = {}
-    const originLink = { have: 0, need: 0, modelSilent: 0 }
     for (const row of group) {
       const bucket = activityBucket(row)
       const report = (activities[bucket] ??= {
@@ -550,19 +490,9 @@ export function buildReport(
         score: null,
       })
       report.rows += 1
-      for (const { fact, have, silent: rowSilent } of scoreRow(
-        row,
-        ledger,
-        origins,
-      )) {
+      for (const { fact, have, silent: rowSilent } of scoreRow(row, ledger)) {
         const providerSilent = silent.includes(fact)
         const modelSilent = rowSilent && !providerSilent
-        if (fact === 'originLink') {
-          originLink.need += 1
-          if (have) originLink.have += 1
-          if (modelSilent) originLink.modelSilent += 1
-          continue
-        }
         const tally = report.facts?.[fact]
         if (!tally) continue
         tally.need += 1
@@ -599,17 +529,17 @@ export function buildReport(
       }),
     ) as ProviderReport['flags']
 
-    const total = scoredFacts({ activities, originLink, silent })
+    const total = scoredFacts({ activities })
     const scoredRows = Object.values(activities)
       .filter((a) => a.facts !== null)
-      .reduce((sum, a) => sum + a.rows, originLink.need)
+      .reduce((sum, a) => sum + a.rows, 0)
     return {
       provider,
       rows: group.length,
       noActivity: activities[UNCLASSIFIED]?.rows ?? 0,
       fromModelsDev: group.filter(isModelsDev).length,
       activities,
-      originLink,
+      originLinks: group.filter((row) => row.sameAs != null).length,
       silent,
       score: ratio(total, scoredRows),
       flags,

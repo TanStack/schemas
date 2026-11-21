@@ -124,7 +124,7 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
   the full card. `/v1/status` counts live `priced` models per provider
   and scores `completeness` (the share of facts filled: chat, image,
   video and audio rows on their own fact sets, a null activity as a gap,
-  and origin links; `score` is null when nothing is scored). A provider there carries `docsFailing`,
+  and an origin-link count, not scored; `score` is null when nothing is scored). A provider there carries `docsFailing`,
   `priceClearsRefused`, `updateStorm`, or `staleProbes` while its
   stored docs facts or prices may be stale, one poll rewrote most of its
   live rows, or a probe record is older than 90 days. A model row's

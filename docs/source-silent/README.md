@@ -23,11 +23,10 @@ that is not a models.dev price), `endpoint`, `modalities` (input) and
 `outputModalities`. A row with a null activity is scored on `activity`,
 which it always lacks: classify the row, do not ledger it. Rows of an
 activity with no fact set (embeddings, moderation, decision, world,
-search) are listed with `facts: null` and not scored. `originLink` is
-scored on every row: a row needs an upstream link when its raw id or an
-alias, also with dots read as hyphens, matches a row at another provider
-and no row links to it; a row with `sameAs` set has one. A provider-wide
-entry applies to every activity that scores that key.
+search) are listed with `facts: null` and not scored. Origin links are
+not scored: the report counts rows with `sameAs` served (`originLinks`),
+and a ledger entry for `originLink` is refused. A provider-wide entry
+applies to every activity that scores that key.
 
 For a fact missing only on particular models, use the exact native raw model id:
 `- provider/maker/model-id: fact — why, https://provider.example/model, checked YYYY-MM-DD`.

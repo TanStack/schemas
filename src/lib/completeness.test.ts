@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildReport,
-  originIndex,
   parseLedger,
   rowCompleteness,
   scoreRow,
@@ -191,41 +190,37 @@ describe('origin links', () => {
     sameAs: { provider: 'maker', rawId: 'model-4-5' },
   }
 
-  it('needs a link where another provider lists the same id', () => {
+  // The link rules' cases are pinned against reconcileSameAs in
+  // src/server/ingest/origin-link-score.worker.test.ts.
+  it('counts the links the service wrote and scores none', () => {
     const report = buildReport([
       origin,
       linked,
+      // The same name, unlinked: the rules found no single maker root.
       { provider: 'host', rawId: 'model-4.5' },
-      { provider: 'host', rawId: 'own-model' },
     ])
     const by = (id: string) =>
-      report.providers.find((p) => p.provider === id)?.originLink
-    // The link target is the origin: it needs no link of its own.
-    expect(by('maker')).toEqual({ have: 0, need: 0, modelSilent: 0 })
-    expect(by('gateway')).toEqual({ have: 1, need: 1, modelSilent: 0 })
-    // Matches after dots are read as hyphens; `own-model` matches nothing.
-    expect(by('host')).toEqual({ have: 0, need: 1, modelSilent: 0 })
+      report.providers.find((p) => p.provider === id)?.originLinks
+    expect(by('maker')).toBe(0)
+    expect(by('gateway')).toBe(1)
+    expect(by('host')).toBe(0)
+    // Each row lacks only its activity: the link adds nothing to the score.
+    expect(report.providers.map((p) => p.score)).toEqual([0, 0, 0])
   })
 
-  it('matches by alias and ignores ids at the same provider', () => {
-    const report = buildReport([
-      { provider: 'maker', rawId: 'm-latest', aliases: ['m-1'] },
-      { provider: 'maker', rawId: 'm-1' },
-      { provider: 'host', rawId: 'm-1' },
-    ])
-    const by = (id: string) =>
-      report.providers.find((p) => p.provider === id)?.originLink.need
-    expect(by('maker')).toBe(2)
-    expect(by('host')).toBe(1)
-  })
-
-  it('names the missing facts of one row', () => {
+  it('leaves a link out of one row’s facts', () => {
     const row: ModelRow = { ...chat, maxOutput: null }
-    const origins = originIndex([row, { provider: 'other', rawId: 'm' }])
     expect(
-      rowCompleteness(
-        scoreRow(row, parseLedger('- host: cacheRead — none'), origins),
-      ),
-    ).toEqual({ filled: 9, needed: 11, missing: ['maxOutput', 'originLink'] })
+      rowCompleteness(scoreRow(row, parseLedger('- host: cacheRead — none'))),
+    ).toEqual({ filled: 9, needed: 10, missing: ['maxOutput'] })
+    expect(
+      rowCompleteness(scoreRow({ ...row, sameAs: linked.sameAs })),
+    ).toEqual({ filled: 10, needed: 11, missing: ['maxOutput'] })
+  })
+
+  it('refuses an origin-link ledger entry', () => {
+    expect(() => parseLedger('- host: originLink — none')).toThrow(
+      /origin links are not scored/,
+    )
   })
 })
