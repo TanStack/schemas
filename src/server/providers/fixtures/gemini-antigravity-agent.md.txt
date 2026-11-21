@@ -1,0 +1,50 @@
+> ## AI Agent Context
+> - Full documentation index: https://aistudio.google.com/llms.txt
+> - Gemini Docs MCP server (consistent live info): https://gemini-api-docs-mcp.dev
+> - Coding agent skills & setup guide: https://aistudio.google.com/docs/coding-agents.md
+
+# Antigravity agent
+
+The Antigravity agent is a general-purpose managed agent on the Gemini API. A single API call gives you an agent that reasons, executes code, manages files, and browses the web inside your own secure Linux sandbox, hosted by Google.
+
+It is built with Gemini 4 Hydrogen and uses the same harness as the Antigravity IDE. You can configure the underlying Gemini model using `agent_config`. Available through the [Interactions API](/docs/interactions-overview) and [Google AI Studio](https://aistudio.google.com).
+## Supported tools  {% id="supported-tools" %}
+
+By default, the agent has access to `code_execution`, `google_search`, and `url_context`. Filesystem tools are enabled automatically when you specify the `environment` parameter. You can also define **custom functions** to connect the agent to your own APIs and tools. You only need to specify the `tools` parameter when customizing or restricting the default set, or when adding custom functions.
+
+| Tool | Type value | Description |
+| :--- | :--- | :--- |
+| Code Execution | `code_execution` | Run shell commands (bash, Python, Node) with stdout/stderr capture. |
+| Google Search | `google_search` | Search the public web. |
+| URL Context | `url_context` | Fetch and read web pages. |
+| Filesystem | *(enabled via `environment`)* | Read, write, edit, search, and list files in the sandbox. The system enables these tools automatically when you set the `environment`. |
+| Custom Functions | `function` | Define custom functions that the agent can request to execute. See [Function calling](/docs/antigravity-agent#function-calling). |
+| Remote MCP Server | `mcp_server` | Register external Model Context Protocol (MCP) servers as tools. See [MCP servers](/docs/antigravity-agent#mcp-servers). |
+
+You can intercept and validate `code_execution` and `filesystem` tool execution right inside the remote sandbox using synchronous [Hooks](/docs/agent-hooks).
+
+To limit the agent to specific tools, pass only the ones you need:
+
+{% tabs %}
+  {% tab filename="sample.py" label="Python" %}
+  ```py
+  from google import genai
+  
+  client = genai.Client(http_options={"api_version": "v1beta"})
+  
+  interaction = client.interactions.create(
+      agent="antigravity-preview-09-2026",
+      input="Search for the latest AI research papers on reasoning and summarize them.",
+      environment="remote",
+      tools=[
+          {"type": "google_search"},
+          {"type": "url_context"},
+      ],
+  )
+  
+  print(interaction.output_text)
+  ```
+
+  {% /tab %}
+## Multimodal Input  {% id="multimodal-input" %}
+

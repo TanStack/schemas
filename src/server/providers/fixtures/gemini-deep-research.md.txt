@@ -1,0 +1,28 @@
+> ## AI Agent Context
+> - Full documentation index: https://aistudio.google.com/llms.txt
+> - Gemini Docs MCP server (consistent live info): https://gemini-api-docs-mcp.dev
+> - Coding agent skills & setup guide: https://aistudio.google.com/docs/coding-agents.md
+
+# Gemini Deep Research agent
+
+{% callout type="note" %}
+  This feature is in [preview](/docs/models#preview). The Deep Research agent is exclusively available using the [Interactions API](/docs/interactions-overview). You cannot access it through `generate_content`.
+
+## Supported tools  {% id="supported-tools" %}
+
+Deep Research supports multiple built-in and external tools. By default
+(when no `tools` parameter is provided), the agent has access to Google
+Search, URL Context, and Code Execution. You can explicitly
+specify tools to restrict or extend the agent's capabilities.
+
+| Tool | Type value | Description |
+| :--- | :--- | :--- |
+| Google Search | `google_search` | Search the public web. Enabled by default. |
+| URL Context | `url_context` | Read and summarize web page content. Enabled by default. |
+| Code Execution | `code_execution` | Execute code to perform calculations and data analysis. Enabled by default. |
+| MCP Server | `mcp_server` | Connect to remote MCP servers for external tool access. |
+| File Search | `file_search` | Search your uploaded document corpora. |
+
+### Google Search  {% id="google-search" %}
+## Steerability and formatting  {% id="steerability-and-formatting" %}
+
