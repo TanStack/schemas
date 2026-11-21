@@ -406,11 +406,16 @@ async function loadInputWalks(
   // Grain=model / generated listings skip the capability walk (thousands of
   // FAL endpoints; OpenAI-borrowed specs must not stamp flags). Still load
   // request property names when a listing already carries a RateCard so
-  // invented request-bound params refuse the write.
+  // invented request-bound params refuse the write, and when only synced
+  // routes may bind: an empty map there strips every listed route (#716).
   const needsRequestCheck = listed.some(
     (info) => parseStoredRateCard(info.pricing) !== null,
   )
-  if (skipFactWalk && !needsRequestCheck) {
+  if (
+    skipFactWalk &&
+    !needsRequestCheck &&
+    provider.bindSyncedRoutesOnly !== true
+  ) {
     return { walks, properties, storedRoutes }
   }
   const bound = new Set<string>()
