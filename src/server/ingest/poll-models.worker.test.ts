@@ -1003,6 +1003,61 @@ describe('pollProviderModels', () => {
     expect(row[0]?.capabilities).toBeNull()
   })
 
+  // #716: a generated or model-grained listing with no rate card skipped the
+  // schema load, so the synced-routes check saw no route and nulled them all.
+  it.each([
+    ['generated', { defaultDerivation: 'generated' as const }],
+    ['model-grained', { specGrain: 'model' as const }],
+  ])(
+    'binds a synced route on a %s listing with no rate card',
+    async (label, shape) => {
+      const id = `poll-synced-${label}`
+      const deps = await freshDeps(id)
+      await deps.db.insert(endpoints).values({
+        id: `${id}/chat/completions`,
+        providerId: id,
+        activity: 'chat',
+        method: 'POST',
+        path: '/chat/completions',
+      })
+      await deps.db.insert(schemaVersions).values({
+        id: `${id}/chat/completions:input`,
+        endpointId: `${id}/chat/completions`,
+        kind: 'input',
+        contentHash: 'c'.repeat(64),
+        schema: JSON.stringify({ properties: { tools: { type: 'array' } } }),
+        derivation: 'upstream-spec',
+        createdAt: 1_781_150_000,
+      })
+      await pollProviderModels(deps, {
+        ...stubProvider(id, [
+          {
+            rawId: 'acme/chat',
+            activity: 'chat',
+            schemaEndpointId: 'chat/completions',
+          },
+          {
+            rawId: 'acme/live',
+            activity: 'chat',
+            schemaEndpointId: 'live',
+          },
+        ]),
+        ...shape,
+        bindSyncedRoutesOnly: true,
+      })
+      const rows = await deps.db
+        .select()
+        .from(models)
+        .where(eq(models.providerId, id))
+      const byRaw = new Map(rows.map((row) => [row.rawId, row]))
+      expect(byRaw.get('acme/chat')?.schemaEndpointId).toBe('chat/completions')
+      // Never synced: still unbound.
+      expect(byRaw.get('acme/live')?.schemaEndpointId).toBeNull()
+      // Loading the route does not walk it onto the row.
+      expect(byRaw.get('acme/chat')?.capabilities).toBeNull()
+    },
+  )
+
   it('does not emit model.updated when only schema provenance metadata changes', async () => {
     const id = 'poll-sources'
     const deps = await freshDeps(id)
