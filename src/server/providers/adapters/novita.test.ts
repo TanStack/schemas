@@ -2,6 +2,7 @@ import { price } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
+import { providerRegistry } from '../index.ts'
 import { OPENAI_OPENAPI_URL } from '../openai-compat.ts'
 import {
   NOVITA_CHAT_DOC_URL,
@@ -31,6 +32,47 @@ describe('novita adapter', () => {
     expect(provider.specSourceUrl).toBe(OPENAI_OPENAPI_URL)
     expect(provider.modelsEndpoint).toBe(
       'https://api.novita.ai/openai/v1/models',
+    )
+  })
+
+  // Ids from the live /openai/v1/models listing (2026-11-21).
+  it('names the maker in the id namespace, through its namespace', () => {
+    const stated = (rawId: string) => {
+      const identity = provider.upstreamModelIdentity?.(rawId)
+      if (!identity) return null
+      const target = providerRegistry.find(
+        (p) =>
+          p.id === identity.providerNamespace ||
+          p.modelNamespaces?.includes(identity.providerNamespace),
+      )
+      return [target?.id ?? null, identity.rawId]
+    }
+    expect(stated('moonshotai/kimi-k3')).toEqual(['moonshot', 'kimi-k3'])
+    expect(stated('zai-org/glm-5.3')).toEqual(['zai', 'glm-5.3'])
+    expect(stated('xiaomimimo/mimo-v2.6-pro')).toEqual([
+      'xiaomi',
+      'mimo-v2.6-pro',
+    ])
+    expect(stated('deepseek/deepseek-v4-pro')).toEqual([
+      'deepseek',
+      'deepseek-v4-pro',
+    ])
+    expect(stated('google/gemma-4-31b-it')).toEqual([
+      'gemini',
+      'gemma-4-31b-it',
+    ])
+    // A maker with no API row here is still stated; it just resolves nowhere.
+    expect(stated('sao10k/l3-70b-euryale-v2.1')).toEqual([
+      null,
+      'l3-70b-euryale-v2.1',
+    ])
+    expect(provider.upstreamModelIdentity?.('glm-5.3')).toBeNull()
+    expect(provider.upstreamModelIdentity?.('zai-org/glm-5.3')?.source).toEqual(
+      {
+        derivation: 'listing',
+        sourceUrl: 'https://api.novita.ai/openai/v1/models',
+        path: 'data[].id',
+      },
     )
   })
 
