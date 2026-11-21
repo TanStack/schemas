@@ -12,10 +12,10 @@ import {
 } from '@tanstack-source/ci'
 
 export default defineWorkflow('ci', {
-  // manual(): run a branch by hand (`src workflow run ci --ref <branch>`).
+  // manual(): run a branch by hand (`src ci start ci --ref <branch>`).
   on: [pullRequest(), push({ branches: ['main'] }), manual()],
 }).job('ci', {
-  // Full history: the changeset check diffs against origin/main.
+  // Full history, so the changeset check finds the merge base with main.
   checkout: { depth: 0 },
   egress: ['registry.npmjs.org'],
   timeoutMinutes: 30,
@@ -28,11 +28,12 @@ export default defineWorkflow('ci', {
     { name: 'Lint', run: 'pnpm run lint' },
     { name: 'Typecheck', run: 'pnpm run typecheck' },
     // A PR that changes a published package needs a changeset (or
-    // `pnpm exec changeset --empty`).
+    // `pnpm exec changeset --empty`). The checkout has no remote branches:
+    // fetch main from the forge's internal git host (no egress needed).
     {
       name: 'Changeset check',
-      if: (ctx) => ctx.event !== 'push',
-      run: 'git remote -v; git rev-parse --is-shallow-repository; git fetch --no-tags origin main:refs/remotes/origin/main && git log --oneline -1 origin/main && pnpm exec changeset status --since=origin/main',
+      if: (ctx) => ctx.event === 'pull_request',
+      run: 'git fetch --no-tags origin main:refs/remotes/origin/main && pnpm exec changeset status --since=origin/main',
     },
     // The committed client must match the spec.
     { name: 'Client drift check', run: 'pnpm run check:client' },
