@@ -284,7 +284,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v42: the BytePlus pricing entry gained `named` (#646); a v41 entry has none.
 // v43: an OpenAI page that rejects `none` effort is effort mode, mandatory
 // true (#711). A v42 entry would keep GPT-6.2 reasoning null for six hours.
-const DOCS_CACHE_VERSION = 'v43'
+// v44: a Mistral model page entry gained `releasedAt` from its markdown
+// twin (#708); a v43 entry has none.
+const DOCS_CACHE_VERSION = 'v44'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {
