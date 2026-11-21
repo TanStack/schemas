@@ -150,6 +150,38 @@ describe('sameAs links', () => {
     expect(await linkChanges(d, rowId)).toHaveLength(2)
   })
 
+  it('keeps stored evidence while its source is unavailable, and clears it on cleared', async () => {
+    const d = deps()
+    const hostId = 'identity-unread-host'
+    const rawId = 'accounts/host/models/m'
+    const row = () =>
+      d.db.query.models.findFirst({
+        where: eq(models.id, modelDbId(hostId, rawId)),
+      })
+    const upstream = {
+      providerNamespace: 'publisher',
+      rawId: 'm',
+      source: SOURCE,
+    }
+    await pollProviderModels(d, stub(hostId, [{ rawId, upstream }]))
+    expect((await row())?.upstreamProvider).toBe('publisher')
+    // A failed metadata load says nothing about the upstream.
+    await pollProviderModels(
+      d,
+      stub(hostId, [{ rawId, absent: { upstream: 'unavailable' } }]),
+    )
+    expect(await row()).toMatchObject({
+      upstreamProvider: 'publisher',
+      upstreamRawId: 'm',
+      upstreamSource: SOURCE,
+    })
+    await pollProviderModels(
+      d,
+      stub(hostId, [{ rawId, upstream, absent: { upstream: 'cleared' } }]),
+    )
+    expect((await row())?.upstreamProvider).toBeNull()
+  })
+
   it('resolves namespaces through the database and prefers exact ids, then aliases, then dots as hyphens', async () => {
     const d = deps()
     await pollProviderModels(

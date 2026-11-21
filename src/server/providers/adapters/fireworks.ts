@@ -6,11 +6,14 @@
  * FIREWORKS_API_KEY.
  *
  * Prices, reasoning, and the chat request map are read on each poll from
- * the pricing page, the serverless models API, and that same YAML. A chat
- * row with no stated reasoning also reads its native metadata
- * (`/v1/<rawId>`); a failed load marks only that row unavailable.
+ * the pricing page, the serverless models API, and that same YAML. Each
+ * `accounts/<account>/models/<name>` row also reads its native metadata (`/v1/<rawId>`,
+ * cached like docs): its `huggingFaceUrl` is the upstream model, and a chat
+ * row with no stated reasoning reads reasoning from its description. The
+ * OpenAI-compatible listing names no maker (`owned_by` is always
+ * `fireworks`). A failed load marks only that row unavailable.
  */
-import { fireworksHostedReasoning } from '../native-host-reasoning.ts'
+import { fireworksNativeFacts } from '../native-host-reasoning.ts'
 import { mapConcurrent, docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import type { Activity } from '#/db/schema.ts'
 import {
@@ -119,7 +122,7 @@ async function listModels(
   return {
     ...listed,
     models: await mapConcurrent(listed.models, 4, async (model) =>
-      fireworksHostedReasoning(
+      fireworksNativeFacts(
         overlayModelFacts(
           model,
           applyFireworksDocs(model, {

@@ -1,10 +1,12 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import docs from './fixtures/host-native-reasoning.json'
+import native from './fixtures/fireworks-native-models.json'
 import { docsRun } from './model-facts.ts'
 import type { ModelInfo } from './types.ts'
 import {
-  fireworksHostedReasoning,
+  fireworksNativeFacts,
   nativeReasoningCapability,
+  parseFireworksHuggingFace,
   parseFireworksNativeReasoning,
   parseHfHostedReasoning,
 } from './native-host-reasoning.ts'
@@ -104,6 +106,7 @@ it('keeps a row whose Fireworks metadata is forbidden and reports the failure', 
               JSON.stringify({
                 name: open,
                 description: 'A model with strong reasoning capabilities.',
+                huggingFaceUrl: '',
               }),
             ),
       ),
@@ -116,12 +119,81 @@ it('keeps a row whose Fireworks metadata is forbidden and reports the failure', 
     reasoning: null,
   })
   const run = docsRun()
-  const kept = await fireworksHostedReasoning(row(forbidden), 'key', run)
-  expect(kept.absent).toEqual({ capabilities: 'unavailable' })
+  const kept = await fireworksNativeFacts(row(forbidden), 'key', run)
+  expect(kept.absent).toEqual({
+    upstream: 'unavailable',
+    capabilities: 'unavailable',
+  })
+  expect(kept.upstream).toBeUndefined()
   expect(kept.capabilities).toEqual(['tools'])
   expect(run.failed).toBe(1)
   expect(run.first[0]?.source).toBe('https://api.fireworks.ai/v1/' + forbidden)
-  const read = await fireworksHostedReasoning(row(open), 'key', run)
+  // A row that reads no reasoning loses only its upstream.
+  const reasoned = await fireworksNativeFacts(
+    { ...row(forbidden), reasoning: { mode: 'toggle', mandatory: false } },
+    'key',
+    run,
+  )
+  expect(reasoned.absent).toEqual({ upstream: 'unavailable' })
+  const read = await fireworksNativeFacts(row(open), 'key', run)
   expect(read.capabilities).toEqual(['tools', 'reasoning'])
+  expect(read.upstream).toBeNull()
   expect(read.absent).toBeUndefined()
+})
+it('states the Hugging Face repo Fireworks metadata names as the upstream', async () => {
+  // The OpenAI-compatible listing names no maker.
+  expect(new Set(native.listing.map((row) => row.owned_by))).toEqual(
+    new Set(['fireworks']),
+  )
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      const id = url.slice(url.lastIndexOf('/') + 1)
+      const body = native.metadata[id as keyof typeof native.metadata]
+      return Promise.resolve(new Response(JSON.stringify(body)))
+    }),
+  )
+  const facts = async (rawId: string, activity: ModelInfo['activity']) =>
+    fireworksNativeFacts({ rawId, activity }, 'key', docsRun())
+  const url = 'https://api.fireworks.ai/v1/accounts/fireworks/models/'
+  expect(
+    (await facts('accounts/fireworks/models/minimax-m3', 'chat')).upstream,
+  ).toEqual({
+    providerNamespace: 'MiniMaxAI',
+    rawId: 'MiniMax-M3',
+    source: {
+      derivation: 'listing',
+      sourceUrl: url + 'minimax-m3',
+      path: 'huggingFaceUrl',
+    },
+  })
+  expect(
+    (await facts('accounts/fireworks/models/kimi-k3', 'chat')).upstream
+      ?.providerNamespace,
+  ).toBe('moonshotai')
+  // An empty field states nothing.
+  expect(
+    (await facts('accounts/fireworks/models/qwen3-reranker-8b', 'embeddings'))
+      .upstream,
+  ).toBeNull()
+  // A router is not a model and reads no metadata.
+  const router = await facts('accounts/fireworks/routers/kimi-k3-fast', 'chat')
+  expect(router).toEqual({
+    rawId: 'accounts/fireworks/routers/kimi-k3-fast',
+    activity: 'chat',
+  })
+})
+it('reads only a Hugging Face repo URL, or an empty field', () => {
+  expect(
+    parseFireworksHuggingFace('https://huggingface.co/openai/gpt-oss-120b'),
+  ).toEqual({ providerNamespace: 'openai', rawId: 'gpt-oss-120b' })
+  expect(parseFireworksHuggingFace('')).toBeNull()
+  // Shapes Fireworks' account catalogue carries on unlisted models.
+  for (const value of [
+    'https://huggingface.co/Qwen/',
+    'https://huggingface.co/MiniMaxAI/MiniMax-M1-80k/tree/main',
+    undefined,
+    null,
+  ])
+    expect(() => parseFireworksHuggingFace(value)).toThrow()
 })

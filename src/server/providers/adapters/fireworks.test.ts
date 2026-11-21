@@ -1,4 +1,5 @@
 import hostDocs from '../fixtures/host-native-reasoning.json'
+import native from '../fixtures/fireworks-native-models.json'
 import { describe, expect, it } from 'vitest'
 
 import { price } from '@modelschemas/rate-card'
@@ -136,7 +137,10 @@ describe('fireworks listModels docs', () => {
           }),
         )
       }
-      for (const [id, body] of Object.entries(hostDocs.fireworks)) {
+      for (const [id, body] of Object.entries({
+        ...native.metadata,
+        ...hostDocs.fireworks,
+      })) {
         if (
           href ===
           'https://api.fireworks.ai/v1/accounts/fireworks/models/' + id
@@ -203,6 +207,14 @@ describe('fireworks listModels docs', () => {
       expect(ember?.requestMap?.reasoningEffort).toBeNull()
       expect(rerank?.activity).toBeNull()
       expect(rerank?.requestMap ?? null).toBeNull()
+      // Every model row states the Hugging Face repo its metadata names.
+      expect(deepseek?.upstream).toMatchObject({
+        providerNamespace: 'deepseek-ai',
+        rawId: 'DeepSeek-V4.1-Flash',
+      })
+      expect(inkling?.upstream?.providerNamespace).toBe('thinkingmachines')
+      expect(ember?.upstream).toBeNull()
+      expect(rerank?.upstream).toBeNull()
     } finally {
       globalThis.fetch = original
     }

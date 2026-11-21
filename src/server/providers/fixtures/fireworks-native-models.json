@@ -1,0 +1,95 @@
+{
+  "listing": [
+    {
+      "id": "accounts/fireworks/models/minimax-m3",
+      "object": "model",
+      "owned_by": "fireworks",
+      "created": 1781214748,
+      "kind": "HF_BASE_MODEL",
+      "supports_chat": true,
+      "supports_image_input": false,
+      "supports_tools": true,
+      "context_length": 512000
+    },
+    {
+      "id": "accounts/fireworks/models/qwen3-reranker-8b",
+      "object": "model",
+      "owned_by": "fireworks",
+      "created": 1759865045,
+      "kind": "EMBEDDING_MODEL",
+      "supports_chat": true,
+      "supports_image_input": false,
+      "supports_tools": false,
+      "context_length": 40960
+    },
+    {
+      "id": "accounts/fireworks/models/kimi-k3",
+      "object": "model",
+      "owned_by": "fireworks",
+      "created": 1784483409,
+      "kind": "HF_BASE_MODEL",
+      "supports_chat": true,
+      "supports_image_input": true,
+      "supports_tools": true,
+      "context_length": 1048576
+    },
+    {
+      "id": "accounts/fireworks/routers/kimi-k3-fast",
+      "object": "model",
+      "owned_by": "fireworks",
+      "created": 1784483409,
+      "kind": "HF_BASE_MODEL",
+      "supports_chat": true,
+      "supports_image_input": true,
+      "supports_tools": true,
+      "context_length": 1048576
+    }
+  ],
+  "metadata": {
+    "minimax-m3": {
+      "name": "accounts/fireworks/models/minimax-m3",
+      "displayName": "Minimax M3",
+      "description": "MiniMax-M3 is a native multimodal model with 1M context running ~428B parameters and ~23B activated parameters. It brings native multimodality. enabling deeper semantic fusion across text, image, and video. M3 also introduces MiniMax Sparse Attention (MSA) to improve long context efficiency, achieving frontier-level performance across long-horizon agentic benchmarks, excelling in both coding and cowork.",
+      "kind": "HF_BASE_MODEL",
+      "huggingFaceUrl": "https://huggingface.co/MiniMaxAI/MiniMax-M3",
+      "githubUrl": "",
+      "importedFrom": ""
+    },
+    "kimi-k3": {
+      "name": "accounts/fireworks/models/kimi-k3",
+      "displayName": "Kimi K3",
+      "description": "Kimi K3 is Kimi’s most capable flagship model to date, with 2.8 trillion parameters. It is built on Kimi Delta Attention (KDA), a hybrid linear attention mechanism, and Attention Residuals, with native visual understanding and a 1M-token context window. It is the world’s first open-source model in the 3-trillion-parameter class, designed for frontier intelligence scenarios including long-horizon coding, knowledge work, and reasoning.",
+      "kind": "HF_BASE_MODEL",
+      "huggingFaceUrl": "https://huggingface.co/moonshotai/Kimi-K3",
+      "githubUrl": "",
+      "importedFrom": ""
+    },
+    "qwen3-reranker-8b": {
+      "name": "accounts/fireworks/models/qwen3-reranker-8b",
+      "displayName": "Qwen3 Reranker 8B",
+      "description": "significant advancements in multiple text embedding and ranking tasks, including text retrieval, code retrieval, text classification, text clustering, and bitext mining",
+      "kind": "EMBEDDING_MODEL",
+      "huggingFaceUrl": "",
+      "githubUrl": "",
+      "importedFrom": ""
+    },
+    "deepseek-v4p1-flash": {
+      "name": "accounts/fireworks/models/deepseek-v4p1-flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "description": "DeepSeek-V4.1-Flash is a multimodal Mixture-of-Experts model with 552B backbone parameters that natively processes images and text at up to 1M token context. Its Causal Encoder-Decoder architecture activates only 8B parameters during prefill and 16B during decode, cutting the KV cache footprint to roughly a quarter of DeepSeek-V4-Flash for cost-efficient agentic workloads.",
+      "kind": "HF_BASE_MODEL",
+      "huggingFaceUrl": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "githubUrl": "",
+      "importedFrom": ""
+    },
+    "qwen3p8-max": {
+      "name": "accounts/fireworks/models/qwen3p8-max",
+      "displayName": "Qwen 3.8 Max",
+      "description": "Built on the architectural foundation of Qwen3.5, Qwen3.8 delivers substantial gains across coding, professional work, research, and long-horizon agentic tasks. Beyond answering harder questions, Qwen3.8 is designed to carry complex, multi-step tasks through to completion with greater reliability.",
+      "kind": "HF_BASE_MODEL",
+      "huggingFaceUrl": "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+      "githubUrl": "",
+      "importedFrom": ""
+    }
+  }
+}
