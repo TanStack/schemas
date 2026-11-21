@@ -11,6 +11,10 @@ import {
   openaiModelFacts,
 } from './openai-model-docs.ts'
 import { docsRun } from './model-facts.ts'
+import {
+  OPENAI_REALTIME_MCP_URL,
+  parseOpenAiRealtimeMcp,
+} from './openai-realtime-mcp.ts'
 import { openrouterServerTools } from './openrouter.ts'
 import {
   GROQ_BUILTIN_TOOLS_URL,
@@ -352,6 +356,105 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     expect(facts('gpt-4o').serverTools).toEqual(['web_search'])
     // No model page read: nothing is stated (the ledger covers it).
     expect(facts('gpt-5-search-api').factSources?.serverTools).toBeUndefined()
+  })
+
+  it('OpenAI: realtime ids the MCP guide samples name take hosted mcp', async () => {
+    // developers.openai.com/api/docs/guides/realtime-mcp.md, 2026-11-21:
+    // "Choose a tool type" and the "Configure an MCP tool" and "Legacy
+    // connectors" sections with every sample language.
+    const guide = readFileSync(
+      new URL('./fixtures/openai-realtime-mcp.md.txt', import.meta.url),
+      'utf8',
+    )
+    // Only the TypeScript and Python samples are read.
+    expect(parseOpenAiRealtimeMcp(guide)).toEqual([
+      {
+        model: 'gpt-realtime-2.1',
+        heading: 'Configure an MCP tool',
+        lang: 'typescript',
+      },
+      {
+        model: 'gpt-realtime-2.1',
+        heading: 'Configure an MCP tool',
+        lang: 'python',
+      },
+      {
+        model: 'gpt-realtime-1.5',
+        heading: 'Legacy connectors',
+        lang: 'typescript',
+      },
+      {
+        model: 'gpt-realtime-1.5',
+        heading: 'Legacy connectors',
+        lang: 'python',
+      },
+    ])
+    expect(() =>
+      parseOpenAiRealtimeMcp(guide.replaceAll('"mcp"', '"remote_mcp"')),
+    ).toThrow(/no sample/)
+    // A second model in one mcp sample (a transcription model) is not bound.
+    expect(() =>
+      parseOpenAiRealtimeMcp(
+        guide.replace(
+          'output_modalities: ["text"],',
+          'output_modalities: ["text"],\n    transcription: { model: "gpt-realtime-whisper" },',
+        ),
+      ),
+    ).toThrow(/gpt-realtime-2.1, gpt-realtime-whisper/)
+    const page = (id: string) =>
+      [
+        `Model ID: \`${id}\``,
+        '',
+        ...endpoints('Not supported', 'Not supported', 'Supported'),
+      ].join('\n')
+    const ids = ['gpt-realtime-2.1', 'gpt-realtime-1.5', 'gpt-realtime-2']
+    const pages = {
+      [OPENAI_MODELS_INDEX_URL]: ids
+        .map((slug) => `[${slug}](/api/docs/models/${slug}.md)`)
+        .join('\n'),
+      ...Object.fromEntries(ids.map((id) => [OPENAI_MODEL_PAGE(id), page(id)])),
+    }
+    serve({ ...pages, [OPENAI_REALTIME_MCP_URL]: guide })
+    const facts = await openaiModelFacts(ids)
+    expect(facts('gpt-realtime-2.1')).toMatchObject({
+      serverTools: ['mcp'],
+      factSources: {
+        serverTools: {
+          mcp: {
+            derivation: 'docs-derived',
+            sourceUrl: OPENAI_REALTIME_MCP_URL,
+            path: 'Configure an MCP tool (sample)',
+          },
+        },
+      },
+    })
+    expect(facts('gpt-realtime-1.5').serverTools).toEqual(['mcp'])
+    expect(facts('gpt-realtime-1.5').factSources?.serverTools).toMatchObject({
+      mcp: { path: 'Legacy connectors (sample)' },
+    })
+    // The guide is not a complete list: an id its samples skip gets no
+    // entry and keeps whatever is stored.
+    expect(facts('gpt-realtime-2').serverTools).toBeNull()
+    expect(facts('gpt-realtime-2').factSources?.serverTools).toBeUndefined()
+    expect(facts('gpt-realtime-2').absent?.serverTools).toBe('unavailable')
+
+    // Samples follow the newest model: the id they stop naming keeps its
+    // stored ["mcp"] instead of being written null.
+    serve({
+      ...pages,
+      [OPENAI_REALTIME_MCP_URL]: guide.replaceAll(
+        'gpt-realtime-2.1',
+        'gpt-realtime-3',
+      ),
+    })
+    const rotated = await openaiModelFacts(ids)
+    expect(rotated('gpt-realtime-2.1').absent?.serverTools).toBe('unavailable')
+
+    serve(pages)
+    const failed = await openaiModelFacts(ids)
+    expect(failed('gpt-realtime-2.1').absent).toMatchObject({
+      serverTools: 'unavailable',
+    })
   })
 
   it('Grok: a model the "e.g." files list does not name stays unstated', async () => {

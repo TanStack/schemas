@@ -21,6 +21,11 @@ import type {
 
 import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
 import {
+  OPENAI_REALTIME_MCP_URL,
+  openaiRealtimeMcp,
+  withRealtimeMcp,
+} from './openai-realtime-mcp.ts'
+import {
   NO_FACTS,
   assertParsed,
   docsRun,
@@ -988,6 +993,11 @@ export async function openaiModelFacts(
       })
     }
   }
+  const realtimeMcp = realtimeListed
+    ? await tryDocs(run, OPENAI_REALTIME_MCP_URL, (cached) =>
+        openaiRealtimeMcp(kv, cached, fetcher),
+      )
+    : null
   const guides = rawIds.some(gpt5GuideSelects)
     ? await Promise.all([
         tryDocs(run, OPENAI_GPT5_GUIDE_URL, (cached) =>
@@ -1114,7 +1124,7 @@ export async function openaiModelFacts(
   // list in place with mandatory null, which is the unstated value.
   if (guides && !guides[0]) guideGaps.reasoning = 'unavailable'
   if (guides && !guides[2]) guideGaps.capabilities = 'unavailable'
-  return (rawId) => {
+  const familyFacts = (rawId: string): OpenAiDocsFacts => {
     const facts = sourcedFacts(rawId)
     if (!guides || !guideNames(rawId, familyIds)) return facts
     const absent = { ...facts.absent }
@@ -1122,6 +1132,30 @@ export async function openaiModelFacts(
     if (guideGaps.capabilities) absent.capabilities = 'unavailable'
     return guideGaps.reasoning || guideGaps.capabilities
       ? { ...facts, absent }
+      : facts
+  }
+  return (rawId) => mcpFacts(rawId, familyFacts(rawId))
+  /** A realtime id the MCP guide's samples name takes hosted `mcp` (#707). */
+  function mcpFacts(rawId: string, facts: OpenAiDocsFacts): OpenAiDocsFacts {
+    if (
+      !realtimeListed ||
+      !openaiRealtimeSelects(rawId) ||
+      facts.absent?.serverTools === 'unavailable'
+    ) {
+      return facts
+    }
+    if (!realtimeMcp) {
+      return {
+        ...facts,
+        absent: { ...facts.absent, serverTools: 'unavailable' },
+      }
+    }
+    const heading = realtimeMcp.headings[rawId]
+    if (heading) return withRealtimeMcp(facts, heading, realtimeMcp.hash)
+    // The samples follow the newest model, so one the guide stops naming
+    // may still take mcp: keep its stored tools unless its page names some.
+    return facts.serverTools == null && !facts.factSources?.serverTools
+      ? { ...facts, absent: { ...facts.absent, serverTools: 'unavailable' } }
       : facts
   }
   /** `docsFacts`, with the facts a failed docs load feeds left unavailable. */
