@@ -1595,7 +1595,9 @@ export async function byteplusModelMakers(
   (rawId: string) => Pick<ModelInfo, 'maker' | 'factSources' | 'absent'>
 > {
   const list = await tryDocs(run, BYTEPLUS_MODEL_LIST_URL, (cached) =>
-    cached(kv, BYTEPLUS_MODEL_LIST_URL, async () => {
+    // `#makers` keeps this shape off byteplusServerTools' entry for the
+    // same page: sharing one key crashed every cached poll (2026-11-21).
+    cached(kv, `${BYTEPLUS_MODEL_LIST_URL}#makers`, async () => {
       const content = pricingContent(
         await fetchByteplusDoc(BYTEPLUS_MODEL_LIST_URL),
         'byteplus model list',
