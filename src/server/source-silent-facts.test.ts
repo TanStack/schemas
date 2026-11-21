@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildReport, parseLedger } from '#/lib/completeness.ts'
 import {
   parseSourceSilentEvidence,
   withSourceSilentEvidence,
@@ -232,5 +233,40 @@ describe('model-scoped replay silence evidence', () => {
     expect(
       withSourceSilentEvidence(model, null, null, scoped),
     ).not.toHaveProperty('requestMap')
+  })
+  it('serves a serverTools entry on a null row only, never scoring it (#707)', () => {
+    const markdown =
+      '- `synthetic/m-1`: serverTools — no model page, https://example.com/m, checked 2026-11-21'
+    const tools = parseSourceSilentEvidence(markdown)
+    const silent = {
+      derivation: 'source-silent',
+      sourceUrl: 'https://example.com/m',
+      checkedAt: '2026-11-21',
+    }
+    const m1 = { ...row, rawId: 'm-1', serverTools: null }
+    expect(withSourceSilentEvidence(m1, null, null, tools)).toEqual({
+      serverTools: silent,
+    })
+    expect(
+      withSourceSilentEvidence(
+        { ...m1, serverTools: ['mcp'] },
+        null,
+        null,
+        tools,
+      ),
+    ).toBeNull()
+    // A poll-time silence from the model's own page stays as stored.
+    const stored = {
+      serverTools: {
+        derivation: 'source-silent' as const,
+        sourceUrl: 'https://example.com/page',
+      },
+    }
+    expect(withSourceSilentEvidence(m1, null, stored, tools)).toEqual(stored)
+    // Evidence only: the entry changes no score.
+    const rows = [{ provider: 'synthetic', rawId: 'm-1', activity: 'chat' }]
+    expect(buildReport(rows, parseLedger(markdown)).providers).toEqual(
+      buildReport(rows).providers,
+    )
   })
 })

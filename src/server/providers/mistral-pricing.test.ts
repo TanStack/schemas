@@ -937,8 +937,12 @@ describe('mistral model page features', () => {
     id,
     { className: 'flex flex-col', 'aria-disabled': disabled, children: [] },
   ]
-  const page = (grid: Array<unknown>, extra: Record<string, unknown> = {}) =>
-    mistralModelPage(['m-1'], [[tip('Text input'), tip('Text output')]], {
+  const page = (
+    grid: Array<unknown>,
+    extra: Record<string, unknown> = {},
+    ids: Array<string> = ['m-1'],
+  ) =>
+    mistralModelPage(ids, [[tip('Text input'), tip('Text output')]], {
       f: [
         '$',
         '$L5b',
@@ -957,6 +961,45 @@ describe('mistral model page features', () => {
       ],
       ...extra,
     })
+
+  it('makes a read page whose Features name no conversations tools source-silent (#707)', async () => {
+    const original = globalThis.fetch
+    const small = 'https://docs.mistral.ai/models/mistral-small-4-0-26-03'
+    const docs: Record<string, string> = {
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/models.md': '',
+      'https://docs.mistral.ai/models': '',
+      [small]: page([feature('function-calling')], {}, ['mistral-small-2603']),
+      [`${small}.md`]: '- Release date: 2026-03-16\n',
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+    }
+    globalThis.fetch = ((url: string) => {
+      const body = docs[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const lookup = await mistralModelPricing(undefined, [
+        'mistral-small-2603',
+      ])
+      const row = lookup('mistral-small-2603')
+      expect(row.serverTools).toBeUndefined()
+      expect(row.factSources?.serverTools).toEqual({
+        derivation: 'source-silent',
+        sourceUrl: small,
+      })
+    } finally {
+      globalThis.fetch = original
+    }
+  })
 
   it('reads feature ids, lazy rows followed', () => {
     const html = page([feature('function-calling'), '$Lf2'], {

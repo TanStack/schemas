@@ -24,6 +24,7 @@ import { fetchText, sha256Text } from './types.ts'
 import type {
   DocsFailures,
   FactAbsence,
+  FactSource,
   ModelFact,
   ModelFactSources,
 } from './types.ts'
@@ -379,6 +380,7 @@ interface FactRow {
   aliases?: Array<string> | null
   aliasOf?: string | null
   pricing?: unknown
+  serverTools?: Array<string> | null
   factSources?: ModelFactSources
   absent?: Partial<Record<ModelFact, FactAbsence>>
 }
@@ -388,8 +390,8 @@ function sourceHash(hash: string | undefined): { sourceHash?: string } {
 }
 
 /**
- * Copy a published Gemma cell, then a changelog alias's modalities, onto
- * rows that still have none. A failed document keeps stored modalities
+ * Copy a published Gemma cell, then a changelog alias's modalities and
+ * server tools, onto rows that still have none. A failed document keeps stored modalities
  * (`unavailable`) instead of clearing them.
  */
 export function attachGeminiPublishedFacts<T extends FactRow>(
@@ -479,6 +481,40 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
           },
         })
       }
+      // The alias is the target model, so the target page's tools are its
+      // own (#707). A silent target stays the alias's silence, and an
+      // unread one leaves the alias unread.
+      const aliasTools = byId.get(alias)
+      if (aliasTools && aliasTools.serverTools == null) {
+        const prior = target.factSources?.serverTools
+        const tools = target.serverTools ?? null
+        const sources =
+          tools && tools.length > 0 && prior
+            ? Object.fromEntries(
+                Object.entries(prior as Record<string, FactSource>).map(
+                  ([tool, source]) => [
+                    tool,
+                    { ...source, path: `${source.path}; alias of ${targetId}` },
+                  ],
+                ),
+              )
+            : prior?.derivation === 'source-silent'
+              ? prior
+              : undefined
+        if (sources) {
+          put({
+            ...aliasTools,
+            ...(tools && tools.length > 0 ? { serverTools: tools } : {}),
+            factSources: { ...aliasTools.factSources, serverTools: sources },
+          })
+        } else if (target.absent?.serverTools === 'unavailable') {
+          // The target's page failed: the alias keeps its stored tools too.
+          put({
+            ...aliasTools,
+            absent: { ...aliasTools.absent, serverTools: 'unavailable' },
+          })
+        }
+      }
       const current = byId.get(targetId)
       if (!current) continue
       put({
@@ -535,6 +571,7 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
       if (rawId.includes('latest')) {
         absent.aliasOf = 'unavailable'
         if (model.modalities == null) absent.modalities = 'unavailable'
+        if (model.serverTools == null) absent.serverTools = 'unavailable'
       }
       put({ ...model, absent })
     }

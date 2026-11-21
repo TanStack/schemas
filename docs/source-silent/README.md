@@ -9,7 +9,12 @@ file. One entry per list line: `- <provider>: <fact> — <why, with the issue>`.
 The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 `outputModalities`, `priced`, `cacheRead`, `capabilities`, `reasoning`,
 `efforts`, `requestMap`, `endpoint`, `replayReasoningContent`,
-`originLink`). `activity` is scored but cannot be ledgered. Remove an entry when the provider starts publishing the fact.
+`originLink`), or `serverTools`, which is evidence only: it is served as
+`factSources.serverTools` on a null row and never scored. A poll that read
+the model's own tool statement and found it says no already stores that
+evidence (#707), so a `serverTools` entry is only for a model with no such
+page. `activity` is scored but cannot be ledgered. Remove an entry when the
+provider starts publishing the fact.
 
 Each activity has its own fact set (`ACTIVITY_FACTS` in
 `src/lib/completeness.ts`). Chat rows are scored on the chat keys above.
