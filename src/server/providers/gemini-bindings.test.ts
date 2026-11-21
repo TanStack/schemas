@@ -9,6 +9,7 @@ import {
   parseGeminiReleaseDates,
   htmlTables,
   parseGemmaCardFacts,
+  parseGemmaGuideTools,
   parseGemmaModalities,
 } from './gemini-bindings.ts'
 import type { GeminiPublishedBindings } from './gemini-bindings.ts'
@@ -76,6 +77,11 @@ function bindings(
     gemmaSource: {
       url: 'https://ai.google.dev/gemma/docs/core/model_card_4',
       hash: 'gemma',
+    },
+    gemmaTools: {},
+    gemmaToolsSource: {
+      url: 'https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api',
+      hash: 'guide',
     },
     docsFailures: { failed: 0, skipped: 0, first: [] },
     ...over,
@@ -481,5 +487,69 @@ describe('gemma maker and weights (#710)', () => {
       maker: 'unavailable',
       openWeights: 'unavailable',
     })
+  })
+})
+
+describe('Gemma on the Gemini API guide tools (#707)', () => {
+  // https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api, 2026-11-21:
+  // the article's Supported models table, Function Calling and Google
+  // Search sections.
+  const html = readFileSync(
+    new URL('./fixtures/gemma-on-gemini-api.html.txt', import.meta.url),
+    'utf8',
+  )
+
+  it("binds the REST examples' hosted tools to every hosted size", () => {
+    expect(parseGemmaGuideTools(html)).toEqual(
+      new Map([
+        ['gemma-4-31b-it', ['googleSearch']],
+        ['gemma-4-26b-a4b-it', ['googleSearch']],
+      ]),
+    )
+  })
+
+  it('throws when the table or the selector sentence changes', () => {
+    expect(() =>
+      parseGemmaGuideTools(html.replace('<th>Identifier</th>', '<th>Id</th>')),
+    ).toThrow(/identifiers/)
+    expect(() =>
+      parseGemmaGuideTools(html.replace('every example below follows it', '')),
+    ).toThrow(/selector/)
+    expect(() =>
+      parseGemmaGuideTools(html.replaceAll('googleSearch', 'webSearch')),
+    ).toThrow(/webSearch/)
+  })
+
+  const rows: Array<Listed & { serverTools: Array<string> | null }> = [
+    { rawId: 'gemma-4-31b-it', modalities: null, serverTools: null },
+    { rawId: 'gemma-4-e4b-it', modalities: null, serverTools: null },
+  ]
+
+  it('sets tools on the rows the guide binds, and nothing on the rest', () => {
+    const [hosted, other] = attachGeminiPublishedFacts(
+      rows,
+      bindings({ gemmaTools: { 'gemma-4-31b-it': ['googleSearch'] } }),
+    )
+    expect(hosted).toMatchObject({
+      serverTools: ['googleSearch'],
+      factSources: {
+        serverTools: {
+          googleSearch: {
+            derivation: 'docs-derived',
+            sourceUrl:
+              'https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api',
+          },
+        },
+      },
+    })
+    expect(other).toEqual(rows[1])
+  })
+
+  it('keeps stored tools when the guide could not be read', () => {
+    const [hosted] = attachGeminiPublishedFacts(
+      rows,
+      bindings({ gemmaTools: null }),
+    )
+    expect(hosted?.absent).toMatchObject({ serverTools: 'unavailable' })
   })
 })

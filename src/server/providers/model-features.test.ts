@@ -13,7 +13,9 @@ import {
   GEMINI_THINKING_URL,
   familyOf,
   geminiModelFeatures,
+  parseGuideTools,
   parseModelIndexDocs,
+  parsePageGuide,
   parsePageModalities,
   parsePageSections,
   parsePageThinking,
@@ -569,6 +571,74 @@ describe('gemini features (issue #77)', () => {
       const antigravity = features('antigravity-preview-09-2026', false)
       expect(antigravity.serverTools).toBeNull()
       expect(antigravity.factSources.serverTools).toBeUndefined()
+    })
+
+    const fixture = (name: string) =>
+      readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
+
+    it('reads a guide Supported tools table as generateContent fields (#707)', () => {
+      // https://aistudio.google.com/docs/antigravity-agent.md and
+      // deep-research.md, 2026-11-21, cut down. `function` is a client
+      // tool; `mcp_server` has no generateContent field; Filesystem has no
+      // type value.
+      expect(
+        parseGuideTools(fixture('gemini-antigravity-agent.md.txt')),
+      ).toEqual(['codeExecution', 'googleSearch', 'urlContext'])
+      expect(parseGuideTools(fixture('gemini-deep-research.md.txt'))).toEqual([
+        'googleSearch',
+        'urlContext',
+        'codeExecution',
+        'fileSearch',
+      ])
+      expect(parseGuideTools('# Computer use\n\n## Model versions\n')).toEqual(
+        [],
+      )
+      const guide = fixture('gemini-deep-research.md.txt')
+      expect(() =>
+        parseGuideTools(guide.replace('| Type value |', '| Value |')),
+      ).toThrow(/Type value/)
+      expect(() =>
+        parseGuideTools(guide.replace('`file_search`', '`file_lookup`')),
+      ).toThrow(/file_lookup/)
+    })
+
+    it('binds an agent page with no Capabilities row to its linked guide tools (#707)', async () => {
+      const agent = fixture('gemini-antigravity-preview-09-2026.md.txt')
+      expect(parsePageGuide(agent)).toBe(
+        'https://aistudio.google.com/docs/antigravity-agent.md',
+      )
+      const read = (guide: string | null) =>
+        withPages(
+          { 'antigravity-preview-09-2026': agent },
+          () => geminiModelFeatures(['antigravity-preview-09-2026']),
+          { extras: { '/docs/antigravity-agent.md': guide } },
+        )
+      const { features } = await read(
+        fixture('gemini-antigravity-agent.md.txt'),
+      )
+      expect(features('antigravity-preview-09-2026', false)).toMatchObject({
+        serverTools: ['codeExecution', 'googleSearch', 'urlContext'],
+        factSources: {
+          serverTools: {
+            googleSearch: {
+              derivation: 'docs-derived',
+              sourceUrl:
+                'https://aistudio.google.com/docs/antigravity-agent.md',
+            },
+          },
+        },
+      })
+      // A guide with no Supported tools section states nothing.
+      const none = await read('# Antigravity agent\n')
+      const silent = none.features('antigravity-preview-09-2026', false)
+      expect(silent.serverTools).toBeNull()
+      expect(silent.factSources.serverTools).toBeUndefined()
+      // A guide that fails keeps the stored tools.
+      const failed = await read(null)
+      expect(
+        failed.features('antigravity-preview-09-2026', false).absent,
+      ).toMatchObject({ serverTools: 'unavailable' })
+      expect(failed.docsFailures.failed).toBe(1)
     })
 
     it('reads backtick thinking levels and drops a level the same paragraph rejects', () => {

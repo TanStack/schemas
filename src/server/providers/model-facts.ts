@@ -291,7 +291,10 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // A v44 entry would leave both out for six hours.
 // v46: the Gemma card entry gained `card` (maker, open weights), and the
 // Mistral overview and BytePlus model list gained maker entries (#710).
-const DOCS_CACHE_VERSION = 'v46'
+// v47: a Gemini model page entry gained `guide`, the guide its
+// Documentation section links (#707). A v46 entry has none, so agent rows
+// would read no guide tools for six hours.
+const DOCS_CACHE_VERSION = 'v47'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

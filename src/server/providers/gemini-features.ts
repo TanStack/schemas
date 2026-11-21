@@ -9,7 +9,9 @@ import {
  * rewrites their tables as the `| a | b |` rows these parsers read.
  *
  * Tools: every model page (`/docs/models/{slug}.md`) has a Capabilities
- * row of `**[Name](url)** Supported|Not supported` pairs.
+ * row of `**[Name](url)** Supported|Not supported` pairs. An agent page
+ * has none; its Documentation section links a guide whose Supported tools
+ * table names the tools instead (#707).
  * Thinking: the generateContent thinking page has a `thinkingLevel` table
  * whose columns name Gemini 3 families, and a `thinkingBudget` table whose
  * rows name Gemini 2.5 families. Both key by family, so an id resolves to
@@ -62,6 +64,11 @@ const TOOL_FIELDS: Record<string, string> = {
   'URL context': 'urlContext',
 }
 
+/** The generateContent `Tool` fields a stored Gemini tool id may name. */
+export const GEMINI_TOOL_FIELDS: ReadonlySet<string> = new Set(
+  Object.values(TOOL_FIELDS),
+)
+
 function capabilitiesRow(markdown: string): string | undefined {
   return markdown
     .split('\n')
@@ -76,6 +83,50 @@ export function parsePageTools(markdown: string): Array<string> {
   for (const m of row.matchAll(/\*\*\[([^\]]+)\]\([^)]*\)\*\*\s*([^*|]*)/g)) {
     const field = TOOL_FIELDS[m[1] ?? '']
     if (field && (m[2] ?? '').trim().startsWith('Supported')) out.push(field)
+  }
+  return out
+}
+
+/**
+ * The guide a model page's `## Documentation` section sends readers to for
+ * "full coverage of features" (agent pages have no Capabilities row).
+ */
+export function parsePageGuide(markdown: string): string | null {
+  const path =
+    /^## Documentation\b[^\n]*\n+[^\n]*?\]\((\/docs\/[a-z0-9-]+)\)/m.exec(
+      markdown,
+    )?.[1]
+  return path ? pageUrl(`${GEMINI_DOCS_ORIGIN}${path}`) : null
+}
+
+/** Interactions `type` values that are not Google-hosted tools. */
+const GUIDE_NON_HOSTED = new Set(['function', 'mcp_server'])
+
+/**
+ * A guide's `## Supported tools` table: each backticked Type value is the
+ * Interactions API name of a generateContent `Tool` field
+ * (`google_search` → `googleSearch`). A guide with no such section states
+ * nothing; a Type value outside the known fields throws (#707).
+ */
+export function parseGuideTools(markdown: string): Array<string> {
+  const start = markdown.search(/^## Supported tools\b/m)
+  if (start < 0) return []
+  const section = markdown.slice(start).split(/^## /m)[1] ?? ''
+  const [header, ...rows] = markdownTableRows(section)
+  const column = header?.findIndex((cell) => /^type value$/i.test(cell)) ?? -1
+  if (column < 0)
+    throw new Error('gemini guide: Supported tools has no Type value column')
+  const out: Array<string> = []
+  for (const row of rows) {
+    const value = /^`([a-z][a-z0-9_]*)`$/.exec(row[column] ?? '')?.[1]
+    if (!value || GUIDE_NON_HOSTED.has(value)) continue
+    const field = value.replace(/_([a-z0-9])/g, (_, c: string) =>
+      c.toUpperCase(),
+    )
+    if (!GEMINI_TOOL_FIELDS.has(field)) {
+      throw new Error(`gemini guide: unknown Supported tools type "${value}"`)
+    }
+    if (!out.includes(field)) out.push(field)
   }
   return out
 }
@@ -594,6 +645,7 @@ interface LoadedPage {
   sections: Array<GeminiPageSection>
   reasoning: ModelReasoning | null
   hash: string
+  guide: string | null
 }
 
 interface BoundSection {
@@ -714,6 +766,7 @@ export async function geminiModelFeatures(
           sections,
           reasoning: named.length <= 1 ? parsePageThinking(markdown) : null,
           hash: await sha256Text(markdown),
+          guide: parsePageGuide(markdown),
         }
       }),
     )
@@ -729,6 +782,34 @@ export async function geminiModelFeatures(
       `gemini model pages: 0 of ${String(loaded.length)} state modalities`,
     )
   }
+  // A page with no Capabilities row states tools only through the guide it
+  // links (#707). Each guide loads once, under its own cache key.
+  const guideOf = new Map(
+    loaded.flatMap((page) =>
+      page.guide && !page.sections.some((section) => section.statesTools)
+        ? [[page.url, page.guide] as const]
+        : [],
+    ),
+  )
+  const guides = new Map(
+    await Promise.all(
+      [...new Set(guideOf.values())].map(
+        async (url) =>
+          [
+            url,
+            await tryDocs(run, url, (cached) =>
+              cached(kv, url, async () => {
+                const markdown = await fetchText(url)
+                return {
+                  tools: parseGuideTools(markdown),
+                  hash: await sha256Text(markdown),
+                }
+              }),
+            ),
+          ] as const,
+      ),
+    ),
+  )
   const byId = new Map<string, BoundSection>()
   const bySlug = new Map<string, BoundSection>()
   const loadedUrls = new Set(loaded.map((page) => page.url))
@@ -874,18 +955,37 @@ export async function geminiModelFeatures(
       factSources.modalities = source('Supported data types')
     }
     // Silent only on a Capabilities row that marks no tool Supported. A page
-    // with no Capabilities row (agents pointing at a guide) states nothing.
+    // with no Capabilities row states tools only through its linked guide's
+    // Supported tools table; a guide with none states nothing.
+    let tools = bound.tools
+    const guideUrl = guideOf.get(bound.sourceUrl)
+    const guide = guideUrl ? guides.get(guideUrl) : undefined
     if (bound.tools.length > 0) {
       factSources.serverTools = Object.fromEntries(
         bound.tools.map((tool) => [tool, source('Capabilities')]),
       )
     } else if (bound.statesTools) {
       factSources.serverTools = serverToolsSilent(bound.sourceUrl)
+    } else if (guideUrl && guide && guide.tools.length > 0) {
+      tools = guide.tools
+      factSources.serverTools = Object.fromEntries(
+        guide.tools.map((tool) => [
+          tool,
+          {
+            derivation: 'docs-derived' as const,
+            sourceUrl: guideUrl,
+            sourceHash: guide.hash,
+            path: `Supported tools; linked from ${bound.sourceUrl}`,
+          },
+        ]),
+      )
     }
+    const guideFailed = guideUrl !== undefined && guide === null
     return {
+      ...(guideFailed ? unavailable('serverTools') : {}),
       reasoning,
       budget,
-      serverTools: bound.tools.length > 0 ? bound.tools : null,
+      serverTools: tools.length > 0 ? tools : null,
       modalities: bound.modalities,
       ...(bound.outputVideo ? { outputVideo: bound.outputVideo } : {}),
       ...(documentedThinking ? { capabilities: ['reasoning'] } : {}),
