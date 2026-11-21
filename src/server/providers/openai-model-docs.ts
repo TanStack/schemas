@@ -646,6 +646,11 @@ export function parseReasoningEffort(markdown: string): ModelReasoning | null {
     : (list?.[1]?.toLowerCase().match(/[a-z]+/g) ?? [])
   const efforts = EFFORTS.filter((level) => words.includes(level))
   if (!efforts.length) {
+    // "The API rejects requests that set reasoning effort to `none`" (GPT-6.2
+    // pages, #711): the effort control exists and its off value is refused.
+    if (/rejects requests that set reasoning effort to `none`/i.test(prose)) {
+      return { mode: 'effort', mandatory: true }
+    }
     const explicitControl = prose.split('\n').some((line) => {
       const declaration = line.match(
         /^(.*?)\bsupports configurable reasoning effort\b/i,
