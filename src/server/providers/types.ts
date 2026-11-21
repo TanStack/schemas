@@ -427,6 +427,7 @@ export type ModelFact =
   | 'maker'
   | 'trainsOnRequestData'
   | 'providerMetadata'
+  | 'upstream'
 
 /**
  * Why a listing carries no value for a fact, when the adapter knows why.
@@ -480,6 +481,7 @@ export type ModelFact =
  * | `trainsOnRequestData` | null. A probe can still set it at read time  |
  * |                    | when this poll did not state the id              |
  * | `providerMetadata` | null                                             |
+ * | `upstream`         | `upstreamModelIdentity` on the raw id, else null |
  *
  * `cleared` nulls each of them and `unavailable` keeps the stored value and
  * source, as for any fact. `capabilities` is the whole stored map: a bare
