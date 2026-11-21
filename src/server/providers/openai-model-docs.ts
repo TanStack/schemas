@@ -44,7 +44,12 @@ import {
   parseGpt5FamilyGuide,
 } from './openai-gpt5-guides.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { FactSource, ModelInfo, ModelReasoning } from './types.ts'
+import type {
+  FactSource,
+  ModelFactSources,
+  ModelInfo,
+  ModelReasoning,
+} from './types.ts'
 import type { Fetcher } from './us-egress.ts'
 
 export const OPENAI_MODELS_INDEX_URL =
@@ -641,6 +646,11 @@ export function parseReasoningEffort(markdown: string): ModelReasoning | null {
     : (list?.[1]?.toLowerCase().match(/[a-z]+/g) ?? [])
   const efforts = EFFORTS.filter((level) => words.includes(level))
   if (!efforts.length) {
+    // "The API rejects requests that set reasoning effort to `none`" (GPT-6.2
+    // pages, #711): the effort control exists and its off value is refused.
+    if (/rejects requests that set reasoning effort to `none`/i.test(prose)) {
+      return { mode: 'effort', mandatory: true }
+    }
     const explicitControl = prose.split('\n').some((line) => {
       const declaration = line.match(
         /^(.*?)\bsupports configurable reasoning effort\b/i,
@@ -703,7 +713,60 @@ function guideNames(rawId: string, ids: Array<string>): boolean {
 }
 
 type OpenAiDocsFacts = ModelFacts &
-  Pick<ModelInfo, 'unsupportedCapabilities' | 'absent'>
+  Pick<ModelInfo, 'unsupportedCapabilities' | 'absent' | 'aliases' | 'aliasOf'>
+
+type AliasFacts = Pick<ModelInfo, 'aliases' | 'aliasOf'> & {
+  factSources: ModelFactSources
+}
+
+/**
+ * Alias links the model pages state (issue #709). A page's `Model ID` is
+ * an alias of its `Default snapshot` when the two differ: the alias row
+ * points at the snapshot, and the snapshot lists the alias. The page lists
+ * "all available snapshots and aliases", so another snapshot it names has
+ * no alias. Read from the parsed page: `ids[0]` is the Model ID and the
+ * default snapshot is the other priced id.
+ */
+export function openaiAliasFacts(
+  pages: ReadonlyArray<{
+    url: string
+    hash: string
+    ids: ReadonlyArray<string>
+    pricedIds: ReadonlyArray<string>
+  }>,
+): Map<string, AliasFacts> {
+  const out = new Map<string, AliasFacts>()
+  const get = (id: string) => {
+    const facts = out.get(id) ?? { factSources: {} }
+    out.set(id, facts)
+    return facts
+  }
+  for (const page of pages) {
+    const modelId = page.ids[0]
+    if (modelId === undefined) continue
+    const snapshot = page.pricedIds.find((id) => id !== modelId)
+    const source = (path: string): FactSource => ({
+      derivation: 'docs-derived',
+      sourceUrl: page.url,
+      sourceHash: page.hash,
+      path,
+    })
+    if (snapshot !== undefined) {
+      const alias = get(modelId)
+      alias.aliasOf = snapshot
+      alias.factSources.aliasOf = source('Default snapshot')
+      const target = get(snapshot)
+      target.aliases = [...new Set([...(target.aliases ?? []), modelId])].sort()
+      target.factSources.aliases = source('Default snapshot')
+    }
+    for (const id of page.ids) {
+      if (id === modelId || id === snapshot) continue
+      const other = get(id)
+      other.factSources.aliases ??= source('Snapshots')
+    }
+  }
+  return out
+}
 
 /** Facts a model page (via the index that names it) feeds. */
 const PAGE_FACTS = [
@@ -714,6 +777,8 @@ const PAGE_FACTS = [
   'pricing',
   'reasoning',
   'serverTools',
+  'aliases',
+  'aliasOf',
 ] as const
 
 /**
@@ -999,6 +1064,15 @@ export async function openaiModelFacts(
     }
   }
   if (pages.length > 0) assertParsed(byId, 'openai model pages')
+  const aliasLinks = openaiAliasFacts(
+    pages.map(({ slug, page }) => ({
+      url: OPENAI_MODEL_PAGE(slug),
+      hash: page.hash,
+      ids: page.ids,
+      pricedIds: page.pricedIds,
+    })),
+  )
+  const namedIds = new Set(pages.flatMap(({ page }) => page.ids))
   const familyIds = guides?.[0]?.parsed.rawIds ?? GPT5_GUIDE_FAMILY
   const guideGaps: OpenAiDocsFacts['absent'] = {}
   // The 5.1 sentence only upgrades mandatory. Its failure leaves the family
@@ -1024,7 +1098,7 @@ export async function openaiModelFacts(
       (slug !== null && failedSlugs.has(slug)) ||
       (failedSlugs.size > 0 && !byId.has(rawId) && !byId.has(undatedId(rawId)))
     if (pageLost) return { ...NO_FACTS, ...unavailable(...PAGE_FACTS) }
-    const facts = docsFacts(rawId)
+    const facts = withAliases(rawId, docsFacts(rawId))
     const gaps: OpenAiDocsFacts['absent'] = { ...facts.absent }
     if (!searchDoc && !facts.pricing) gaps.pricing = 'unavailable'
     // The guide only fills efforts an effort-mode page left unlisted.
@@ -1039,6 +1113,25 @@ export async function openaiModelFacts(
       gaps.reasoning = 'unavailable'
     }
     return Object.keys(gaps).length > 0 ? { ...facts, absent: gaps } : facts
+  }
+  /** A listed id no page names: the docs say nothing of its aliases. */
+  function withAliases(rawId: string, facts: OpenAiDocsFacts): OpenAiDocsFacts {
+    const link = aliasLinks.get(rawId)
+    if (!link && namedIds.has(rawId)) return facts
+    const slug = pageSlugFor(rawId, slugs)
+    const unstated: ModelFactSources = {
+      aliases: {
+        derivation: 'docs-derived',
+        sourceUrl: slug ? OPENAI_MODEL_PAGE(slug) : OPENAI_MODELS_INDEX_URL,
+        path: 'unstated',
+      },
+    }
+    const { factSources, ...linked } = link ?? { factSources: unstated }
+    return {
+      ...facts,
+      ...linked,
+      factSources: { ...facts.factSources, ...factSources },
+    }
   }
   function docsFacts(rawId: string): OpenAiDocsFacts {
     const exact = byId.get(rawId)

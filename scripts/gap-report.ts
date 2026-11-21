@@ -151,7 +151,8 @@ export async function main(
   argv: Array<string> = process.argv.slice(2),
 ): Promise<number> {
   const { values } = parseArgs({
-    args: argv,
+    // pnpm 11 passes `pnpm run gap:report -- --table` through with the `--`.
+    args: argv[0] === '--' ? argv.slice(1) : argv,
     options: {
       base: { type: 'string', default: 'https://modelschemas.com' },
       table: { type: 'boolean', default: false },

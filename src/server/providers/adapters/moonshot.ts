@@ -120,6 +120,8 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'moonshot',
+  // Hosts' `maker/model` ids (Novita `moonshotai/kimi-k3`).
+  modelNamespaces: ['moonshotai'],
   displayName: 'Moonshot',
   authEnvVar: 'MOONSHOT_API_KEY',
   specSourceUrl: MOONSHOT_OPENAPI_URL,

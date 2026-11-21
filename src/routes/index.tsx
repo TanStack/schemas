@@ -5,6 +5,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { registerWebMcp } from '#/lib/webmcp.ts'
 import { timeAgo } from '#/lib/time.ts'
 import { EXAMPLES } from '#/lib/examples.ts'
+import { UNCLASSIFIED } from '#/lib/completeness.ts'
 
 import {
   ChangeSummary,
@@ -118,13 +119,17 @@ function ScoreLine({
     </>
   )
   return (
-    <li className="cursor-help" title={title}>
+    <li>
       {href ? (
-        <a className="text-ink-soft hover:text-tok-blue" href={href}>
+        <a
+          className="cursor-help text-ink-soft hover:text-tok-blue"
+          href={href}
+          title={title}
+        >
           {body}
         </a>
       ) : (
-        <span className="text-ink-soft" tabIndex={0}>
+        <span className="cursor-help text-ink-soft" title={title} tabIndex={0}>
           {body}
         </span>
       )}
@@ -133,13 +138,25 @@ function ScoreLine({
 }
 
 /** The total, then one line per activity the provider serves, then origin links. */
-function CompletenessCell({ id, c }: { id: string; c: Completeness }) {
+function CompletenessCell({
+  id,
+  c,
+  models,
+}: {
+  id: string
+  c: Completeness
+  models: number
+}) {
   const activities = Object.entries(c.activities).sort(
     ([, a], [, b]) => b.rows - a.rows,
   )
   if (c.score === null && activities.length === 0) {
     return (
-      <span className="cursor-help" title={UNSCORED_NOTE} tabIndex={0}>
+      <span
+        className="cursor-help"
+        title={models === 0 ? 'No live models' : UNSCORED_NOTE}
+        tabIndex={0}
+      >
         unscored
       </span>
     )
@@ -172,7 +189,7 @@ function CompletenessCell({ id, c }: { id: string; c: Completeness }) {
             }
             // `/models` filters by known activities only; `unclassified`
             // rows have none, so that line links to the whole provider.
-            href={`/models?provider=${id}${name === 'unclassified' ? '' : `&activity=${name}`}`}
+            href={`/models?provider=${id}${name === UNCLASSIFIED ? '' : `&activity=${name}`}`}
           />
         ))}
         {c.originLink.need > 0 && (
@@ -427,7 +444,11 @@ function Landing() {
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
                     <td className="num" data-label="complete">
-                      <CompletenessCell id={p.id} c={p.completeness} />
+                      <CompletenessCell
+                        id={p.id}
+                        c={p.completeness}
+                        models={p.counts.models}
+                      />
                     </td>
                     <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt, status.time)}
