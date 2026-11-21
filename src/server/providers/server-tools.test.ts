@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { requestUrl } from '#/lib/text.ts'
@@ -8,6 +10,10 @@ import {
   OPENAI_MODEL_PAGE,
   openaiModelFacts,
 } from './openai-model-docs.ts'
+import {
+  OPENAI_REALTIME_MCP_URL,
+  parseOpenAiRealtimeMcp,
+} from './openai-realtime-mcp.ts'
 import { openrouterServerTools } from './openrouter.ts'
 import {
   GROQ_BUILTIN_TOOLS_URL,
@@ -262,6 +268,59 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     expect(facts('gpt-4o').serverTools).toEqual(['web_search'])
     // No model page read: nothing is stated (the ledger covers it).
     expect(facts('gpt-5-search-api').factSources?.serverTools).toBeUndefined()
+  })
+
+  it('OpenAI: realtime ids the MCP guide samples name take hosted mcp', async () => {
+    // developers.openai.com/api/docs/guides/realtime-mcp.md, 2026-11-21,
+    // cut down: the gpt-realtime-2.1 server_url sample and the
+    // gpt-realtime-1.5 connector sample.
+    const guide = readFileSync(
+      new URL('./fixtures/openai-realtime-mcp.md.txt', import.meta.url),
+      'utf8',
+    )
+    expect(parseOpenAiRealtimeMcp(guide)).toEqual([
+      'gpt-realtime-2.1',
+      'gpt-realtime-1.5',
+    ])
+    expect(() =>
+      parseOpenAiRealtimeMcp(guide.replaceAll('"mcp"', '"remote_mcp"')),
+    ).toThrow(/no sample/)
+    const page = (id: string) =>
+      [
+        `Model ID: \`${id}\``,
+        '',
+        ...endpoints('Not supported', 'Not supported', 'Supported'),
+      ].join('\n')
+    const ids = ['gpt-realtime-2.1', 'gpt-realtime-1.5', 'gpt-realtime-2']
+    const pages = {
+      [OPENAI_MODELS_INDEX_URL]: ids
+        .map((slug) => `[${slug}](/api/docs/models/${slug}.md)`)
+        .join('\n'),
+      ...Object.fromEntries(ids.map((id) => [OPENAI_MODEL_PAGE(id), page(id)])),
+    }
+    serve({ ...pages, [OPENAI_REALTIME_MCP_URL]: guide })
+    const facts = await openaiModelFacts(ids)
+    expect(facts('gpt-realtime-2.1')).toMatchObject({
+      serverTools: ['mcp'],
+      factSources: {
+        serverTools: {
+          mcp: {
+            derivation: 'docs-derived',
+            sourceUrl: OPENAI_REALTIME_MCP_URL,
+          },
+        },
+      },
+    })
+    expect(facts('gpt-realtime-1.5').serverTools).toEqual(['mcp'])
+    // The guide keeps no model list: an id its samples skip states nothing.
+    expect(facts('gpt-realtime-2').serverTools).toBeNull()
+    expect(facts('gpt-realtime-2').factSources?.serverTools).toBeUndefined()
+
+    serve(pages)
+    const failed = await openaiModelFacts(ids)
+    expect(failed('gpt-realtime-2.1').absent).toMatchObject({
+      serverTools: 'unavailable',
+    })
   })
 
   it('Grok: a model the "e.g." files list does not name stays unstated', async () => {
