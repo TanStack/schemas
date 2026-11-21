@@ -31,6 +31,27 @@ export function sameEvidence(
   )
 }
 
+/**
+ * Namespaces that resolve to this provider the way `reconcileSameAs` reads
+ * them: its own id, or a name it alone claims in `provider_model_namespaces`
+ * that is no provider's id. An id in one (`groq/compound`, `openrouter/auto`)
+ * names the host itself, so it states no upstream.
+ */
+export async function ownNamespaces(
+  db: Db,
+  providerId: string,
+): Promise<Set<string>> {
+  const rows = await db.all<{ name: string }>(sql`
+    SELECT ${providerId} AS name
+    UNION
+    SELECT namespace FROM provider_model_namespaces
+    WHERE namespace NOT IN (SELECT id FROM providers)
+    GROUP BY namespace
+    HAVING count(*) = 1 AND max(provider_id) = ${providerId}
+  `)
+  return new Set(rows.map(({ name }) => name))
+}
+
 /** Write identity evidence in batches; reconcileSameAs owns the link. */
 export async function persistUpstreamIdentities(
   db: Db,
