@@ -52,6 +52,6 @@
 
 - `openai/gpt-realtime-2.1`: efforts — Own exact model page establishes configurable reasoning effort but publishes no values; own Realtime prompting guide binds its effort table explicitly to gpt-realtime-2, so that predecessor list is not transferred, https://developers.openai.com/api/docs/models/gpt-realtime-2.1.md, checked 2026-10-09
 
-- `openai/gpt-5-search-api`: serverTools — no model page; the web search guide says Chat Completions search models always search before responding and names no hosted tool type for them (#707), https://developers.openai.com/api/docs/guides/tools-web-search.md, checked 2026-11-21
+- `openai/gpt-5-search-api`: serverTools — always searches; takes no tool type. No model page; the web search guide says Chat Completions search models always search before responding (#707), https://developers.openai.com/api/docs/guides/tools-web-search.md, checked 2026-11-21
 
-- `openai/gpt-5-search-api-2025-10-14`: serverTools — no model page; the web search guide says Chat Completions search models always search before responding and names no hosted tool type for them (#707), https://developers.openai.com/api/docs/guides/tools-web-search.md, checked 2026-11-21
+- `openai/gpt-5-search-api-2025-10-14`: serverTools — always searches; takes no tool type. No model page; the web search guide says Chat Completions search models always search before responding (#707), https://developers.openai.com/api/docs/guides/tools-web-search.md, checked 2026-11-21

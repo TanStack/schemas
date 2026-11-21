@@ -85,7 +85,7 @@ describe('byteplusServerTools', () => {
     vi.unstubAllGlobals()
   })
 
-  it('is source-silent for a model the read table does not mark supported (#707)', async () => {
+  it('is source-silent only for a model the table marks Not Supported (#707)', async () => {
     const content = JSON.stringify(
       doc([
         HEADER,
@@ -111,7 +111,8 @@ describe('byteplusServerTools', () => {
       },
     }
     expect(tools('seed-2-0-code-preview-260328')).toEqual(silent)
-    expect(tools('seed-1-6-250615')).toEqual(silent)
+    // Not in the table: the page states nothing for it.
+    expect(tools('seed-1-6-250615')).toEqual({})
   })
 
   it('keeps stored tools when the table fails to load', async () => {

@@ -373,5 +373,23 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
       bindings({ aliases: null }),
     ).find((model) => model.rawId === 'gemini-flash-latest')
     expect(failed?.absent?.serverTools).toBe('unavailable')
+
+    // The target's page failed: the alias keeps its stored tools as well.
+    const unread = attachGeminiPublishedFacts<Row>(
+      [
+        {
+          rawId: 'gemini-3-flash-preview',
+          modalities: null,
+          serverTools: null,
+          absent: { serverTools: 'unavailable' },
+        },
+        { rawId: 'gemini-flash-latest', modalities: null, serverTools: null },
+      ],
+      bindings({
+        aliases: { 'gemini-flash-latest': 'gemini-3-flash-preview' },
+      }),
+    ).find((model) => model.rawId === 'gemini-flash-latest')
+    expect(unread?.absent?.serverTools).toBe('unavailable')
+    expect(unread?.factSources?.serverTools).toBeUndefined()
   })
 })

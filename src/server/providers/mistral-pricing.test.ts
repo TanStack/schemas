@@ -975,6 +975,7 @@ describe('mistral model page features', () => {
       'https://docs.mistral.ai/models.md': '',
       'https://docs.mistral.ai/models': '',
       [small]: page([feature('function-calling')], {}, ['mistral-small-2603']),
+      [`${small}.md`]: '- Release date: 2026-03-16\n',
       [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
     }
     globalThis.fetch = ((url: string) => {

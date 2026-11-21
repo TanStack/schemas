@@ -74,6 +74,23 @@ export interface OpenAiModelPage {
   facts: ModelFacts
   /** Token rates and tiers, or null when the page prices otherwise. */
   pricing: DocsPricing | null
+  /**
+   * The Endpoints table marks Responses, every Realtime route and Live Not
+   * supported, so the page's empty tool list is the whole statement (#707).
+   */
+  toolsSilent?: true
+}
+
+/** Endpoint name → Supported, from the page's Endpoints table. */
+function parseEndpoints(markdown: string): Map<string, boolean> {
+  const out = new Map<string, boolean>()
+  for (const row of markdownTableRows(markdownSection(markdown, 'Endpoints'))) {
+    const [name, , support] = row.map((cell) => cell.trim())
+    if (!name || !support || name === 'Endpoint') continue
+    if (support === 'Supported') out.set(name, true)
+    else if (support === 'Not supported') out.set(name, false)
+  }
+  return out
 }
 
 /**
@@ -581,11 +598,26 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
     const type = RESPONSES_TOOL_TYPES[m[1] ?? '']
     return type ? [type] : []
   })
+  // Silent only when the page states the model has no route that takes
+  // hosted tools: Responses, every Realtime route and Live all Not supported.
+  // A Responses page with no "Supported tools" section (gpt-4, gpt-image-1
+  // and 7 others on 2026-11-21) states nothing.
+  const endpoints = parseEndpoints(markdown)
+  const toolRoutes = [...endpoints].filter(
+    ([name]) =>
+      name === 'Responses' || name === 'Live' || name.startsWith('Realtime'),
+  )
+  const toolsSilent =
+    serverTools.length === 0 &&
+    endpoints.has('Responses') &&
+    endpoints.has('Realtime') &&
+    toolRoutes.every(([, supported]) => !supported)
 
   return {
     ids: [...ids],
     pricedIds: [...pricedIds],
     pricing: parseModelPricing(markdown),
+    ...(toolsSilent ? { toolsSilent: true as const } : {}),
     facts: {
       contextWindow,
       maxOutput,
@@ -842,8 +874,7 @@ export async function openaiModelFacts(
       ...withPricing,
       factSources: {
         ...tagDocsFacts(withPricing, url, loaded.page.hash),
-        // The page has no "Supported tools" section, or names no hosted type.
-        ...(withPricing.serverTools == null
+        ...(loaded.page.toolsSilent
           ? { serverTools: serverToolsSilent(url) }
           : {}),
         ...(loaded.page.pricing?.cacheReadNotOffered &&

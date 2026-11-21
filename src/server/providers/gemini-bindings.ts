@@ -446,7 +446,8 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
         })
       }
       // The alias is the target model, so the target page's tools are its
-      // own (#707). A silent target stays the alias's silence.
+      // own (#707). A silent target stays the alias's silence, and an
+      // unread one leaves the alias unread.
       const aliasTools = byId.get(alias)
       if (aliasTools && aliasTools.serverTools == null) {
         const prior = target.factSources?.serverTools
@@ -469,6 +470,12 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
             ...aliasTools,
             ...(tools && tools.length > 0 ? { serverTools: tools } : {}),
             factSources: { ...aliasTools.factSources, serverTools: sources },
+          })
+        } else if (target.absent?.serverTools === 'unavailable') {
+          // The target's page failed: the alias keeps its stored tools too.
+          put({
+            ...aliasTools,
+            absent: { ...aliasTools.absent, serverTools: 'unavailable' },
           })
         }
       }

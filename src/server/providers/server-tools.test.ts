@@ -140,29 +140,39 @@ function serve(pages: Record<string, string>) {
   )
 }
 
+const endpoints = (live: string, responses: string, realtime: string) => [
+  '## Endpoints',
+  '',
+  '| Endpoint | Route | Support |',
+  '| --- | --- | --- |',
+  `| Live | \`v1/live/sessions\` | ${live} |`,
+  '| Chat Completions | `v1/chat/completions` | Supported |',
+  `| Responses | \`v1/responses\` | ${responses} |`,
+  `| Realtime | \`v1/realtime\` | ${realtime} |`,
+  '| Realtime translation | `v1/realtime/translations` | Not supported |',
+  '| Realtime transcription | `v1/realtime/transcription_sessions` | Not supported |',
+  '| Assistants | `v1/assistants` | Not supported |',
+  '',
+]
+
 describe('a read page that names no tool is source-silent (#707)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('Groq: a model the built-in tools page does not name', async () => {
+  it('Groq: a model the built-in tools page does not name states nothing', async () => {
     serve({ [GROQ_BUILTIN_TOOLS_URL]: GROQ_TOOLS })
     const tools = await groqModelServerTools()
     expect(tools('openai/gpt-oss-20b').serverTools).toEqual([
       'browser_search',
       'code_interpreter',
     ])
-    expect(tools('allam-2-7b')).toEqual({
-      factSources: {
-        serverTools: {
-          derivation: 'source-silent',
-          sourceUrl: GROQ_BUILTIN_TOOLS_URL,
-        },
-      },
-    })
+    // The page is not exhaustive (browser search names more models), so a
+    // model it does not name gets no entry.
+    expect(tools('allam-2-7b')).toEqual({})
   })
 
-  it('OpenAI: a model page with no Supported tools section', async () => {
+  it('OpenAI: silent only when no Responses, Realtime or Live route is supported', async () => {
     // developers.openai.com/api/docs/models/gpt-audio.md, 2026-11-21, cut down.
     const audio = [
       'Model ID: `gpt-audio`',
@@ -172,6 +182,7 @@ describe('a read page that names no tool is source-silent (#707)', () => {
       '- Default snapshot: `gpt-audio-2025-08-28`',
       '- 128,000 context window',
       '',
+      ...endpoints('Not supported', 'Not supported', 'Not supported'),
       '## Supported features',
       '',
       '- streaming',
@@ -185,6 +196,7 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     const gpt4o = [
       'Model ID: `gpt-4o`',
       '',
+      ...endpoints('Not supported', 'Supported', 'Not supported'),
       '## Supported tools',
       '',
       'Tools supported by this model when using the Responses API.',
@@ -192,18 +204,54 @@ describe('a read page that names no tool is source-silent (#707)', () => {
       '- function_calling',
       '- web_search',
     ].join('\n')
+    // developers.openai.com/api/docs/models/gpt-realtime-2.md and
+    // gpt-live-1.md, 2026-11-21, cut down: no Supported tools section.
+    const realtime = [
+      'Model ID: `gpt-realtime-2`',
+      '',
+      ...endpoints('Not supported', 'Not supported', 'Supported'),
+    ].join('\n')
+    const live = [
+      'Model ID: `gpt-live-1`',
+      '',
+      ...endpoints('Supported', 'Not supported', 'Not supported'),
+    ].join('\n')
+    // developers.openai.com/api/docs/models/gpt-4.md, 2026-11-21, cut down:
+    // Responses supported, no Supported tools section.
+    const gpt4 = [
+      'Model ID: `gpt-4`',
+      '',
+      ...endpoints('Not supported', 'Supported', 'Not supported'),
+    ].join('\n')
     serve({
-      [OPENAI_MODELS_INDEX_URL]:
-        '[GPT-Audio](/api/docs/models/gpt-audio.md)\n[GPT-4o](/api/docs/models/gpt-4o.md)',
+      [OPENAI_MODELS_INDEX_URL]: [
+        'gpt-audio',
+        'gpt-4o',
+        'gpt-realtime-2',
+        'gpt-live-1',
+        'gpt-4',
+      ]
+        .map((slug) => `[${slug}](/api/docs/models/${slug}.md)`)
+        .join('\n'),
       [OPENAI_MODEL_PAGE('gpt-audio')]: audio,
       [OPENAI_MODEL_PAGE('gpt-4o')]: gpt4o,
+      [OPENAI_MODEL_PAGE('gpt-realtime-2')]: realtime,
+      [OPENAI_MODEL_PAGE('gpt-live-1')]: live,
+      [OPENAI_MODEL_PAGE('gpt-4')]: gpt4,
     })
     const facts = await openaiModelFacts([
       'gpt-audio',
       'gpt-audio-2025-08-28',
       'gpt-4o',
       'gpt-5-search-api',
+      'gpt-realtime-2',
+      'gpt-live-1',
+      'gpt-4',
     ])
+    for (const id of ['gpt-realtime-2', 'gpt-live-1', 'gpt-4']) {
+      expect(facts(id).serverTools).toBeNull()
+      expect(facts(id).factSources?.serverTools).toBeUndefined()
+    }
     for (const id of ['gpt-audio', 'gpt-audio-2025-08-28']) {
       expect(facts(id).serverTools).toBeNull()
       expect(facts(id).factSources?.serverTools).toEqual({
@@ -216,7 +264,7 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     expect(facts('gpt-5-search-api').factSources?.serverTools).toBeUndefined()
   })
 
-  it('Grok: a language model the files page does not name, unless the page failed', async () => {
+  it('Grok: a model the "e.g." files list does not name stays unstated', async () => {
     // docs.x.ai/developers/files.md as served on 2026-11-21, cut down.
     const files = [
       'When you attach files to a chat message, the xAI API automatically activates the `attachment_search` [server-side tool](/developers/tools/overview).',
@@ -240,10 +288,8 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     const byId = new Map(read.models.map((m) => [m.rawId, m]))
     expect(byId.get('grok-4.7')?.serverTools).toEqual(['attachment_search'])
     expect(byId.get('grok-4.3')?.serverTools).toBeUndefined()
-    expect(byId.get('grok-4.3')?.factSources?.serverTools).toEqual({
-      derivation: 'source-silent',
-      sourceUrl: GROK_FILES_DOC_URL,
-    })
+    // The bullet is "e.g.": not being named states nothing.
+    expect(byId.get('grok-4.3')?.factSources?.serverTools).toBeUndefined()
 
     serve(api)
     const failed = await grokProvider.listModels(env)

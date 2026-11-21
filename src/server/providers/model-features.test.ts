@@ -530,23 +530,45 @@ describe('gemini features (issue #77)', () => {
       ])
     })
 
-    it('is source-silent on a read page that marks no tool supported (#707)', async () => {
+    it('states no tools on a Capabilities row with no tool Supported (#707)', () => {
+      // https://aistudio.google.com/docs/models/genie-4.md, 2026-11-20.
+      const markdown = readFileSync(
+        new URL('./fixtures/gemini-genie-4.md.txt', import.meta.url),
+        'utf8',
+      )
+      expect(parsePageSections(markdown)[0]).toMatchObject({
+        tools: [],
+        statesTools: true,
+      })
+    })
+
+    it('is source-silent only when the bound page has a Capabilities row (#707)', async () => {
       const { features } = await withPages(
         {
+          'gemini-x-no-tools':
+            '| Capabilities | **[Code execution](u)** Not supported **[Search grounding](u)** Not supported |',
+          // Antigravity's page has data types and no Capabilities row.
           'antigravity-preview-09-2026':
             '| Supported data types | **Input** Text, Image **Output** Text |',
         },
-        () => geminiModelFeatures(['antigravity-preview-09-2026']),
+        () =>
+          geminiModelFeatures([
+            'gemini-x-no-tools',
+            'antigravity-preview-09-2026',
+          ]),
       )
-      expect(features('antigravity-preview-09-2026', false)).toMatchObject({
+      expect(features('gemini-x-no-tools', false)).toMatchObject({
         serverTools: null,
         factSources: {
           serverTools: {
             derivation: 'source-silent',
-            sourceUrl: `${INDEX}/antigravity-preview-09-2026.md`,
+            sourceUrl: `${INDEX}/gemini-x-no-tools.md`,
           },
         },
       })
+      const antigravity = features('antigravity-preview-09-2026', false)
+      expect(antigravity.serverTools).toBeNull()
+      expect(antigravity.factSources.serverTools).toBeUndefined()
     })
 
     it('reads backtick thinking levels and drops a level the same paragraph rejects', () => {

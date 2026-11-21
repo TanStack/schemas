@@ -61,8 +61,9 @@ export function parseByteplusMcpSupport(
 type HostedFacts = Pick<ModelInfo, 'serverTools' | 'factSources' | 'absent'>
 
 /**
- * `mcp` for each model the Tool use table marks supported; any other model
- * is source-silent at that page. When the page
+ * `mcp` for each model the Tool use table marks supported; one it marks not
+ * supported is source-silent there, and one it does not list gets nothing
+ * (#707). When the page
  * fails to load, every row keeps its stored tools (`unavailable`), and the
  * failure is in `docsFailures`.
  */
@@ -86,8 +87,9 @@ export async function byteplusServerTools(
   )
   return (rawId) => {
     if (!doc) return unavailable('serverTools')
-    // `Not supported`, or a model the table does not list: silent (#707).
-    if (doc.mcp[rawId] !== true) {
+    // A model the table does not list states nothing (#707).
+    if (doc.mcp[rawId] === undefined) return {}
+    if (doc.mcp[rawId] === false) {
       return {
         factSources: {
           serverTools: serverToolsSilent(BYTEPLUS_MODEL_LIST_URL),
