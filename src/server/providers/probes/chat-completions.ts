@@ -34,16 +34,23 @@ export interface ChatCompletionsProbe {
    * no `off` request is sent.
    */
   mandatoryRule?: MandatoryRule
+  /**
+   * The checks the cron sends, and only these: each must be one for which
+   * a rule below reads this provider's own wording, shown by a captured
+   * fixture. Every request is then an expected 400, never a billed
+   * completion no rule can read.
+   */
+  checks: Array<ProbeCheck>
 }
 
 export type MandatoryRule = 'groq' | 'openai'
 export type ProbeCheck = 'limits' | 'replay' | 'off'
 
-/** The checks one provider's run sends per model. */
+/** The checks one provider's run sends per model. `off` needs the opt-in. */
 export function probeChecks(probe: ChatCompletionsProbe): Array<ProbeCheck> {
-  return probe.mandatoryRule
-    ? ['limits', 'replay', 'off']
-    : ['limits', 'replay']
+  return probe.checks.filter(
+    (check) => check !== 'off' || probe.mandatoryRule !== undefined,
+  )
 }
 
 /** The fact each check can state. */

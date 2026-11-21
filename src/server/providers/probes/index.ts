@@ -31,10 +31,20 @@ export const LLMGATEWAY_KEY_SECRET = 'LLMGATEWAY_API_KEY'
  * `reasoning_effort` level list is per model and is the model's only
  * reasoning control. A missing key is a logged skip.
  *
- * Not here: perplexity (its rows bind `v1/agent`, not chat/completions),
- * opencode-go (the Worker holds no key). Gateways and resellers
- * (openrouter, vercel, huggingface, lovable, opencode, cloudflare AI
- * Gateway) are not listed; llmgateway is listed only to name its secret
+ * `checks` lists only the checks a rule reads in that provider's own
+ * wording (a captured fixture shows it), so every request is an expected
+ * 400. "Probe everything new" means every new model of a provider listed
+ * here. To add a provider: capture its responses with the read-only
+ * `pnpm run probe -- <provider> <rawId>` (add its entry first with the
+ * checks to try), add a rule to `classifyProbeResponse` and the body to
+ * `fixtures/probe-responses.json`, then list only the checks that decide.
+ * Never list a check its provider answers with a 2xx: that is a billed
+ * completion no rule can read.
+ *
+ * Not here: providers whose captured responses no rule reads yet (the
+ * fixtures show Fireworks, Together and xAI answer `limits` with a 200),
+ * perplexity (rows bind `v1/agent`), opencode-go (no key). Gateways and
+ * resellers are not listed; llmgateway is listed only to name its secret
  * and stays off as a `gateway`.
  */
 export const chatProbes: Array<ChatCompletionsProbe> = [
@@ -46,6 +56,8 @@ export const chatProbes: Array<ChatCompletionsProbe> = [
     // "'reasoning_effort' does not support 'none' with this model.
     // Supported values are: …" is OpenAI's own per-model list.
     mandatoryRule: 'openai',
+    // `replay` is a 200 on OpenAI (fixture openai-replay-gpt-4o-mini).
+    checks: ['limits', 'off'],
   },
   {
     provider: 'groq',
@@ -55,78 +67,16 @@ export const chatProbes: Array<ChatCompletionsProbe> = [
     // Groq's level list is per model (qwen3 takes `none`, gpt-oss does
     // not), and `reasoning_effort` is the gpt-oss models' only control.
     mandatoryRule: 'groq',
-  },
-  {
-    provider: 'cerebras',
-    url: 'https://api.cerebras.ai/v1/chat/completions',
-    route: 'v1/chat/completions',
-    keyEnv: 'CEREBRAS_API_KEY',
-  },
-  {
-    provider: 'deepseek',
-    url: 'https://api.deepseek.com/chat/completions',
-    route: 'chat/completions',
-    keyEnv: 'DEEPSEEK_API_KEY',
-  },
-  {
-    provider: 'fireworks',
-    url: 'https://api.fireworks.ai/inference/v1/chat/completions',
-    route: 'v1/chat/completions',
-    keyEnv: 'FIREWORKS_API_KEY',
-  },
-  {
-    provider: 'together',
-    url: 'https://api.together.xyz/v1/chat/completions',
-    route: 'chat/completions',
-    keyEnv: 'TOGETHER_API_KEY',
+    checks: ['limits', 'replay', 'off'],
   },
   {
     provider: 'mistral',
     url: 'https://api.mistral.ai/v1/chat/completions',
     route: 'v1/chat/completions',
     keyEnv: 'MISTRAL_API_KEY',
-  },
-  {
-    provider: 'moonshot',
-    url: 'https://api.moonshot.ai/v1/chat/completions',
-    route: 'v1/chat/completions',
-    keyEnv: 'MOONSHOT_API_KEY',
-  },
-  {
-    provider: 'novita',
-    url: 'https://api.novita.ai/openai/v1/chat/completions',
-    route: 'chat/completions',
-    keyEnv: 'NOVITA_API_KEY',
-  },
-  {
-    provider: 'sambanova',
-    url: 'https://api.sambanova.ai/v1/chat/completions',
-    route: 'chat/completions',
-    keyEnv: 'SAMBANOVA_API_KEY',
-  },
-  {
-    provider: 'hyperbolic',
-    url: 'https://api.hyperbolic.xyz/v1/chat/completions',
-    route: 'chat/completions',
-    keyEnv: 'HYPERBOLIC_API_KEY',
-  },
-  {
-    provider: 'grok',
-    url: 'https://api.x.ai/v1/chat/completions',
-    route: 'v1/chat/completions',
-    keyEnv: 'XAI_API_KEY',
-  },
-  {
-    provider: 'dashscope',
-    url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
-    route: 'chat/completions',
-    keyEnv: 'DASHSCOPE_API_KEY',
-  },
-  {
-    provider: 'baseten',
-    url: 'https://inference.baseten.co/v1/chat/completions',
-    route: 'v1/chat/completions',
-    keyEnv: 'BASETEN_API_KEY',
+    // `limits` is a 200 on Mistral (fixture mistral-limits-codestral-2508);
+    // `replay` is a pydantic 422 the replay rule reads.
+    checks: ['replay'],
   },
   {
     provider: 'llmgateway',
@@ -136,6 +86,7 @@ export const chatProbes: Array<ChatCompletionsProbe> = [
     // No captured response shows a 400 in LLM Gateway's own wording rather
     // than one forwarded from the upstream; until one does, it stays off.
     gateway: true,
+    checks: [],
   },
 ]
 

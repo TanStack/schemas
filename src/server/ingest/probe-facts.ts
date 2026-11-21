@@ -32,11 +32,23 @@ import type {
   ProbedFact,
   ServedProbeFact,
 } from '#/server/providers/probes/types.ts'
+import { errorMessage } from '#/server/errors.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
+import {
+  captureIngestEvents,
+  ingestFailedEvent,
+  noteIngest,
+  runIngestScope,
+} from './ingest-signals.ts'
 import type { Activity } from '#/db/schema.ts'
 
 /** Hourly at :07, its own invocation, after the :00 models poll. */
 export const PROBE_CRON = '7 * * * *'
+/**
+ * One `PROBE_CRON` interval. Two agreeing observations must be at least
+ * this far apart (`observed_at` is the firing's scheduled time).
+ */
+export const PROBE_RUN_GAP_SECONDS = 3_600
 /** Hard cap on provider requests per cron invocation (all providers). */
 export const PROBE_REQUEST_BUDGET = 12
 /** Hard cap on requests to one provider per cron invocation. */
@@ -68,7 +80,9 @@ function newestFirst(a: Observation, b: Observation): number {
 
 /**
  * The two observations that decide a fact: the newest decided one and the
- * newest decided one from another run. Served when both exist and agree.
+ * newest decided one at least `PROBE_RUN_GAP_SECONDS` older. Served when
+ * both exist and agree. The gap, not the run id, keeps two overlapping
+ * invocations (one moment) from counting as two runs.
  */
 function decidingPair(
   history: Array<Observation>,
@@ -76,7 +90,12 @@ function decidingPair(
   const decided = history.filter((row) => row.value !== null).sort(newestFirst)
   const newest = decided[0]
   if (!newest) return null
-  return [newest, decided.find((row) => row.runId !== newest.runId)]
+  return [
+    newest,
+    decided.find(
+      (row) => row.observedAt <= newest.observedAt - PROBE_RUN_GAP_SECONDS,
+    ),
+  ]
 }
 
 function groupByKey(rows: Array<Observation>): Map<string, Array<Observation>> {
@@ -218,8 +237,9 @@ export interface PlannedProbe {
 
 /**
  * Which probes this invocation sends, in order, under both caps:
+ * - `confirm`: the newest attempt was decided but is not served yet, and
+ *   is at least `PROBE_RUN_GAP_SECONDS` old;
  * - `new`: the row's fact is empty and it has no observation at all;
- * - `confirm`: the newest attempt was decided but is not served yet;
  * - `reverify`: the newest attempt is `REVERIFY_AFTER_DAYS` old, oldest
  *   first (an undecided fact only while the row still lacks it).
  * New and confirm interleave providers so one provider cannot starve the
@@ -277,6 +297,8 @@ export function planProbes(
         pair[1] !== undefined &&
         pair[0].value === pair[1].value
       if (latest.value !== null && !servedNow) {
+        // Too soon to count as a second run: confirm on a later firing.
+        if (latest.observedAt > now - PROBE_RUN_GAP_SECONDS) continue
         candidates.push({
           ...base,
           reason: 'confirm',
@@ -295,7 +317,9 @@ export function planProbes(
       })
     }
   }
-  const tier: Record<ProbeReason, number> = { new: 0, confirm: 1, reverify: 2 }
+  // Confirm first: it is bounded by the decided, unserved values, and
+  // behind a long `new` backlog nothing would ever be served.
+  const tier: Record<ProbeReason, number> = { confirm: 0, new: 1, reverify: 2 }
   candidates.sort(
     (a, b) => tier[a.reason] - tier[b.reason] || a.order - b.order,
   )
@@ -455,4 +479,26 @@ export async function runProbes(deps: ProbeDeps): Promise<ProbeRunOutcome> {
     log({ ...entry, fact: result.fact, value: result.value })
   }
   return outcome
+}
+
+/**
+ * The cron entry. A failure part way (D1, say) is logged and reported as
+ * `ingest_failed` (job `probe`), then rethrown so the invocation fails;
+ * the rest of the plan is the next firing's backlog.
+ */
+export async function runProbeCron(
+  deps: ProbeDeps & { posthogKey?: string },
+): Promise<ProbeRunOutcome> {
+  return runIngestScope(async () => {
+    try {
+      return await runProbes(deps)
+    } catch (error) {
+      const message = errorMessage(error)
+      console.error(JSON.stringify({ job: 'probe', error: message }))
+      noteIngest(ingestFailedEvent('probe', '*', message))
+      throw error
+    } finally {
+      await captureIngestEvents(deps.posthogKey)
+    }
+  })
 }

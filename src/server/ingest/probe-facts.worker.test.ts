@@ -7,12 +7,14 @@ import { models } from '#/db/schema.ts'
 import { pollProviderModels } from '#/server/ingest/poll-models.ts'
 import {
   PROBE_PROVIDER_BUDGET,
+  PROBE_RUN_GAP_SECONDS,
   PROBE_REQUEST_BUDGET,
   REVERIFY_AFTER_DAYS,
   loadServedProbeFacts,
   planProbes,
   readProbeObservations,
   runProbes,
+  servedProbeFacts,
   staleProbeCounts,
 } from '#/server/ingest/probe-facts.ts'
 import type { SyncDeps } from '#/server/ingest/sync.ts'
@@ -80,7 +82,7 @@ describe('probe cron (#717)', () => {
 
     // Run 1: first appearance. Only the row with an empty fact is probed.
     const sent: Array<Record<string, unknown>> = []
-    const first = await run(T0 + 60, 65536, sent)
+    const first = await run(T0, 65536, sent)
     const limits = sent.filter((body) => body.max_tokens === 10_000_000)
     expect(limits.map((body) => body.model)).toEqual(['lab/fresh'])
     expect(sent.some((body) => body.model === 'lab/embed')).toBe(false)
@@ -90,6 +92,11 @@ describe('probe cron (#717)', () => {
     expect(stored.every((row) => !row.served)).toBe(true)
     // One observation is stored, not served.
     expect(await loadServedProbeFacts(getDb(env), 'groq')).toEqual([])
+    // An overlapping invocation a minute later sends nothing: too soon to
+    // be a second run.
+    const overlap: Array<Record<string, unknown>> = []
+    await run(T0 + 60, 65536, overlap)
+    expect(overlap).toEqual([])
     await poll(T0 + 120, listed)
     expect((await storedMaxOutput('lab/fresh')).maxOutput).toBeNull()
 
@@ -181,6 +188,7 @@ describe('planProbes', () => {
       url: `https://${provider}.example/v1/chat/completions`,
       route: 'v1/chat/completions',
       keyEnv: 'K',
+      checks: ['limits', 'replay'],
     }),
   )
   const row = (
@@ -253,5 +261,57 @@ describe('planProbes', () => {
       ['older', 'reverify'],
       ['newer', 'reverify'],
     ])
+  })
+
+  const decided = (
+    providerId: string,
+    rawId: string,
+    observedAt: number,
+    id: number,
+    value: number,
+  ) => ({
+    id,
+    runId: `run-${id}`,
+    providerId,
+    rawId,
+    route: 'v1/chat/completions',
+    fact: 'maxOutput',
+    value,
+    status: 400,
+    message: 'stated',
+    observedAt,
+  })
+
+  it('plans a confirm before any new backlog', () => {
+    const three = probes.slice(0, 3)
+    const rows = three.flatMap((probe) =>
+      Array.from({ length: 5 }, (_, i) => row(probe.provider, `m${i}`)),
+    )
+    rows.push(row('c', 'waiting'))
+    const { planned } = planProbes(
+      rows,
+      [decided('c', 'waiting', T0 - PROBE_RUN_GAP_SECONDS, 1, 4096)],
+      three,
+      T0,
+    )
+    expect(planned[0]).toMatchObject({
+      rawId: 'waiting',
+      reason: 'confirm',
+      check: 'limits',
+    })
+  })
+
+  it('serves two agreeing observations only a cron interval apart', () => {
+    const close = servedProbeFacts([
+      decided('groq', 'm', T0, 1, 4096),
+      decided('groq', 'm', T0 + PROBE_RUN_GAP_SECONDS - 1, 2, 4096),
+    ])
+    expect(close.served).toEqual([])
+    const apart = servedProbeFacts([
+      decided('groq', 'm', T0, 1, 4096),
+      decided('groq', 'm', T0 + PROBE_RUN_GAP_SECONDS, 2, 4096),
+    ])
+    expect(apart.served).toHaveLength(1)
+    expect(apart.servingIds).toEqual(new Set([1, 2]))
   })
 })

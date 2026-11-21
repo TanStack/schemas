@@ -81,7 +81,7 @@ describe('classifyProbeResponse', () => {
     ).toHaveProperty('undecided')
     expect(
       probeChecks({ ...chatProbes[0]!, mandatoryRule: undefined }),
-    ).toEqual(['limits', 'replay'])
+    ).toEqual(['limits'])
   })
 
   it('records nothing when the level list has an off value', () => {

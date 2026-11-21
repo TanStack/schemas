@@ -245,15 +245,23 @@ ones).
   facts live in D1, never in source (#717): the Worker's own probe cron
   (`PROBE_CRON`, hourly at :07, `src/server/ingest/probe-facts.ts`)
   appends one `probe_observations` row per request it sent (value null
-  when the response stated nothing). It probes a chat row of an enabled
-  provider (`chatProbes` in `probes/index.ts`) once when a probeable fact
-  is empty and unobserved, re-probes an unconfirmed value next run, and
-  re-verifies anything `REVERIFY_AFTER_DAYS` (7) old, under
-  `PROBE_REQUEST_BUDGET` (12) and `PROBE_PROVIDER_BUDGET` (4) per
-  invocation. A value is served only when the two newest decided
-  observations, from separate runs, agree; the poll fills only empty facts
-  from them (`loadServedProbeFacts` → `withProbedFacts`). A missing key is
-  a logged skip; a `gateway` entry is never probed. Audit with
+  when the response stated nothing). Per invocation, under
+  `PROBE_REQUEST_BUDGET` (12) and `PROBE_PROVIDER_BUDGET` (4), it first
+  confirms a decided but unserved value, then probes a chat row of an
+  enabled provider (`chatProbes` in `probes/index.ts`) whose probeable
+  fact is empty and unobserved, then re-verifies anything
+  `REVERIFY_AFTER_DAYS` (7) old. A value is served only when the two
+  newest decided observations, at least `PROBE_RUN_GAP_SECONDS` (one cron
+  interval) apart, agree; the poll fills only empty facts from them
+  (`loadServedProbeFacts` → `withProbedFacts`). A failed run is reported
+  as `ingest_failed` (job `probe`). A missing key is a logged skip; a
+  `gateway` entry is never probed. Each provider lists its `checks`: only
+  checks a rule reads in its own wording (openai `limits`+`off`, groq
+  `limits`+`replay`+`off`, mistral `replay`), so every request is an
+  expected 400, never a billed completion. "Probe everything new" means
+  every new model of a listed provider. Add a provider in its own PR:
+  capture its responses with the dry run below, add a rule and the
+  fixture, then list only the checks that decide. Audit with
   `GET /v1/admin/probes/{provider}[?model=]`. A served fact older than 90
   days stays served; `GET /v1/status` counts it on `staleProbes`.
   `pnpm run probe -- <provider> <rawId…>` is a read-only local dry run.
