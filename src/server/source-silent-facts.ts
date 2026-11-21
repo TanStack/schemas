@@ -1,19 +1,18 @@
 /** Read-time evidence for provider facts absent from the published sources. */
 import { parseLedger } from '#/lib/completeness.ts'
-import type { FactKey } from '#/lib/completeness.ts'
+import type { LedgerKey } from '#/lib/completeness.ts'
 import {
   modelLedgerScope,
   parseLedgerEntry,
 } from '#/lib/source-silence-ledger.ts'
 import type { ChatRequestMap } from './providers/request-map.ts'
-import type { FactSource, ModelFactSources } from './providers/types.ts'
+import type {
+  FactSource,
+  ModelFactSources,
+  SourceSilentEvidence,
+} from './providers/types.ts'
 
-export interface SourceSilentEvidence {
-  derivation: 'source-silent'
-  sourceUrl?: string
-  /** The date recorded by the ledger author, never a request timestamp. */
-  checkedAt?: string
-}
+export type { SourceSilentEvidence }
 
 export type ApiFactSource = FactSource | SourceSilentEvidence
 
@@ -49,7 +48,7 @@ export type ApiModelFactSources = Omit<
 
 export type SourceSilentEvidenceLedger = Map<
   string,
-  Map<FactKey, SourceSilentEvidence>
+  Map<LedgerKey, SourceSilentEvidence>
 >
 
 /** Same entry grammar as scoring; metadata is copied only when actually recorded. */
@@ -62,7 +61,7 @@ export function parseSourceSilentEvidence(
     const entry = parseLedgerEntry(line)
     if (!entry) continue
     const { scope } = entry
-    const key = entry.fact as FactKey
+    const key = entry.fact as LedgerKey
     if (!ledger.get(scope)?.has(key)) continue
     const url = /https?:\/\/[^\s,`)]+/.exec(line)?.[0]
     const date = /\bchecked\s+([^\s,`);.]+)/.exec(line)?.[1]
@@ -82,7 +81,7 @@ export function parseSourceSilentEvidence(
       ...(date ? { checkedAt: date } : {}),
     }
     const entries =
-      evidence.get(scope) ?? new Map<FactKey, SourceSilentEvidence>()
+      evidence.get(scope) ?? new Map<LedgerKey, SourceSilentEvidence>()
     if (entries.has(key))
       throw new Error(`source-silent ledger: duplicate ${scope}: ${key}`)
     entries.set(key, source)
@@ -102,6 +101,7 @@ interface SilentModelFacts {
   capabilities: unknown
   reasoning: unknown
   requestMap: unknown
+  serverTools?: unknown
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -148,6 +148,11 @@ export function withSourceSilentEvidence(
       case 'reasoning':
       case 'requestMap':
         if (row[key] == null) sources[key] = evidence
+        break
+      // Evidence only: a stored source (a poll-time silence) stays.
+      case 'serverTools':
+        if (row.serverTools == null && stored?.serverTools == null)
+          sources.serverTools = evidence
         break
       case 'replayReasoningContent':
         if (

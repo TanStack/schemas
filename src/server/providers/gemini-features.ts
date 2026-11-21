@@ -31,6 +31,7 @@ import {
   tryDocs,
   unavailable,
 } from './model-facts.ts'
+import { serverToolsSilent } from './fact-sources.ts'
 import { fetchOptional } from './provider-aliases.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type {
@@ -55,15 +56,21 @@ const TOOL_FIELDS: Record<string, string> = {
   'Computer use': 'computerUse',
   'File search': 'fileSearch',
   'Grounding with Google Maps': 'googleMaps',
+  // The label pages served until 2026-11; current pages say the long form.
+  'Grounding with Google Search': 'googleSearch',
   'Search grounding': 'googleSearch',
   'URL context': 'urlContext',
 }
 
-/** Tool fields a model page marks Supported (including "(Preview)"). */
-export function parsePageTools(markdown: string): Array<string> {
-  const row = markdown
+function capabilitiesRow(markdown: string): string | undefined {
+  return markdown
     .split('\n')
     .find((line) => line.startsWith('| Capabilities |'))
+}
+
+/** Tool fields a model page marks Supported (including "(Preview)"). */
+export function parsePageTools(markdown: string): Array<string> {
+  const row = capabilitiesRow(markdown)
   if (!row) return []
   const out: Array<string> = []
   for (const m of row.matchAll(/\*\*\[([^\]]+)\]\([^)]*\)\*\*\s*([^*|]*)/g)) {
@@ -482,6 +489,8 @@ export interface GeminiPageSection {
   versions: Array<string>
   modalities: { input: Array<string>; output: Array<string> } | null
   tools: Array<string>
+  /** The section has a Capabilities row, so `tools` is its whole list. */
+  statesTools?: true
   thinking?: true
   /** Present on a video model's section only. */
   outputVideo?: GeminiOutputVideo
@@ -515,6 +524,7 @@ function sectionFrom(chunk: string): GeminiPageSection {
     versions,
     modalities: parsePageModalities(chunk),
     tools: parsePageTools(chunk),
+    ...(capabilitiesRow(chunk) ? { statesTools: true as const } : {}),
     ...(parsePageThinkingSupported(chunk) ? { thinking: true as const } : {}),
     ...(outputVideo ? { outputVideo } : {}),
   }
@@ -535,8 +545,18 @@ export function parsePageSections(page: string): Array<GeminiPageSection> {
   if (named.length > 0) return named
   const modalities = parsePageModalities(markdown)
   const tools = parsePageTools(markdown)
-  return modalities || tools.length > 0
-    ? [{ ids: [], codes: [], versions: [], modalities, tools }]
+  const statesTools = capabilitiesRow(markdown) !== undefined
+  return modalities || statesTools
+    ? [
+        {
+          ids: [],
+          codes: [],
+          versions: [],
+          modalities,
+          tools,
+          ...(statesTools ? { statesTools: true as const } : {}),
+        },
+      ]
     : []
 }
 
@@ -580,6 +600,7 @@ interface BoundSection {
   modalities: GeminiPageSection['modalities']
   outputVideo?: GeminiOutputVideo
   tools: Array<string>
+  statesTools?: true
   reasoning: ModelReasoning | null
   thinking: boolean
   sourceUrl: string
@@ -852,10 +873,14 @@ export async function geminiModelFeatures(
     if (bound.modalities) {
       factSources.modalities = source('Supported data types')
     }
+    // Silent only on a Capabilities row that marks no tool Supported. A page
+    // with no Capabilities row (agents pointing at a guide) states nothing.
     if (bound.tools.length > 0) {
       factSources.serverTools = Object.fromEntries(
         bound.tools.map((tool) => [tool, source('Capabilities')]),
       )
+    } else if (bound.statesTools) {
+      factSources.serverTools = serverToolsSilent(bound.sourceUrl)
     }
     return {
       reasoning,
@@ -952,6 +977,7 @@ function sectionPlacements(
       modalities: named[0].modalities,
       outputVideo: named[0].outputVideo,
       tools: named[0].tools,
+      statesTools: named[0].statesTools,
       reasoning: page.reasoning,
       thinking: page.sections.some((section) => section.thinking === true),
       sourceUrl: page.url,
@@ -972,6 +998,7 @@ function sectionPlacements(
       modalities: page.sections[0].modalities,
       outputVideo: page.sections[0].outputVideo,
       tools: page.sections[0].tools,
+      statesTools: page.sections[0].statesTools,
       reasoning: page.reasoning,
       thinking: page.sections.some((section) => section.thinking === true),
       sourceUrl: page.url,
@@ -986,6 +1013,7 @@ function sectionPlacements(
       modalities: section.modalities,
       outputVideo: section.outputVideo,
       tools: section.tools,
+      statesTools: section.statesTools,
       reasoning: null,
       thinking: section.thinking === true,
       sourceUrl: page.url,

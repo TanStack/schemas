@@ -185,6 +185,14 @@ export interface FactSource {
   verifiedAt?: string
 }
 
+/** A null fact the provider publishes no value for (#273). */
+export interface SourceSilentEvidence {
+  derivation: 'source-silent'
+  sourceUrl?: string
+  /** The date recorded by the ledger author, never a request timestamp. */
+  checkedAt?: string
+}
+
 /** Per-field (and per-flag) provenance for a catalog row. */
 export interface ModelFactSources {
   schemaEndpointId?: FactSource
@@ -207,6 +215,11 @@ export interface ModelFactSources {
   /** Covers `openWeights` and `weightsUrl`. */
   openWeights?: FactSource
   reasoning?: FactSource
+  /**
+   * `reasoning.mandatory` when a probe filled it (issue #717); else
+   * `reasoning` covers the whole object.
+   */
+  reasoningMandatory?: FactSource
   /** Chat wire map read from this model's own request schema. */
   requestMap?: FactSource
   /** Required request headers that are not constant values. */
@@ -221,8 +234,13 @@ export interface ModelFactSources {
    * of zero.
    */
   cacheRead?: FactSource
-  /** One source per tool type id in `serverTools`. */
-  serverTools?: Record<string, FactSource>
+  /**
+   * One source per tool type id in `serverTools`. With `serverTools` null,
+   * a source-silent object: the model's own tool statement was read and
+   * names no built-in tool for it (#707). A page that failed to load is
+   * `absent: unavailable`, never this.
+   */
+  serverTools?: Record<string, FactSource> | SourceSilentEvidence
   /**
    * Where `aliasOf` was read. `path: 'unstated'`: the source was read and
    * names no target for this id.
@@ -275,8 +293,10 @@ export interface UpstreamModelIdentity {
  *   from it, and do not claim thinking is forced. A schema SHARED by many
  *   models states nothing about one model, with or without an off value,
  *   so it is `null`. A gateway can drop the off value, so a gateway list
- *   stays `null` until that model's own source speaks. A probe (off
- *   returns 400) is not a source.
+ *   stays `null` until that model's own source speaks. A bare 400 on
+ *   an off value is not a source. A probe record is, when that 400 listed
+ *   the model's own accepted levels with no off value, and that field is
+ *   the model's only reasoning control (issue #717, `mandatoryRule`).
  * - A model's OWN exhaustive effort list, with no off value, and no other
  *   reasoning control, means `mandatory: true`. The list is the only
  *   control, and it has no way to turn thinking off.

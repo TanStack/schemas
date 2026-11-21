@@ -3,8 +3,8 @@
  * One module per provider under this directory. Adapters bind a fact only
  * when a record names that exact model and route. A record older than
  * `PROBE_STALE_DAYS` is still served; `GET /v1/status` counts those as
- * `staleProbes`. Re-run with `pnpm run probe -- <provider> [--write]`.
- * The script is not a cron and not a CI step.
+ * `staleProbes`. Re-run with `pnpm run probe -- <provider> [--write]`;
+ * `.source/workflows/probe.ts` runs it weekly for the chat probes.
  */
 export const PROBE_STALE_DAYS = 90
 
@@ -44,6 +44,36 @@ export interface ProbeRecord {
    * Never inferred from an id suffix.
    */
   trainsOnRequestData?: true
+}
+
+/** Facts the generic `chat/completions` probe can state (issue #717). */
+export type ProbedFact =
+  | 'maxOutput'
+  | 'contextWindow'
+  | 'replayReasoningContent'
+  | 'reasoning.mandatory'
+
+/**
+ * One fact a live response stated. Written only by
+ * `pnpm run probe -- <provider> --write` into `records/<provider>.ts`;
+ * never by hand. A run that cannot decide leaves the record as it was.
+ */
+export interface ProbedFactRecord {
+  id: string
+  provider: string
+  /** Catalog raw id. A record never applies to another id in the family. */
+  model: string
+  fact: ProbedFact
+  value: number | boolean
+  /** Endpoint id the row must bind for the record to apply. */
+  route: string
+  /** `YYYY-MM-DD` of the run whose response stated `value`. */
+  verifiedAt: string
+  ranBy: string
+  /** What was sent, without headers. */
+  request: { url: string; body: Record<string, unknown> }
+  /** The status and the error message that stated the value. */
+  evidence: { status: number; message: string }
 }
 
 const DAY_MS = 86_400_000

@@ -286,7 +286,10 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // true (#711). A v42 entry would keep GPT-6.2 reasoning null for six hours.
 // v44: a Mistral model page entry gained `releasedAt` from its markdown
 // twin (#708); a v43 entry has none.
-const DOCS_CACHE_VERSION = 'v44'
+// v45: Gemini model pages read "Grounding with Google Search" as
+// `googleSearch` (#707), and OpenAI pages cache their Endpoints support.
+// A v44 entry would leave both out for six hours.
+const DOCS_CACHE_VERSION = 'v45'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {
