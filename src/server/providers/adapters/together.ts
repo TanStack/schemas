@@ -27,6 +27,7 @@ import {
 import { togetherMediaPricing } from '../together-pricing.ts'
 import { fetchJson, fetchOpenApi, sha256Text, skippedResult } from '../types.ts'
 import { bearerConnect } from '../connect.ts'
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 import type { RateCard } from '@modelschemas/rate-card'
 import type {
   FactSource,
@@ -397,6 +398,13 @@ export const provider: ProviderConfig = {
   id: 'together',
   // LLM Gateway route name (providers[].providerId).
   modelNamespaces: ['together-ai'],
+  // `maker/model`: the id's first segment is the maker's org. A deeper id
+  // (`nim/meta/llama-3.3-70b-instruct`) starts with a packaging, not a
+  // maker, so it states nothing.
+  upstreamModelIdentity: (rawId) =>
+    rawId.split('/').length === 2
+      ? namespacedUpstreamIdentity(rawId, listingFact('id'))
+      : null,
   displayName: 'Together AI',
   authEnvVar: 'TOGETHER_API_KEY',
   specSourceUrl: TOGETHER_OPENAPI_URL,
