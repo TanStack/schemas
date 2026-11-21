@@ -294,7 +294,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v47: the BytePlus maker parse wrote `{ makers, named }` under the same key
 // as the Tool use parse's `{ mcp }`; it now has its own `#makers` key. A v46
 // entry may hold either shape, so none is trusted.
-const DOCS_CACHE_VERSION = 'v47'
+// v48: OpenAI model pages gained `knowledgeCutoff` and read the GPT-6.2
+// pricing bullets; a v47 entry has neither for six hours.
+const DOCS_CACHE_VERSION = 'v48'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {
