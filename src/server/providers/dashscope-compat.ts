@@ -95,7 +95,11 @@ export function dashscopeCompatCovers(
 ): boolean {
   const id = rawId.toLowerCase()
   const parts = id.split(/[^a-z0-9]+/).filter((part) => part !== '')
-  if (parts[0] === 'qwen' && scope.deny.some((kind) => parts.includes(kind))) {
+  // `qwen2-audio-instruct` is Qwen-Audio too: the family has version digits.
+  if (
+    /^qwen[\d.]*$/.test(parts[0] ?? '') &&
+    scope.deny.some((kind) => parts.includes(kind))
+  ) {
     return false
   }
   if (scope.qwenLlm && id.startsWith('qwen')) return true

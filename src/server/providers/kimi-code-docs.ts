@@ -179,10 +179,12 @@ export function parseKimiCodeModels(
 export type KimiCodeRegion = 'China' | 'Overseas'
 
 /**
- * The chat route the page's Base URLs table states for one region (issue
- * #716): the row whose protocol names Chat Completions, its base URL path,
- * then `/chat/completions`. The page says the API serves that protocol, so
- * the route holds for every model it lists.
+ * The chat route for one region (issue #716). The base path is read from
+ * the Base URLs row whose protocol names Chat Completions. The page does
+ * not print the `/chat/completions` tail: it comes from the protocol that
+ * row names (OpenAI Chat Completions is `POST {base}/chat/completions`),
+ * not from this page. The page says the API serves that protocol, so the
+ * route holds for every model it lists.
  */
 export function kimiCodeChatRoute(
   html: string,

@@ -43,7 +43,7 @@ describe('Kimi Coding regional adapters', () => {
         expect(model.factSources?.schemaEndpointId).toMatchObject({
           derivation: 'docs-derived',
           sourceUrl: KIMI_CODE_MODELS_URL,
-          path: `Base URLs; Chat Completions; ${region}`,
+          path: `Base URLs; Chat Completions; ${region} base URL + the protocol's /chat/completions`,
         })
       }
     }

@@ -4,7 +4,12 @@ import type { ModelInfo, ProviderConfig } from './types.ts'
 import { dashscopeCompatCovers } from './dashscope-compat.ts'
 import {
   DASHSCOPE_CN_COMPAT,
+  DASHSCOPE_CN_DEEP_RESEARCH,
+  DASHSCOPE_CN_REALTIME,
+  dashscopeFamilyMatches,
   parseDashscopeCnCompat,
+  parseDashscopeCnDeepResearch,
+  parseDashscopeCnRealtime,
 } from './dashscope-cn-compat.ts'
 import type { DashscopeCnCompat } from './dashscope-cn-compat.ts'
 import { classifyOpenCodeRoute, routeOnlyChatSpec } from './opencode-routes.ts'
@@ -69,18 +74,39 @@ async function loadCompat(): Promise<DashscopeCnCompat & { hash: string }> {
   return { ...parseDashscopeCnCompat(text), hash: await sha256Text(text) }
 }
 
-/** Binds a chat row the compat page's supported-models line names. */
+/** Family tokens a page states are served on another protocol. */
+function loadExcluded(
+  url: string,
+  parse: (markdown: string) => Array<string>,
+): () => Promise<Array<string>> {
+  return async () =>
+    parse(await fetchText(url, { signal: AbortSignal.timeout(30_000) }))
+}
+
+/**
+ * Binds a chat row the compat page's supported-models line names, unless
+ * a page states its family is on another protocol. While any of those
+ * pages is unread, no chat row binds.
+ */
 function withCompatRoute(
   model: ModelInfo,
   compat: (DashscopeCnCompat & { hash: string }) | null,
+  excluded: Array<Array<string> | null>,
 ): ModelInfo {
   if (model.activity !== 'chat') return model
-  if (!compat)
+  if (!compat || excluded.some((tokens) => tokens === null))
     return {
       ...model,
       absent: { ...model.absent, schemaEndpointId: 'unavailable' },
     }
   if (!dashscopeCompatCovers(model.rawId, compat.scope)) return model
+  if (
+    excluded.some(
+      (tokens) =>
+        tokens !== null && dashscopeFamilyMatches(model.rawId, tokens),
+    )
+  )
+    return model
   return {
     ...model,
     schemaEndpointId: compat.route,
@@ -111,8 +137,27 @@ export const provider: ProviderConfig = {
     const compat = await tryDocs(run, DASHSCOPE_CN_COMPAT, (cached) =>
       cached(kv, `${DASHSCOPE_CN_COMPAT}#route`, loadCompat),
     )
+    const excluded = [
+      await tryDocs(run, DASHSCOPE_CN_REALTIME, (cached) =>
+        cached(
+          kv,
+          `${DASHSCOPE_CN_REALTIME}#family`,
+          loadExcluded(DASHSCOPE_CN_REALTIME, parseDashscopeCnRealtime),
+        ),
+      ),
+      await tryDocs(run, DASHSCOPE_CN_DEEP_RESEARCH, (cached) =>
+        cached(
+          kv,
+          `${DASHSCOPE_CN_DEEP_RESEARCH}#family`,
+          loadExcluded(
+            DASHSCOPE_CN_DEEP_RESEARCH,
+            parseDashscopeCnDeepResearch,
+          ),
+        ),
+      ),
+    ]
     return {
-      models: models.map((model) => withCompatRoute(model, compat)),
+      models: models.map((model) => withCompatRoute(model, compat, excluded)),
       docsFailures: docsReport(run),
     }
   },

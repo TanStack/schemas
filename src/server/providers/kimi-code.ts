@@ -48,7 +48,7 @@ export function kimiCodeProvider(
                   ...model.factSources,
                   schemaEndpointId: {
                     ...source,
-                    path: `Base URLs; Chat Completions; ${region}`,
+                    path: `Base URLs; Chat Completions; ${region} base URL + the protocol's /chat/completions`,
                   },
                 },
                 absent: { pricing: 'cleared' as const },

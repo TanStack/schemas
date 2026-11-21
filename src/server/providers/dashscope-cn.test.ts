@@ -46,8 +46,19 @@ describe('DashScope CN public native adapter', () => {
     expect(route('qwen-audio-turbo')).toBeFalsy()
     expect(route('qwq-plus')).toBeFalsy()
     expect(route('siliconflow/deepseek-v3.2')).toBeFalsy()
+    // Qwen-Audio with version digits; realtime.md (WebSocket/WebRTC) and
+    // qwen-deep-research.md (no OpenAI-compatible interface) name these.
+    expect(route('qwen2-audio-instruct')).toBeFalsy()
+    expect(route('qwen3.8-omni-flash-realtime')).toBeFalsy()
+    expect(route('qwen-omni-turbo-realtime-latest')).toBeFalsy()
+    expect(route('qwen-deep-research')).toBeFalsy()
+    // A non-realtime Omni model still binds.
+    expect(route('qwen3-omni-flash')).toBe(
+      'compatible-mode/v1/chat/completions',
+    )
     const chat = listed.models.filter((model) => model.activity === 'chat')
-    expect(chat.filter((model) => model.schemaEndpointId)).toHaveLength(173)
+    const bound = chat.filter((model) => model.schemaEndpointId)
+    expect(bound).toHaveLength(159)
     expect(
       listed.models.some(
         (model) => model.activity !== 'chat' && model.schemaEndpointId,
@@ -62,8 +73,29 @@ describe('DashScope CN public native adapter', () => {
     expect(Object.keys(spec.specs[0]?.paths ?? {})).toEqual([
       '/compatible-mode/v1/chat/completions',
     ])
-    expect(urls).toHaveLength(10)
+    expect(urls).toHaveLength(12)
     expect(provider.generationEndpointId).toBeUndefined()
+  })
+  it('binds no chat row while an exclusion page is unreadable', async () => {
+    vi.stubGlobal('fetch', (url: string) => {
+      const file = new URL(url).pathname.split('/').at(-1)
+      if (file === 'realtime.md')
+        return Promise.resolve(new Response('# 其他页面\n'))
+      return Promise.resolve(
+        new Response(
+          readFileSync(
+            new URL(`./fixtures/dashscope-cn/${file}.txt`, import.meta.url),
+          ),
+        ),
+      )
+    })
+    const listed = await provider.listModels({})
+    const chat = listed.models.filter((model) => model.activity === 'chat')
+    expect(chat.some((model) => model.schemaEndpointId)).toBe(false)
+    expect(
+      chat.every((model) => model.absent?.schemaEndpointId === 'unavailable'),
+    ).toBe(true)
+    expect(listed.docsFailures?.failed).toBe(1)
   })
   it('does not replace failed native fetches with Intl metadata or empty catalogs', async () => {
     vi.stubGlobal('fetch', () =>
