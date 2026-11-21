@@ -439,6 +439,10 @@ export const models = sqliteTable(
     requestMap: text('request_map', { mode: 'json' }),
     // Caller ids that resolve to this dated row (issue #112).
     aliases: text('aliases', { mode: 'json' }).$type<Array<string> | null>(),
+    // The raw id the provider states this alias row resolves to, within the
+    // same provider (issue #709). Evidence only: the catalog serves it while
+    // a live row has that id; factSources.aliasOf is its source.
+    aliasOf: text('alias_of'),
     // The provider's own statement of its upstream model (issue #199); it
     // can precede the target row's arrival. The namespace resolves through
     // providers / provider_model_namespaces.

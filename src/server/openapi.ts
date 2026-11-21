@@ -188,9 +188,14 @@ const modelFields = {
   },
   aliases: {
     description:
-      'Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.',
+      'Caller ids that resolve to this row, as the provider states them (for example claude-opus-4-5 → the dated snapshot, gpt-4o → gpt-4o-2024-08-06). An alias may also be a row of its own, whose aliasOf names this row; Mistral lists its alias groups on every member. null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias that is not a row and returns this row. factSources.aliases is the source. With aliases null, its path Snapshots means the model page lists every alias and snapshot and none resolves to this row, and unstated means no docs page names this id.',
     type: ['array', 'null'],
     items: { type: 'string' },
+  },
+  aliasOf: {
+    description:
+      "For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (Mistral's listing name, an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source lists this id as an alias but names no target.",
+    type: ['string', 'null'],
   },
   factSources: {
     $ref: '#/components/schemas/ModelFactSources',
@@ -279,6 +284,7 @@ const modelRequired = [
   'requiredRequestHeaders',
   'trainsOnRequestData',
   'aliases',
+  'aliasOf',
   'releasedAt',
   'knowledgeCutoff',
   'openWeights',
@@ -1376,6 +1382,8 @@ export const openApiDocument = {
           serverTools: { $ref: '#/components/schemas/FactSourceMap' },
           cacheRead: { $ref: '#/components/schemas/FactSource' },
           efforts: { $ref: '#/components/schemas/FactSource' },
+          aliases: { $ref: '#/components/schemas/FactSource' },
+          aliasOf: { $ref: '#/components/schemas/FactSource' },
         },
       },
       FactDiscrepancy: {

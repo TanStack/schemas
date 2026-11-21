@@ -1,0 +1,30 @@
+# GPT-4o
+
+> For the complete documentation index, see [llms.txt](/llms.txt). Markdown versions of documentation pages are available by appending `.md` to the page URL.
+
+> Fast, intelligent, flexible GPT model
+
+Model ID: `gpt-4o`
+
+Status: Deprecated
+
+GPT-4o (“o” for “omni”) is our versatile, high-intelligence flagship model.
+It accepts both text and image inputs, and produces text outputs (including Structured Outputs).
+It is the best model for most tasks, and is our most capable model outside of our o-series models.
+
+## Model details
+
+- Default snapshot: `gpt-4o-2024-08-06`
+- Input modalities: text, image
+- Output modalities: text
+- 128,000 context window
+- 16,384 max output tokens
+- Oct 01, 2023 knowledge cutoff
+
+## Snapshots
+
+Snapshots let you lock in a specific version of the model so that performance and behavior remain consistent. Below is a list of all available snapshots and aliases for GPT-4o.
+
+- `gpt-4o-2024-11-20` — Deprecated
+- `gpt-4o-2024-08-06` — Deprecated
+- `gpt-4o-2024-05-13` — Shut down

@@ -7,7 +7,7 @@ import {
   mistralModelPage,
   tip,
 } from '../fixtures/mistral-model-page.ts'
-import { provider } from './mistral.ts'
+import { mistralAliasFacts, provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
 import { MISTRAL_WEBSEARCH_URL } from '../mistral-pricing.ts'
 import { MISTRAL_REASONING_URL } from '../reasoning-config.ts'
@@ -330,5 +330,73 @@ describe('mistral provider metadata', () => {
     expect(provider.defaultDerivation).toBe('upstream-spec')
     expect(provider.specSourceUrl).toBe('https://docs.mistral.ai/openapi.yaml')
     expect(provider.modelsEndpoint).toBe('https://api.mistral.ai/v1/models')
+  })
+})
+
+describe('mistral alias links (#709)', () => {
+  // Trimmed `GET /v1/models` (id, name, aliases), 2026-11-21.
+  const listing = JSON.parse(
+    readFileSync(
+      new URL('../fixtures/mistral-models-aliases.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { data: Array<{ id: string; name: string; aliases: Array<string> }> }
+  const facts = new Map(
+    listing.data.map((row) => [row.id, mistralAliasFacts(row)]),
+  )
+
+  it('points a -latest row at the id its listing name states', () => {
+    const large = facts.get('mistral-large-latest')
+    expect(large?.aliasOf).toBe('mistral-large-4')
+    expect(large?.aliases).toEqual(['mistral-large-4', 'mistral-large-4-0'])
+    expect(large?.factSources?.aliasOf).toEqual({
+      derivation: 'listing',
+      sourceUrl: 'https://api.mistral.ai/v1/models',
+      path: 'name',
+    })
+    // The named row is the target: it lists its aliases, points nowhere.
+    const target = facts.get('mistral-large-4')
+    expect(target?.aliasOf).toBeNull()
+    expect(target?.aliases).toEqual([
+      'mistral-large-4-0',
+      'mistral-large-latest',
+    ])
+    expect(target?.factSources?.aliasOf).toBeUndefined()
+  })
+
+  it('states no target when the group name is not one of its ids', () => {
+    const voxtral = facts.get('voxtral-small-latest')
+    expect(voxtral?.aliasOf).toBeNull()
+    expect(voxtral?.aliases).toEqual(['voxtral-small-2507'])
+    expect(voxtral?.factSources?.aliasOf?.path).toBe('unstated')
+  })
+
+  it('leaves a row with no aliases bare', () => {
+    expect(facts.get('mistral-large-2512')).toEqual({})
+  })
+
+  it('links or explains every -latest row', () => {
+    const latest = [...facts].filter(([id]) => id.endsWith('-latest'))
+    expect(latest).toHaveLength(18)
+    const linked = latest.filter(([, row]) => row.aliasOf != null)
+    const named = latest.filter(
+      ([, row]) => row.aliasOf == null && row.factSources?.aliasOf == null,
+    )
+    const unstated = latest.filter(
+      ([, row]) => row.factSources?.aliasOf?.path === 'unstated',
+    )
+    expect(linked).toHaveLength(12)
+    // mistral-medium-latest is its group's named id: the others resolve to it.
+    expect(named.map(([id]) => id)).toEqual(['mistral-medium-latest'])
+    expect(unstated.map(([id]) => id).sort()).toEqual([
+      'mistral-ocr-latest',
+      'voxtral-mini-latest',
+      'voxtral-mini-realtime-latest',
+      'voxtral-mini-tts-latest',
+      'voxtral-small-latest',
+    ])
+    for (const [, row] of latest) {
+      expect(row.aliases?.length).toBeGreaterThan(0)
+    }
   })
 })

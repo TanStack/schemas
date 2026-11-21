@@ -1,0 +1,1 @@
+ALTER TABLE `models` ADD `alias_of` text;
