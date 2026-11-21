@@ -7,9 +7,9 @@
 // records that still match; a mismatch exits 1 and leaves the file alone.
 //
 // Chat probes (`chatProbes`, issue #717): every model gets each check in
-// PROBE_CHECKS. A response that states a fact is printed; `--write`
+// `probeChecks(probe)`. A response that states a fact is printed; `--write`
 // stores it in records/<provider>.ts. An undecided check prints why and
-// keeps the stored record as it was. More than MAX_PROBE_REQUESTS planned
+// keeps the stored record as it was (printed as not reconfirmed). More than MAX_PROBE_REQUESTS planned
 // requests aborts before the first. `--skip-missing-key` (the weekly CI
 // job) reports a missing key and exits 0.
 import { spawnSync } from 'node:child_process'
@@ -18,9 +18,10 @@ import { userInfo } from 'node:os'
 
 import {
   MAX_PROBE_REQUESTS,
-  PROBE_CHECKS,
   classifyProbeResponse,
+  mergeProbedRecords,
   probeBody,
+  probeChecks,
 } from '../src/server/providers/probes/chat-completions.ts'
 import type { ChatCompletionsProbe } from '../src/server/providers/probes/chat-completions.ts'
 import {
@@ -35,14 +36,10 @@ import {
   probesFor,
 } from '../src/server/providers/probes/index.ts'
 import { OPENCODE_GO_PROBE_SOURCE } from '../src/server/providers/probes/opencode-go.ts'
-import { probeAgeDays } from '../src/server/providers/probes/types.ts'
 import type {
   ProbedFactRecord,
   ProbeRecord,
 } from '../src/server/providers/probes/types.ts'
-
-/** Under PROBE_STALE_DAYS, so a weekly run re-dates a record before it goes stale. */
-const REDATE_AFTER_DAYS = 60
 
 const ROUTE_PROBES: Record<
   string,
@@ -103,7 +100,8 @@ async function runRouteProbes(): Promise<void> {
 }
 
 async function runChatProbe(probe: ChatCompletionsProbe): Promise<void> {
-  const planned = probe.models.length * PROBE_CHECKS.length
+  const checks = probeChecks(probe)
+  const planned = probe.models.length * checks.length
   if (planned > MAX_PROBE_REQUESTS) {
     console.error(
       `probe: ${probe.provider} plans ${planned} requests, over the per-run cap of ${MAX_PROBE_REQUESTS}. Shorten its model list.`,
@@ -118,12 +116,17 @@ async function runChatProbe(probe: ChatCompletionsProbe): Promise<void> {
   const found: Array<ProbedFactRecord> = []
   let sent = 0
   for (const model of probe.models) {
-    for (const check of PROBE_CHECKS) {
+    for (const check of checks) {
       // Belt and braces: the plan above already bounds this.
       if (++sent > MAX_PROBE_REQUESTS) throw new Error('probe: request cap hit')
       const body = probeBody(check, model)
       const { status, text } = await send(probe.url, body, apiKey)
-      const outcome = classifyProbeResponse(check, status, text)
+      const outcome = classifyProbeResponse(
+        check,
+        status,
+        text,
+        probe.mandatoryRule,
+      )
       const label = `${model} ${check}`
       if ('undecided' in outcome) {
         console.log(
@@ -146,28 +149,17 @@ async function runChatProbe(probe: ChatCompletionsProbe): Promise<void> {
       })
     }
   }
-  if (!write) return
-  // An undecided check keeps its stored record; a decided one replaces it.
-  // The same value is re-dated only once the record nears stale, so a
-  // weekly run with nothing new changes no file.
-  const stored = new Map(
-    probedFactRecords.map((record) => [record.id, record] as const),
+  const { records, unconfirmed } = mergeProbedRecords(
+    probe.provider,
+    probedFactRecords,
+    found,
+    new Date(),
   )
-  for (const [index, record] of found.entries()) {
-    const prior = stored.get(record.id)
-    if (
-      prior &&
-      prior.value === record.value &&
-      probeAgeDays(prior.verifiedAt, new Date()) <= REDATE_AFTER_DAYS
-    ) {
-      found[index] = prior
-    }
+  // Kept, never overwritten by an undecided check, but visible.
+  for (const record of unconfirmed) {
+    console.log(`stored record not reconfirmed: ${record.model} ${record.fact}`)
   }
-  const ids = new Set(found.map((record) => record.id))
-  const kept = probedFactRecords.filter(
-    (record) => record.provider === probe.provider && !ids.has(record.id),
-  )
-  const records = [...kept, ...found].sort((a, b) => a.id.localeCompare(b.id))
+  if (!write) return
   const file = probedFactFile(probe.provider)
   writeFileSync(
     file,

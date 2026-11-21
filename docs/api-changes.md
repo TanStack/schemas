@@ -4,6 +4,15 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
+**Changed (0.1.x):** model rows gain `aliasOf` (#709), and `aliases` can
+now name ids that are rows of their own. Mistral rows list their whole
+alias group, an OpenAI dated snapshot lists the undated alias that
+resolves to it, and a Gemini target lists its `-latest` alias. A lookup
+by an id that is a row still returns that row. Code that treated every
+`aliases` entry as "not a row" should check `aliasOf` instead.
+`factSources` gains `aliases` and `aliasOf` (README, "Aliases at the same
+provider"). Needs D1 migration `0019`: migrate first, then deploy.
+
 **Breaking:** `GET /v1/openapi/{provider}` has no `{path}#stream`
 operations. JSON and `text/event-stream` share one operation's `200`, and
 schemas live in `components.schemas` (every `$ref` resolves). hey-api

@@ -243,10 +243,12 @@ ones).
   `pnpm run probe -- <provider> [--write]` (not the 15-minute
   poll). The script reads the provider key from the environment or Doppler
   and never prints it. The generic `chat/completions` probe
-  (`probes/chat-completions.ts`, #717) states `maxOutput`, `contextWindow`,
+  (`probes/chat-completions.ts`, #717) states `maxOutput`,
   `replayReasoningContent` and `reasoning.mandatory` only from a 400/422
   whose message a rule reads (fixtures of real bodies); a 2xx, auth, 429,
-  5xx or unread message records nothing. `--write` writes
+  5xx or unread message records nothing. `reasoning.mandatory` needs the
+  provider's `mandatoryRule` opt-in (per-model level list, no other
+  reasoning control). No rule writes `contextWindow` yet. `--write` writes
   `probes/records/<provider>.ts` (never by hand); the poller fills only
   empty facts from it (`withProbedFacts`). `.source/workflows/probe.ts`
   runs it weekly and opens a PR on `probe/weekly` when a record changed.

@@ -22,7 +22,9 @@ export const probeRecords: Array<ProbeRecord> = [...opencodeGo]
 /**
  * Providers on the generic `chat/completions` probe (issue #717). Opt in
  * with `probes/<provider>.ts` exporting a `ChatCompletionsProbe`, an empty
- * `records/<provider>.ts`, and one entry in each list below.
+ * `records/<provider>.ts`, and one entry in each list below. Set
+ * `mandatoryRule` only for a provider whose `reasoning_effort` level list
+ * is per model and is the model's only reasoning control.
  */
 export const chatProbes: Array<ChatCompletionsProbe> = [groqProbe]
 

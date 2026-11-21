@@ -48,8 +48,21 @@ export default defineWorkflow('probe', {
     {
       name: 'Open the pull request',
       do: async (ctx) => {
+        // Only main feeds the weekly pull request: a manual run on another
+        // ref would push that ref's commits into it.
+        const ref = ctx.env.TANSTACK_SOURCE_REF ?? ''
+        if (ref !== 'main' && ref !== 'refs/heads/main') {
+          ctx.summary(
+            `Run on ${ref || 'an unknown ref'}, not main: records left unpushed, no pull request.`,
+          )
+          return
+        }
+        // A git failure fails the job; it never reads as "no change".
         const status = await ctx.sh
           .nothrow`git status --porcelain -- ${RECORDS}`
+        if (status.code !== 0) {
+          throw new Error(`git status failed: ${status.stderr}`)
+        }
         if (status.stdout.trim() === '') {
           ctx.summary('No probe record changed: no pull request.')
           return

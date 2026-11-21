@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifyProbeResponse, probeBody } from './chat-completions.ts'
-import type { ProbeCheck } from './chat-completions.ts'
+import {
+  classifyProbeResponse,
+  mergeProbedRecords,
+  probeBody,
+  probeChecks,
+} from './chat-completions.ts'
+import type { MandatoryRule, ProbeCheck } from './chat-completions.ts'
 import responses from './fixtures/probe-responses.json'
-import { staleProbeCount, withProbedFacts } from './index.ts'
+import {
+  chatProbes,
+  probedFactRecords,
+  staleProbeCount,
+  withProbedFacts,
+} from './index.ts'
+import { records as groqRecords } from './records/groq.ts'
 import type { ProbedFactRecord } from './types.ts'
 
 /**
@@ -29,9 +40,18 @@ const DECIDED: Record<string, unknown> = {
   'openai-off-gpt-5-mini': { fact: 'reasoning.mandatory', value: true },
 }
 
+/** The `mandatoryRule` each captured provider would opt in with. */
+const RULES: Record<string, MandatoryRule> = { groq: 'groq', openai: 'openai' }
+
 describe('classifyProbeResponse', () => {
   it.each(responses)('$name', ({ name, check, status, body }) => {
-    const outcome = classifyProbeResponse(check as ProbeCheck, status, body)
+    const rule = RULES[name.split('-')[0]!]
+    const outcome = classifyProbeResponse(
+      check as ProbeCheck,
+      status,
+      body,
+      rule,
+    )
     const expected = DECIDED[name]
     if (expected) expect(outcome).toMatchObject(expected)
     else expect(outcome).toHaveProperty('undecided')
@@ -54,17 +74,20 @@ describe('classifyProbeResponse', () => {
     })
   })
 
-  it('reads the vLLM context length wording', () => {
-    // vLLM's own error text (serving engine), not a live capture.
-    const body = JSON.stringify({
-      object: 'error',
-      message:
-        "This model's maximum context length is 32768 tokens. However, you requested 10000009 tokens (9 in the messages, 10000000 in the completion). Please reduce the length of the messages or completion.",
-    })
-    expect(classifyProbeResponse('limits', 400, body)).toMatchObject({
-      fact: 'contextWindow',
-      value: 32768,
-    })
+  it('reads a provider level list only under its own opt-in', () => {
+    const groq = responses.find(
+      (item) => item.name === 'groq-off-openai_gpt-oss-safeguard-20b',
+    )!
+    // A shared enum or a gateway forwarding Groq's 400 states nothing.
+    expect(classifyProbeResponse('off', groq.status, groq.body)).toHaveProperty(
+      'undecided',
+    )
+    expect(
+      classifyProbeResponse('off', groq.status, groq.body, 'openai'),
+    ).toHaveProperty('undecided')
+    expect(
+      probeChecks({ ...chatProbes[0]!, mandatoryRule: undefined }),
+    ).toEqual(['limits', 'replay'])
   })
 
   it('records nothing when the level list has an off value', () => {
@@ -73,7 +96,9 @@ describe('classifyProbeResponse', () => {
         message: '`reasoning_effort` must be one of `none`, `low` or `high`',
       },
     })
-    expect(classifyProbeResponse('off', 400, body)).toHaveProperty('undecided')
+    expect(classifyProbeResponse('off', 400, body, 'groq')).toHaveProperty(
+      'undecided',
+    )
   })
 
   it('keeps every request to one output token but the limits check', () => {
@@ -197,5 +222,95 @@ describe('withProbedFacts', () => {
   it('counts the committed groq records as current', () => {
     expect(staleProbeCount('groq', new Date('2026-11-22T00:00:00Z'))).toBe(0)
     expect(staleProbeCount('groq', new Date('2027-03-01T00:00:00Z'))).toBe(6)
+  })
+})
+
+describe('mergeProbedRecords', () => {
+  const now = new Date('2026-11-28T00:00:00Z')
+  const groq = (over: Partial<ProbedFactRecord>): ProbedFactRecord => ({
+    ...record('maxOutput', 65536),
+    provider: 'groq',
+    id: 'm:maxOutput',
+    ...over,
+  })
+
+  it("never reads or writes another provider's record with the same id", () => {
+    const together = groq({ provider: 'together', verifiedAt: '2026-11-20' })
+    const found = groq({ verifiedAt: '2026-11-28' })
+    const { records } = mergeProbedRecords('groq', [together], [found], now)
+    expect(records).toEqual([found])
+  })
+
+  it('keeps a recent same value, re-dates an old one, replaces a new value', () => {
+    const recent = groq({ verifiedAt: '2026-11-21' })
+    const old = groq({
+      id: 'm:contextWindow',
+      fact: 'contextWindow',
+      value: 8,
+      verifiedAt: '2026-08-01',
+    })
+    const changed = groq({
+      id: 'm:reasoning.mandatory',
+      fact: 'reasoning.mandatory',
+      value: true,
+      verifiedAt: '2026-11-21',
+    })
+    const found = [
+      groq({ verifiedAt: '2026-11-28' }),
+      { ...old, verifiedAt: '2026-11-28' },
+      { ...changed, value: false, verifiedAt: '2026-11-28' },
+    ]
+    const { records } = mergeProbedRecords(
+      'groq',
+      [recent, old, changed],
+      found,
+      now,
+    )
+    expect(
+      records.map((item) => [item.id, item.verifiedAt, item.value]),
+    ).toEqual([
+      ['m:contextWindow', '2026-11-28', 8],
+      ['m:maxOutput', '2026-11-21', 65536],
+      ['m:reasoning.mandatory', '2026-11-28', false],
+    ])
+  })
+
+  it('keeps and lists a stored record the run did not decide', () => {
+    const stored = groq({})
+    const { records, unconfirmed } = mergeProbedRecords(
+      'groq',
+      [stored],
+      [],
+      now,
+    )
+    expect(records).toEqual([stored])
+    expect(unconfirmed).toEqual([stored])
+  })
+
+  it('rewrites the committed groq records unchanged from their own evidence', () => {
+    // Re-classify each committed record's evidence, then merge as a run would.
+    const found = groqRecords.map((item) => {
+      const check: ProbeCheck =
+        item.fact === 'maxOutput'
+          ? 'limits'
+          : item.fact === 'replayReasoningContent'
+            ? 'replay'
+            : 'off'
+      const outcome = classifyProbeResponse(
+        check,
+        item.evidence.status,
+        JSON.stringify({ error: { message: item.evidence.message } }),
+        'groq',
+      )
+      expect(outcome).toMatchObject({ fact: item.fact, value: item.value })
+      return item
+    })
+    const { records } = mergeProbedRecords(
+      'groq',
+      probedFactRecords,
+      found,
+      new Date('2026-11-21T00:00:00Z'),
+    )
+    expect(records).toEqual(groqRecords)
   })
 })

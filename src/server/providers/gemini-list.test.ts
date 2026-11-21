@@ -120,6 +120,8 @@ describe('gemini listModels', () => {
           requestMap: 'unavailable',
           activity: 'unavailable',
           schemaEndpointId: 'unavailable',
+          // The changelog is unread too: its alias links are kept (#709).
+          aliases: 'unavailable',
         },
       }),
     ])
