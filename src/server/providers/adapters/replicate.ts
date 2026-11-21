@@ -788,6 +788,21 @@ function toModelInfo(model: ReplicateModel): ModelInfo | null {
       visibility: model.visibility,
       official: model.is_official,
     },
+    // An official model is published under its maker's account
+    // (`anthropic/claude-opus-4.7`); a community model's owner is whoever
+    // pushed it, which names no maker.
+    upstream:
+      model.is_official === true
+        ? {
+            providerNamespace: model.owner,
+            rawId: model.name,
+            source: {
+              derivation: 'listing',
+              sourceUrl: REPLICATE_MODELS_URL,
+              path: 'results[].owner (is_official)',
+            },
+          }
+        : null,
     // A chat row carries request flags as well.
     ...chat,
   }

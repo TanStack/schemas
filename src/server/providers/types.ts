@@ -228,6 +228,17 @@ export interface ModelFactSources {
   cacheRead?: FactSource
   /** One source per tool type id in `serverTools`. */
   serverTools?: Record<string, FactSource>
+  /**
+   * Where `aliasOf` was read. `path: 'unstated'`: the source was read and
+   * names no target for this id.
+   */
+  aliasOf?: FactSource
+  /**
+   * Where `aliases` was read. With `aliases` null, `path: 'Snapshots'`:
+   * the page lists every alias and snapshot and none resolves to this row;
+   * `path: 'unstated'`: no docs page names this id.
+   */
+  aliases?: FactSource
 }
 
 /**
@@ -346,6 +357,7 @@ export type ModelFact =
   | 'serverTools'
   | 'requestMap'
   | 'aliases'
+  | 'aliasOf'
   | 'schemaEndpointId'
   | 'releasedAt'
   | 'knowledgeCutoff'
@@ -509,9 +521,17 @@ export interface ModelInfo {
   schemaEndpointId?: string | null
   /**
    * Caller ids that resolve to this row (Anthropic `claude-opus-4-5` →
-   * the dated snapshot). Empty when the provider documents none.
+   * the dated snapshot). An alias may be a listed row of its own, whose
+   * `aliasOf` names this one. Empty when the provider documents none.
    */
   aliases?: Array<string> | null
+  /**
+   * The raw id, at this same provider, that this alias id resolves to, as
+   * the provider states it (an OpenAI page's default snapshot, a Gemini
+   * changelog line). Never read from the id's
+   * shape. Null when the provider states none.
+   */
+  aliasOf?: string | null
   /**
    * Upstream identity the listing row itself states, when the raw id alone
    * cannot carry it (LLM Gateway's `providers[]` route). Wins over

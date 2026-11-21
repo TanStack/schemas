@@ -192,6 +192,8 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'cohere',
+  // Cohere's Hugging Face org (`CohereLabs/command-a-vision-07-2025`).
+  modelNamespaces: ['CohereLabs'],
   displayName: 'Cohere',
   authEnvVar: 'COHERE_API_KEY',
   specSourceUrl: COHERE_OPENAPI_URL,

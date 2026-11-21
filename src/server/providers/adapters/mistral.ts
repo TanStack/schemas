@@ -33,12 +33,14 @@ import {
 import { fetchOpenApi } from '../types.ts'
 import { bearerConnect } from '../connect.ts'
 import type {
+  FactSource,
   ListModelsResult,
   ModelInfo,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
+import type { OpenAiCompatModelRow } from '../openai-compat.ts'
 
 const MISTRAL_MODELS_URL = 'https://api.mistral.ai/v1/models'
 
@@ -94,6 +96,31 @@ function clearUnpriced(
   }
 }
 
+/**
+ * Alias links a listing row states (issue #709). Every member of an alias
+ * group lists the others in `aliases`: membership is stated. Which id the
+ * others resolve to is not (the listing's `name` is an undescribed display
+ * string), so every grouped row says its target is unstated.
+ */
+export function mistralAliasFacts(
+  row: Pick<OpenAiCompatModelRow, 'id' | 'aliases'>,
+): Partial<ModelInfo> {
+  const aliases = (row.aliases ?? []).filter(
+    (id) => typeof id === 'string' && id.length > 0 && id !== row.id,
+  )
+  if (aliases.length === 0) return {}
+  const source = (path: string): FactSource => ({
+    derivation: 'listing',
+    sourceUrl: MISTRAL_MODELS_URL,
+    path,
+  })
+  return {
+    aliases,
+    aliasOf: null,
+    factSources: { aliases: source('aliases'), aliasOf: source('unstated') },
+  }
+}
+
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const { spec, hash } = await fetchOpenApi(MISTRAL_OPENAPI_URL)
   return {
@@ -127,7 +154,7 @@ export const provider: ProviderConfig = {
         if (names && names.length > 0) aliases.set(row.id, names)
         // `created` is the request time on every row, not a release date
         // (#708). The date comes from the model page's markdown twin.
-        return Promise.resolve({ releasedAt: null })
+        return Promise.resolve({ releasedAt: null, ...mistralAliasFacts(row) })
       },
     })
     if (listed.models.length === 0) return listed

@@ -1729,6 +1729,104 @@ describe('reasoning and server tools (issue #77)', () => {
   })
 })
 
+describe('alias links (issue #709)', () => {
+  it('stores the stated target, and a stated silence, with model.updated', async () => {
+    const id = 'poll-alias'
+    const deps = await freshDeps(id)
+    const source = (path: string) => ({
+      derivation: 'listing' as const,
+      sourceUrl: 'https://example.com/models',
+      path,
+    })
+    const alias: ModelInfo = { ...fable, rawId: 'fable-latest' }
+    await pollProviderModels(deps, stubProvider(id, [fable, alias]))
+
+    const linked: ModelInfo = {
+      ...alias,
+      aliases: [fable.rawId],
+      aliasOf: fable.rawId,
+      factSources: { aliases: source('aliases'), aliasOf: source('name') },
+    }
+    const target: ModelInfo = {
+      ...fable,
+      aliases: [alias.rawId],
+      factSources: { aliases: source('aliases') },
+    }
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [target, linked]),
+    )
+    expect(outcome.updated).toBe(2)
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, alias.rawId)),
+    })
+    expect(row?.aliasOf).toBe(fable.rawId)
+    expect(row?.aliases).toEqual([fable.rawId])
+    expect((row?.factSources as ModelFactSources | null)?.aliasOf).toEqual(
+      source('name'),
+    )
+
+    // A source that now names no target is news even though aliasOf was
+    // null before and after: the stated silence must be written.
+    const silent: ModelInfo = {
+      ...alias,
+      aliasOf: null,
+      factSources: { aliasOf: source('unstated') },
+    }
+    const again = await pollProviderModels(
+      deps,
+      stubProvider(id, [target, silent]),
+    )
+    expect(again.updated).toBe(1)
+    const after = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, alias.rawId)),
+    })
+    expect(after?.aliasOf).toBeNull()
+    expect((after?.factSources as ModelFactSources | null)?.aliasOf?.path).toBe(
+      'unstated',
+    )
+    const updates = await deps.db
+      .select()
+      .from(changes)
+      .where(eq(changes.subjectId, modelDbId(id, alias.rawId)))
+    expect(
+      updates
+        .filter((change) => change.type === 'model.updated')
+        .map(
+          (change) => (change.payload as { changed: Array<string> }).changed,
+        ),
+    ).toEqual([
+      ['aliasOf', 'aliasOfSource', 'aliases', 'aliasesSource'],
+      ['aliasOf', 'aliasOfSource', 'aliases', 'aliasesSource'],
+    ])
+  })
+
+  it('keeps a stored link when the source is unavailable', async () => {
+    const id = 'poll-alias-kept'
+    const deps = await freshDeps(id)
+    const linked: ModelInfo = {
+      ...fable,
+      rawId: 'fable-latest',
+      aliasOf: fable.rawId,
+      factSources: {
+        aliasOf: { derivation: 'docs-derived', path: 'Default snapshot' },
+      },
+    }
+    await pollProviderModels(deps, stubProvider(id, [linked]))
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, rawId: 'fable-latest', ...unavailable('aliasOf') },
+      ]),
+    )
+    expect(outcome.updated).toBe(0)
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'fable-latest')),
+    })
+    expect(row?.aliasOf).toBe(fable.rawId)
+  })
+})
+
 describe('reasoning write gate', () => {
   it('keeps the stored value when a later poll lists a malformed one', async () => {
     const id = 'poll-reasoning-gate'
