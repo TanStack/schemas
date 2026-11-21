@@ -97,6 +97,96 @@ function completenessNote(c: Completeness): string {
   return `${c.filled} of ${c.needed} facts filled across ${c.rows} models${silent ? `; not published by this provider: ${silent}` : ''}`
 }
 
+const UNSCORED_NOTE =
+  'No current score: none computed yet, or the live models changed since the last poll scored them'
+
+/** `chat 82%` / `video —` / `origin 3/5`, each with its own tooltip. */
+function ScoreLine({
+  label,
+  value,
+  title,
+  href,
+}: {
+  label: string
+  value: string
+  title: string
+  href?: string
+}) {
+  const body = (
+    <>
+      <span className="text-ink-faint">{label}</span> {value}
+    </>
+  )
+  return (
+    <li className="cursor-help" title={title}>
+      {href ? (
+        <a className="text-ink-soft hover:text-tok-blue" href={href}>
+          {body}
+        </a>
+      ) : (
+        <span className="text-ink-soft" tabIndex={0}>
+          {body}
+        </span>
+      )}
+    </li>
+  )
+}
+
+/** The total, then one line per activity the provider serves, then origin links. */
+function CompletenessCell({ id, c }: { id: string; c: Completeness }) {
+  const activities = Object.entries(c.activities).sort(
+    ([, a], [, b]) => b.rows - a.rows,
+  )
+  if (c.score === null && activities.length === 0) {
+    return (
+      <span className="cursor-help" title={UNSCORED_NOTE} tabIndex={0}>
+        unscored
+      </span>
+    )
+  }
+  return (
+    <>
+      <span
+        className="cursor-help font-semibold"
+        title={
+          c.score === null
+            ? 'Nothing scored: no activity of these models has a fact set and none needs an origin link'
+            : completenessNote(c)
+        }
+        tabIndex={0}
+      >
+        {c.score === null
+          ? 'unscored'
+          : showPct(Math.round(Number(c.score) * 100))}
+      </span>
+      <ul className="m-0 list-none p-0 text-xs">
+        {activities.map(([name, a]) => (
+          <ScoreLine
+            key={name}
+            label={name}
+            value={a.score === null ? '—' : showPct(Math.round(a.score * 100))}
+            title={
+              a.score === null
+                ? `${a.rows} ${name} models, not scored: this activity has no fact set`
+                : `${name}: ${a.filled} of ${a.needed} facts filled across ${a.rows} models`
+            }
+            // `/models` filters by known activities only; `unclassified`
+            // rows have none, so that line links to the whole provider.
+            href={`/models?provider=${id}${name === 'unclassified' ? '' : `&activity=${name}`}`}
+          />
+        ))}
+        {c.originLink.need > 0 && (
+          <ScoreLine
+            label="origin"
+            value={`${c.originLink.have}/${c.originLink.need}`}
+            title={`${c.originLink.have} of ${c.originLink.need} models another provider also lists link to their origin row`}
+          />
+        )}
+      </ul>
+    </>
+  )
+}
+
 function Landing() {
   const { status, changes } = Route.useLoaderData()
   // WebMCP (task 10.6): in-page tools for browsers that ship
@@ -275,7 +365,7 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap; a row whose id another provider also lists needs an origin link. Facts the provider does not publish are left out."
+                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap; a row whose id another provider also lists needs an origin link. Facts the provider does not publish are left out. Below the total: one score per activity, then origin links filled of needed."
                   >
                     complete
                   </th>
@@ -336,20 +426,8 @@ function Landing() {
                     <td className="num" data-label="priced">
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
-                    <td className="num" data-label="chat">
-                      {p.completeness.score === null ? (
-                        '—'
-                      ) : (
-                        <a
-                          className="text-ink hover:text-tok-blue"
-                          href={`/models?provider=${p.id}&activity=chat`}
-                          title={completenessNote(p.completeness)}
-                        >
-                          {showPct(
-                            Math.round(Number(p.completeness.score) * 100),
-                          )}
-                        </a>
-                      )}
+                    <td className="num" data-label="complete">
+                      <CompletenessCell id={p.id} c={p.completeness} />
                     </td>
                     <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt, status.time)}
