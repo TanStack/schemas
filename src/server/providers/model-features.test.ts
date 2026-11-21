@@ -579,15 +579,16 @@ describe('gemini features (issue #77)', () => {
     it('reads a guide Supported tools table as generateContent fields (#707)', () => {
       // https://aistudio.google.com/docs/antigravity-agent.md and
       // deep-research.md, 2026-11-21, cut down. `function` is a client
-      // tool; `mcp_server` has no generateContent field; Filesystem has no
-      // type value.
+      // tool; `mcp_server` becomes `mcpServer` by the same rule; Filesystem
+      // has no type value.
       expect(
         parseGuideTools(fixture('gemini-antigravity-agent.md.txt')),
-      ).toEqual(['codeExecution', 'googleSearch', 'urlContext'])
+      ).toEqual(['codeExecution', 'googleSearch', 'urlContext', 'mcpServer'])
       expect(parseGuideTools(fixture('gemini-deep-research.md.txt'))).toEqual([
         'googleSearch',
         'urlContext',
         'codeExecution',
+        'mcpServer',
         'fileSearch',
       ])
       expect(parseGuideTools('# Computer use\n\n## Model versions\n')).toEqual(
@@ -600,6 +601,10 @@ describe('gemini features (issue #77)', () => {
       expect(() =>
         parseGuideTools(guide.replace('`file_search`', '`file_lookup`')),
       ).toThrow(/file_lookup/)
+      // A table that is there but yields no Type value is a changed format.
+      expect(() =>
+        parseGuideTools(guide.replace(/`([a-z_]+)` \|/g, '$1 |')),
+      ).toThrow(/no Type value/)
     })
 
     it('binds an agent page with no Capabilities row to its linked guide tools (#707)', async () => {
@@ -617,7 +622,12 @@ describe('gemini features (issue #77)', () => {
         fixture('gemini-antigravity-agent.md.txt'),
       )
       expect(features('antigravity-preview-09-2026', false)).toMatchObject({
-        serverTools: ['codeExecution', 'googleSearch', 'urlContext'],
+        serverTools: [
+          'codeExecution',
+          'googleSearch',
+          'urlContext',
+          'mcpServer',
+        ],
         factSources: {
           serverTools: {
             googleSearch: {

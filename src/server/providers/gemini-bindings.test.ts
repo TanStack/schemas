@@ -520,6 +520,18 @@ describe('Gemma on the Gemini API guide tools (#707)', () => {
     ).toThrow(/webSearch/)
   })
 
+  it('reads every key of every tools element', () => {
+    const two = html.replace(
+      '&quot;tools&quot;: [{&quot;googleSearch&quot;: {}}]',
+      '&quot;tools&quot;: [{&quot;googleSearch&quot;: {}}, {&quot;urlContext&quot;: {}}]',
+    )
+    expect(two).not.toBe(html)
+    expect(parseGemmaGuideTools(two).get('gemma-4-31b-it')).toEqual([
+      'googleSearch',
+      'urlContext',
+    ])
+  })
+
   const rows: Array<Listed & { serverTools: Array<string> | null }> = [
     { rawId: 'gemma-4-31b-it', modalities: null, serverTools: null },
     { rawId: 'gemma-4-e4b-it', modalities: null, serverTools: null },

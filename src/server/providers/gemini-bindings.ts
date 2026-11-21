@@ -377,6 +377,31 @@ function htmlText(html: string): string {
 }
 
 /**
+ * Every key of every element of the JSON `tools` array opening at `open`.
+ * An array that does not parse as JSON throws.
+ */
+function toolsArrayKeys(text: string, open: number): Array<string> {
+  let depth = 0
+  let quoted = false
+  for (let i = open; i < text.length; i++) {
+    const c = text[i]
+    if (quoted) {
+      if (c === '\\') i++
+      else if (c === '"') quoted = false
+    } else if (c === '"') quoted = true
+    else if (c === '[' || c === '{') depth++
+    else if ((c === ']' || c === '}') && --depth === 0) {
+      const parsed: unknown = JSON.parse(text.slice(open, i + 1))
+      if (!Array.isArray(parsed)) break
+      return parsed.flatMap((item: unknown) =>
+        typeof item === 'object' && item !== null ? Object.keys(item) : [],
+      )
+    }
+  }
+  throw new Error('gemma gemini api guide: unreadable tools array')
+}
+
+/**
  * Hosted tools the Gemma guide's REST examples enable, bound to every id in
  * its Supported models table: the page says every example follows the size
  * selector, which offers exactly those ids. A missing table or selector
@@ -407,15 +432,18 @@ export function parseGemmaGuideTools(html: string): Map<string, Array<string>> {
   }
   const tools: Array<string> = []
   for (const section of sections) {
-    for (const match of htmlText(section).matchAll(
-      /"tools":\s*\[\{\s*"([A-Za-z]+)"/g,
-    )) {
-      const key = match[1] ?? ''
-      if (GEMMA_GUIDE_CLIENT_TOOLS.has(key)) continue
-      if (!GEMINI_TOOL_FIELDS.has(key)) {
-        throw new Error(`gemma gemini api guide: unknown tools key "${key}"`)
+    const text = htmlText(section)
+    for (const match of text.matchAll(/"tools":\s*\[/g)) {
+      for (const key of toolsArrayKeys(
+        text,
+        match.index + match[0].length - 1,
+      )) {
+        if (GEMMA_GUIDE_CLIENT_TOOLS.has(key)) continue
+        if (!GEMINI_TOOL_FIELDS.has(key)) {
+          throw new Error(`gemma gemini api guide: unknown tools key "${key}"`)
+        }
+        if (!tools.includes(key)) tools.push(key)
       }
-      if (!tools.includes(key)) tools.push(key)
     }
   }
   return new Map(ids.map((id) => [id, tools]))

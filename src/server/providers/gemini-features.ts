@@ -100,13 +100,23 @@ export function parsePageGuide(markdown: string): string | null {
 }
 
 /** Interactions `type` values that are not Google-hosted tools. */
-const GUIDE_NON_HOSTED = new Set(['function', 'mcp_server'])
+const GUIDE_NON_HOSTED = new Set(['function'])
+
+/**
+ * Agent guides also list `mcp_server` (Remote MCP Server). It has no
+ * Capabilities label, so the same snake-to-camel rule stores `mcpServer`.
+ */
+const GUIDE_TOOL_FIELDS: ReadonlySet<string> = new Set([
+  ...GEMINI_TOOL_FIELDS,
+  'mcpServer',
+])
 
 /**
  * A guide's `## Supported tools` table: each backticked Type value is the
  * Interactions API name of a generateContent `Tool` field
  * (`google_search` → `googleSearch`). A guide with no such section states
- * nothing; a Type value outside the known fields throws (#707).
+ * nothing; a section that yields no Type value, or a Type value outside the
+ * known fields, throws (#707).
  */
 export function parseGuideTools(markdown: string): Array<string> {
   const start = markdown.search(/^## Supported tools\b/m)
@@ -117,16 +127,21 @@ export function parseGuideTools(markdown: string): Array<string> {
   if (column < 0)
     throw new Error('gemini guide: Supported tools has no Type value column')
   const out: Array<string> = []
+  let values = 0
   for (const row of rows) {
     const value = /^`([a-z][a-z0-9_]*)`$/.exec(row[column] ?? '')?.[1]
+    if (value) values++
     if (!value || GUIDE_NON_HOSTED.has(value)) continue
     const field = value.replace(/_([a-z0-9])/g, (_, c: string) =>
       c.toUpperCase(),
     )
-    if (!GEMINI_TOOL_FIELDS.has(field)) {
+    if (!GUIDE_TOOL_FIELDS.has(field)) {
       throw new Error(`gemini guide: unknown Supported tools type "${value}"`)
     }
     if (!out.includes(field)) out.push(field)
+  }
+  if (values === 0) {
+    throw new Error('gemini guide: Supported tools table has no Type value')
   }
   return out
 }
