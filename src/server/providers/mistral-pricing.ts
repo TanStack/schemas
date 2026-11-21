@@ -1062,6 +1062,8 @@ export interface MistralModelPage {
   releasedAt?: number | null
   /** Hash of the markdown twin `releasedAt` was read from. */
   markdownHash?: string
+  /** The markdown twin 404'd: its release date was not read. */
+  markdownUnread?: boolean
   features?: Array<string> | null
   extractedAt?: string
 }
@@ -1382,6 +1384,7 @@ export async function mistralModelPricing(
       return {
         releasedAt: markdown ? parseMistralMarkdownReleaseDate(markdown) : null,
         ...(markdownHash ? { markdownHash } : {}),
+        ...(markdown === null ? { markdownUnread: true } : {}),
         ids,
         hash: await sha256Text(body),
         serverTools: parseMistralPageTools(body),
@@ -1474,6 +1477,18 @@ export async function mistralModelPricing(
       url: `${MISTRAL_MODEL_PAGE(page.slug)}.md`,
       hash: page.markdownHash ?? page.hash,
     }),
+  )
+  // Every page read and none states a release date is a renamed label,
+  // not a catalog without dates. Throwing keeps the stored dates.
+  if (!pages.some((page) => page.releasedAt != null)) {
+    throw new Error(
+      `mistral model pages: 0 of ${String(pages.length)} state a release date`,
+    )
+  }
+  // A 404 twin is unread, not dateless: those rows keep the stored date
+  // and say so. A twin read with no date line is a plain null.
+  const releaseUnread = new Set(
+    pages.filter((page) => page.markdownUnread).flatMap((page) => page.ids),
   )
   const webSearch = await cached(kv, MISTRAL_WEBSEARCH_URL, async () => {
     const markdown = await fetchText(MISTRAL_WEBSEARCH_URL)
@@ -1586,20 +1601,25 @@ export async function mistralModelPricing(
       ...releaseFacts,
     }
     const pricingUnread = !pricing && priceUnread.has(rawId) && !seen.has(rawId)
+    const releasedUnread = !release && releaseUnread.has(rawId)
+    const absent = {
+      ...(pricingUnread ? { pricing: 'unavailable' as const } : {}),
+      ...(releasedUnread ? { releasedAt: 'unavailable' as const } : {}),
+    }
     if (
       !pricing &&
       serverTools.length === 0 &&
       !stated &&
       !cap &&
       !release &&
-      !pricingUnread
+      Object.keys(absent).length === 0
     ) {
       return {}
     }
     return {
       ...(release ? { releasedAt: release.value } : {}),
       ...(pricing ? { pricing } : {}),
-      ...(pricingUnread ? { absent: { pricing: 'unavailable' as const } } : {}),
+      ...(Object.keys(absent).length > 0 ? { absent } : {}),
       ...(serverTools.length > 0 ? { serverTools } : {}),
       ...(stated ? { modalities: stated.modalities } : {}),
       ...(cap ? { maxOutput: cap.value } : {}),
@@ -1616,6 +1636,8 @@ const ALIAS_FACTS = [
   'maxOutput',
   'reasoning',
   'serverTools',
+  // The listing's mutual alias names the snapshot an id is, so it settles
+  // an id two pages date differently (`voxtral-mini-tts-latest`).
   'releasedAt',
 ] as const
 
