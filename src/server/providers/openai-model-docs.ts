@@ -76,7 +76,8 @@ export interface OpenAiModelPage {
    * An older dated snapshot keeps the page's other facts but not this price.
    */
   pricedIds: Array<string>
-  facts: ModelFacts
+  /** Its `knowledgeCutoff`, like the price, belongs to `pricedIds` only. */
+  facts: ModelFacts & Pick<ModelInfo, 'knowledgeCutoff'>
   /** Token rates and tiers, or null when the page prices otherwise. */
   pricing: DocsPricing | null
   /**
@@ -159,7 +160,7 @@ function usd(cell: string | undefined): number | null {
  * model, so a new kind of surcharge cannot slip past as prose.
  */
 const PROSE_BULLETS =
-  /\bbatch\b|\bflex\b|fast mode|priority|regional processing|data residency|calculator|does not offer|not billed|rather than text tokens|token rates match/i
+  /\bbatch\b|\bflex\b|fast mode|priority|regional processing|data residency|calculator|does not offer|not billed|rather than text tokens|token rates match|ultrafast/i
 
 /** Levers a "…x input and cache rates" multiplier re-quotes. */
 const INPUT_LEVERS = [
@@ -487,9 +488,18 @@ export function parseModelPricing(markdown: string): DocsPricing | null {
     // "Prompts with >272K input tokens are priced at 2x input and 1.5x
     // output for the full request" — a whole-request re-quote of every
     // rate, which is exactly a tier.
-    const long = bullet.match(
-      /prompts with (?:more than |>)([\d,.]+\s*[km]?) input tokens are priced at ([\d.]+)x input(?: and cache rates)? and ([\d.]+)x output/i,
-    )
+    // GPT-6.2: "For requests with more than 272K input tokens, input and
+    // cache rates double and output costs 1.5 times the short-context rate
+    // for the full request."
+    const long =
+      bullet.match(
+        /prompts with (?:more than |>)([\d,.]+\s*[km]?) input tokens are priced at ([\d.]+)x input(?: and cache rates)? and ([\d.]+)x output/i,
+      ) ??
+      bullet
+        .replace(/ rates double /i, ' rates 2 times ')
+        .match(
+          /^for requests with more than ([\d,.]+\s*[km]?) input tokens, input and cache rates ([\d.]+) times and output costs ([\d.]+) times the short-context rate for the full request\.$/i,
+        )
     if (long) {
       const threshold = tokenCount(long[1])
       if (threshold === null) return null
@@ -529,12 +539,54 @@ export function parseModelPricing(markdown: string): DocsPricing | null {
       }
       continue
     }
+    // GPT-6.2: "The cache write price is for 30 minutes of retention. A
+    // 12-hour cache write costs $20 per million tokens …". The table's Cache
+    // writes cell is the 30-minute rate; the 12-hour TTL is not modelled.
+    if (
+      rates.cache_write_tokens !== undefined &&
+      /^the cache write price is for 30 minutes of retention\. a 12-hour cache write costs \$[\d.]+ per million tokens for short-context requests at standard pricing\.$/i.test(
+        bullet,
+      )
+    ) {
+      continue
+    }
     if (PROSE_BULLETS.test(bullet)) continue
-    // An unrecognised bullet that quotes money, a multiplier or a
-    // percentage may be a surcharge this card would drop.
-    if (/\$|\b\d+(\.\d+)?x\b|%/.test(bullet)) return null
+    // An unrecognised bullet that quotes money, a multiplier (`2x`, "1.5
+    // times", "double") or a percentage may be a surcharge or a tier this
+    // card would drop.
+    if (/\$|\b\d+(\.\d+)?x\b|%|\b(?:times|double|twice|half)\b/i.test(bullet)) {
+      return null
+    }
   }
   return out
+}
+
+const MONTH_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+]
+
+/** "- May 18, 2026 knowledge cutoff" → `2026-05-18`; null when unstated. */
+function parseKnowledgeCutoff(details: string): string | null {
+  const line = details.match(/^- (.*knowledge cutoff.*)$/im)?.[1]
+  if (line === undefined) return null
+  const m = line.match(/^([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) knowledge cutoff$/)
+  const month = m?.[1] ? MONTH_ABBR.indexOf(m[1]) + 1 : 0
+  const day = Number(m?.[2])
+  if (!m || month === 0 || day < 1 || day > 31) {
+    throw new Error(`openai model page: unreadable knowledge cutoff "${line}"`)
+  }
+  return `${m[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
 function listValues(block: string, label: string): Array<string> {
@@ -570,6 +622,7 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
   const maxOutput = tokenCount(
     details.match(/^- ([\d,]+) max output tokens/m)?.[1],
   )
+  const knowledgeCutoff = parseKnowledgeCutoff(details)
 
   const features = new Set(
     [
@@ -626,6 +679,7 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
     facts: {
       contextWindow,
       maxOutput,
+      knowledgeCutoff,
       modalities:
         input.length > 0 || output.length > 0 ? { input, output } : null,
       capabilities: capabilities.length > 0 ? capabilities : null,
@@ -745,7 +799,14 @@ function guideNames(rawId: string, ids: Array<string>): boolean {
 }
 
 type OpenAiDocsFacts = ModelFacts &
-  Pick<ModelInfo, 'unsupportedCapabilities' | 'absent' | 'aliases' | 'aliasOf'>
+  Pick<
+    ModelInfo,
+    | 'knowledgeCutoff'
+    | 'unsupportedCapabilities'
+    | 'absent'
+    | 'aliases'
+    | 'aliasOf'
+  >
 
 type AliasFacts = Pick<ModelInfo, 'aliases' | 'aliasOf'> & {
   factSources: ModelFactSources
@@ -800,6 +861,19 @@ export function openaiAliasFacts(
   return out
 }
 
+/** Page facts minus those of its Model ID and default snapshot only. */
+function withoutPageModelFacts(facts: OpenAiDocsFacts): OpenAiDocsFacts {
+  const sources = { ...facts.factSources }
+  delete sources.pricing
+  delete sources.knowledgeCutoff
+  return {
+    ...facts,
+    pricing: null,
+    knowledgeCutoff: null,
+    factSources: sources,
+  }
+}
+
 /** Facts a model page (via the index that names it) feeds. */
 const PAGE_FACTS = [
   'contextWindow',
@@ -807,6 +881,7 @@ const PAGE_FACTS = [
   'modalities',
   'capabilities',
   'pricing',
+  'knowledgeCutoff',
   'reasoning',
   'serverTools',
   'aliases',
@@ -901,7 +976,7 @@ export async function openaiModelFacts(
   const byId = new Map<string, OpenAiDocsFacts>()
   for (const loaded of pages) {
     const url = OPENAI_MODEL_PAGE(loaded.slug)
-    const withPricing: ModelFacts = {
+    const withPricing: OpenAiDocsFacts = {
       ...loaded.page.facts,
       pricing: loaded.page.pricing?.session
         ? compileLiveSessionCard(loaded.page.pricing.session, {
@@ -930,7 +1005,7 @@ export async function openaiModelFacts(
               )
             : null,
     }
-    const facts: ModelFacts = {
+    const facts: OpenAiDocsFacts = {
       ...withPricing,
       factSources: {
         ...tagDocsFacts(withPricing, url, loaded.page.hash),
@@ -958,10 +1033,9 @@ export async function openaiModelFacts(
         continue
       }
       // The family page prices the alias and the default snapshot only.
-      // An older snapshot (gpt-4o-2024-05-13) is not that price.
-      const sources = { ...facts.factSources }
-      delete sources.pricing
-      byId.set(id, { ...facts, pricing: null, factSources: sources })
+      // An older snapshot (gpt-4o-2024-05-13) is not that price, nor
+      // necessarily that knowledge cutoff.
+      byId.set(id, withoutPageModelFacts(facts))
     }
   }
   const realtimeListed = rawIds.some(openaiRealtimeSelects)
@@ -1180,9 +1254,7 @@ export async function openaiModelFacts(
         facts = family ?? NO_FACTS
       } else {
         // The family page prices the alias and the default snapshot only.
-        const sources = { ...family.factSources }
-        delete sources.pricing
-        facts = { ...family, pricing: null, factSources: sources }
+        facts = withoutPageModelFacts(family)
       }
     }
     if (facts.pricing) return facts

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import nativeDocs from './fixtures/native-reasoning-docs.json'
 
 import { anthropicCapabilities } from './anthropic.ts'
 import {
@@ -217,6 +218,7 @@ Reasoning.effort supports: minimal, low, medium, and high.
 - 400,000 context window
 - Maximum input tokens: 272,000
 - 128,000 max output tokens
+- Sep 30, 2024 knowledge cutoff
 - Reasoning token support
 
 ## Supported features
@@ -251,6 +253,7 @@ Reasoning.effort supports: minimal, low, medium, and high.
     expect(parsed?.facts).toEqual({
       contextWindow: 400_000,
       maxOutput: 128_000,
+      knowledgeCutoff: '2024-09-30',
       modalities: { input: ['text', 'image'], output: ['text'] },
       capabilities: [
         'tools',
@@ -532,6 +535,68 @@ Model ID: \`gpt-4o\`
       cache_read_tokens: 1.25e-6,
       output_tokens: 10e-6,
     })
+  })
+
+  it('reads the GPT-6.2 pages: rates, long-context tier and cutoff', () => {
+    const cases = [
+      ['gpt-6.2-astra', 8, 0.4, 10, 40, '2026-05-18'],
+      ['gpt-6.2-sol', 2, 0.1, 2.5, 10, '2026-06-01'],
+    ] as const
+    for (const [id, input, cached, write, output, cutoff] of cases) {
+      const page = parseModelPage(
+        (nativeDocs as Record<string, string>)[
+          `https://developers.openai.com/api/docs/models/${id}.md`
+        ] ?? '',
+      )
+      expect(page?.facts.knowledgeCutoff).toBe(cutoff)
+      const base = {
+        input_tokens: input / 1e6,
+        cache_read_tokens: cached / 1e6,
+        cache_write_tokens: write / 1e6,
+        output_tokens: output / 1e6,
+      }
+      // "input and cache rates double and output costs 1.5 times the
+      // short-context rate for the full request" above 272K input tokens.
+      expect(page?.pricing).toEqual({
+        rates: base,
+        tiers: [
+          {
+            minPromptTokens: 272_000,
+            rates: {
+              input_tokens: base.input_tokens * 2,
+              cache_read_tokens: base.cache_read_tokens * 2,
+              cache_write_tokens: base.cache_write_tokens * 2,
+              output_tokens: base.output_tokens * 1.5,
+            },
+          },
+        ],
+      })
+    }
+  })
+
+  it('refuses a bullet that states a multiplier in words it cannot read', () => {
+    const table = `### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $2 | 1M tokens |
+| Output | $10 | 1M tokens |
+`
+    expect(
+      parseModelPricing(
+        pricing(`${table}
+- Long prompts cost three times the short-context rate.
+`),
+      ),
+    ).toBeNull()
+  })
+
+  it('refuses a knowledge cutoff line it cannot read', () => {
+    expect(() =>
+      parseModelPage(
+        'Model ID: `m`\n\n## Model details\n\n- Spring 2026 knowledge cutoff\n',
+      ),
+    ).toThrow(/knowledge cutoff/)
   })
 
   it('reads an embeddings page', () => {
