@@ -174,3 +174,50 @@ export function parseKimiCodeModels(
     }
   })
 }
+
+/** The region label the Base URLs table gives each Kimi Code provider. */
+export type KimiCodeRegion = 'China' | 'Overseas'
+
+/**
+ * The chat route for one region (issue #716). The base path is read from
+ * the Base URLs row whose protocol names Chat Completions. The page does
+ * not print the `/chat/completions` tail: it comes from the protocol that
+ * row names (OpenAI Chat Completions is `POST {base}/chat/completions`),
+ * not from this page. The page says the API serves that protocol, so the
+ * route holds for every model it lists.
+ */
+export function kimiCodeChatRoute(
+  html: string,
+  region: KimiCodeRegion,
+): string {
+  const rows = [...html.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/g)]
+    .map((table) =>
+      [...(table[1] ?? '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map(
+        (row) =>
+          [
+            ...(row[1] ?? '').matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/g),
+          ].map((cell) => cell[1] ?? ''),
+      ),
+    )
+    .find((table) => {
+      const header = table[0]?.map(text)
+      return header?.[0] === 'Protocol' && header[1] === 'Base URL'
+    })
+  if (!rows) fail('no Protocol / Base URL table')
+  const chat = rows
+    .slice(1)
+    .filter((row) => /\bChat Completions\b/.test(text(row[0] ?? '')))
+  if (chat.length !== 1)
+    fail('Base URLs table names no single Chat Completions row')
+  const urls = (chat[0]?.[1] ?? '')
+    .split(/<br\b[^>]*>/)
+    .map(text)
+    .flatMap((part) => {
+      const match = /^(\S+) (https:\/\/\S+)$/.exec(part)
+      return match?.[1] === region ? [match[2] ?? ''] : []
+    })
+  if (urls.length !== 1) fail(`Base URLs table states no ${region} URL`)
+  const path = new URL(urls[0] ?? '').pathname.replace(/^\/+|\/+$/g, '')
+  if (!path) fail(`${region} base URL has no path`)
+  return `${path}/chat/completions`
+}

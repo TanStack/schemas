@@ -35,6 +35,40 @@ export function claudeCardPaths(html: string): string[] {
   return [...new Set(paths)]
 }
 
+const ROUTE_PLACEHOLDERS: Record<string, string> = {
+  PROJECT_ID: '{projectsId}',
+  LOCATION: '{locationsId}',
+  MODEL: '{modelsId}',
+}
+
+/**
+ * The `:rawPredict` route the request page gives as its "HTTP method and
+ * URL", with Google's placeholders in the Vertex endpoint-id spelling
+ * (issue #716). `MODEL` is any Claude model id, so it holds for every card.
+ */
+export function vertexClaudeRoute(html: string): string {
+  const text = html.replace(/<[^>]+>/g, '')
+  const routes = new Set(
+    [
+      ...text.matchAll(
+        /POST https:\/\/LOCATION-aiplatform\.googleapis\.com\/(v1\/projects\/PROJECT_ID\/locations\/LOCATION\/publishers\/anthropic\/models\/MODEL:rawPredict)\b/g,
+      ),
+    ].map((match) => match[1] ?? ''),
+  )
+  const [route] = routes
+  if (routes.size !== 1 || !route)
+    throw new Error('vertex claude: request page states no :rawPredict URL')
+  return route
+    .split('/')
+    .map((segment) =>
+      segment.replace(
+        /^(PROJECT_ID|LOCATION|MODEL)\b/,
+        (name) => ROUTE_PLACEHOLDERS[name] ?? name,
+      ),
+    )
+    .join('/')
+}
+
 function lines(html: string): string[] {
   return html
     .replace(/<style\b[\s\S]*?<\/style>|<script\b[\s\S]*?<\/script>/gi, '')
