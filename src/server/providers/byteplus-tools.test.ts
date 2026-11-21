@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { BYTEPLUS_MODEL_LIST_URL } from './byteplus-pricing.ts'
+import {
+  BYTEPLUS_MODEL_LIST_URL,
+  byteplusModelMakers,
+} from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
 import {
   byteplusServerTools,
@@ -113,6 +116,46 @@ describe('byteplusServerTools', () => {
     expect(tools('seed-2-0-code-preview-260328')).toEqual(silent)
     // Not in the table: the page states nothing for it.
     expect(tools('seed-1-6-250615')).toEqual({})
+  })
+
+  it('shares one KV with the maker parse of the same page', async () => {
+    // Prod 2026-11-21: both caches sat under `docs:v46:<model list>`, so
+    // whichever wrote last broke the other on every cached poll.
+    const content = JSON.stringify(
+      doc([
+        ['Provider', 'Model ID', 'Function calling', 'MCP'],
+        ['ByteDance', 'dreamina-seedance-2-5-flash-261115', 'Yes', 'Yes'],
+        ['Z.ai', 'glm-5-2-260617', 'Yes', 'No'],
+      ]),
+    )
+    const html = `<script>window._ROUTER_DATA = ${JSON.stringify({
+      loaderData: { page: { curDoc: { Content: content } } },
+    })}</script>`
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(html, { status: 200 }))),
+    )
+    const store = new Map<string, string>()
+    const kv = {
+      get: (key: string) => Promise.resolve(store.get(key) ?? null),
+      put: (key: string, value: string) => {
+        store.set(key, value)
+        return Promise.resolve()
+      },
+    } as KVNamespace
+    const id = 'dreamina-seedance-2-5-flash-261115'
+    // Both orders: each loader's cold write must not be the other's hit.
+    for (const round of [0, 1]) {
+      if (round) store.clear()
+      const first = round
+        ? await byteplusModelMakers(docsRun(), kv)
+        : await byteplusServerTools(docsRun(), kv)
+      const tools = await byteplusServerTools(docsRun(), kv)
+      const makers = await byteplusModelMakers(docsRun(), kv)
+      expect(first(id)).toBeDefined()
+      expect(tools(id).serverTools).toEqual(['mcp'])
+      expect(makers(id).maker).toBe('ByteDance')
+    }
   })
 
   it('keeps stored tools when the table fails to load', async () => {
