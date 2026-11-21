@@ -56,13 +56,24 @@ it('links the alias to its default snapshot and says which snapshots have none (
     path: 'Default snapshot',
   })
 
+  // "Oct 01, 2023 knowledge cutoff" belongs to the Model ID and default
+  // snapshot, like the price; an older snapshot may differ.
+  expect(alias.knowledgeCutoff).toBe('2023-10-01')
+  expect(alias.factSources?.knowledgeCutoff).toMatchObject({
+    sourceUrl: url,
+    path: 'Knowledge Cutoff',
+  })
+
   const snapshot = facts('gpt-4o-2024-08-06')
+  expect(snapshot.knowledgeCutoff).toBe('2023-10-01')
   expect(snapshot.aliases).toEqual(['gpt-4o'])
   expect(snapshot.aliasOf).toBeUndefined()
   expect(snapshot.factSources?.aliases?.path).toBe('Default snapshot')
 
   // Listed on the page's snapshot list, and no alias resolves to it.
   const older = facts('gpt-4o-2024-11-20')
+  expect(older.knowledgeCutoff).toBeNull()
+  expect(older.factSources?.knowledgeCutoff).toBeUndefined()
   expect(older.aliases).toBeUndefined()
   expect(older.factSources?.aliases).toMatchObject({
     sourceUrl: url,
@@ -86,6 +97,7 @@ it('keeps the stored links when the page fails', async () => {
     expect(facts(id).absent).toMatchObject({
       aliases: 'unavailable',
       aliasOf: 'unavailable',
+      knowledgeCutoff: 'unavailable',
     })
   }
 })
