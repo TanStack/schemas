@@ -4,7 +4,7 @@
  * MCP (`byteplus-tools.ts`) are read beside their adapters; OpenRouter ids
  * are router-level and are not parsed.
  */
-import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
+import { tagDocsFacts } from './fact-sources.ts'
 import {
   assertParsed,
   markdownTableRows,
@@ -65,8 +65,10 @@ export function parseGroqBuiltinTools(
 /**
  * One page per hosted tool type Groq accepts: browser search and code
  * execution (the two the built-in tools page says `tools` takes) and remote
- * MCP. Each page's "Supported Models" table lists every model that takes
- * its tool (#707).
+ * MCP. Each page's "Supported Models" table names models that take its
+ * tool. The tables are not complete (the tool-use overview says every
+ * Groq model takes tools; the MCP table omits `minimaxai/minimax-m2.7`),
+ * so a model none of them names states nothing (#707).
  */
 export const GROQ_TOOL_PAGE_URLS = [
   'https://console.groq.com/docs/browser-search.md',
@@ -91,9 +93,12 @@ export function parseGroqToolPage(markdown: string): {
   if (!header || !/^model id$/i.test(header[0] ?? '')) {
     throw new Error('groq tool page: no Supported Models table')
   }
-  const models = rows.flatMap((row) => {
+  const models = rows.map((row) => {
     const id = row[0]?.trim() ?? ''
-    return /^[a-z0-9][\w./-]*$/i.test(id) ? [id] : []
+    if (!/^[a-z0-9][\w./-]*$/i.test(id)) {
+      throw new Error(`groq tool page: unreadable Model ID cell "${id}"`)
+    }
+    return id
   })
   const tools = new Set(
     [
@@ -146,8 +151,8 @@ async function loadGroqToolPage(
 /**
  * Lookup from the built-in tools page and the three tool pages, each loaded
  * through `tryDocs` under its own cache key. Any page failing marks every
- * row `unavailable`, so a partial list is never stored. With all four read,
- * a model none of them names takes no hosted tool: source-silent (#707).
+ * row `unavailable`, so a partial list is never stored. A model none of
+ * them names gets no entry: the pages are not a complete list (#707).
  */
 export async function groqModelServerTools(
   kv: KVNamespace | undefined,
@@ -173,11 +178,7 @@ export async function groqModelServerTools(
       const tools = doc.tools[rawId]
       return tools && tools.length > 0 ? [{ url, hash: doc.hash, tools }] : []
     })
-    if (hits.length === 0) {
-      return {
-        factSources: { serverTools: serverToolsSilent(GROQ_BUILTIN_TOOLS_URL) },
-      }
-    }
+    if (hits.length === 0) return {}
     return {
       serverTools: [...new Set(hits.flatMap((hit) => hit.tools))],
       factSources: {

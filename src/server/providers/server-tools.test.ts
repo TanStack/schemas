@@ -210,6 +210,11 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     expect(() =>
       parseGroqToolPage(page.replaceAll('browser_search', 'BrowserSearch')),
     ).toThrow(/tools none/)
+    expect(() =>
+      parseGroqToolPage(
+        page.replace('| openai/gpt-oss-20b ', '| GPT OSS 20B (new) '),
+      ),
+    ).toThrow(/Model ID cell/)
   })
 
   const groqPages = () => ({
@@ -219,7 +224,7 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     [GROQ_TOOL_PAGE_URLS[2]]: groqPage('remote-mcp'),
   })
 
-  it('Groq: tools from every page that names the model; silent when none does', async () => {
+  it('Groq: tools from every page that names the model; nothing when none does', async () => {
     serve(groqPages())
     const docs = docsRun()
     const tools = await groqModelServerTools(undefined, docs)
@@ -237,16 +242,9 @@ describe('a read page that names no tool is source-silent (#707)', () => {
       },
     })
     expect(tools('qwen/qwen3.8-27b').serverTools).toEqual(['mcp'])
-    // Browser search, code execution and remote MCP each list every model
-    // that takes them, so a model none of the four pages names takes none.
-    expect(tools('allam-2-7b')).toEqual({
-      factSources: {
-        serverTools: {
-          derivation: 'source-silent',
-          sourceUrl: GROQ_BUILTIN_TOOLS_URL,
-        },
-      },
-    })
+    // The tables are not complete (the MCP table omits a model the tool-use
+    // overview says takes tools), so a model none names states nothing.
+    expect(tools('allam-2-7b')).toEqual({})
     expect(docs.failed).toBe(0)
   })
 
