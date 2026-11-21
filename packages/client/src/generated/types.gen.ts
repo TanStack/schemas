@@ -150,7 +150,7 @@ export type ServiceStatus = {
         }
       }
       /**
-       * Models that need an upstream link (need) and models that have one (have, sameAs set). Silent and exact-model exceptions are not subtracted here.
+       * Models the link rules linked to another provider's row (need) and models whose sameAs is served (have). A model no rule can link (no declared maker's row, two roots, a declared maker's own row, a stated upstream that matches nothing) needs none. Silent and exact-model exceptions are not subtracted here.
        */
       originLink: {
         have: number

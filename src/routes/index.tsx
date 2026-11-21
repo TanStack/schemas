@@ -196,7 +196,7 @@ function CompletenessCell({
           <ScoreLine
             label="origin"
             value={`${c.originLink.have}/${c.originLink.need}`}
-            title={`${c.originLink.have} of ${c.originLink.need} models another provider also lists link to their origin row`}
+            title={`${c.originLink.have} of ${c.originLink.need} models the link rules link to their origin row serve that link`}
           />
         )}
       </ul>
@@ -382,7 +382,7 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap; a row whose id another provider also lists needs an origin link. Facts the provider does not publish are left out. Below the total: one score per activity, then origin links filled of needed."
+                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap; a row the link rules link to another provider's row needs that origin link. Facts the provider does not publish are left out. Below the total: one score per activity, then origin links filled of needed."
                   >
                     complete
                   </th>

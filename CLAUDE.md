@@ -183,6 +183,9 @@ ones).
   `scripts/gap-report.ts`; the Worker bundles `docs/source-silent/*.md`
   (`source-silent.ts`). The 15-minute cron scores once after the poll
   (`recordCompleteness`, one `cache_meta` row); requests only read it.
+  Its `originLink` reads the served `sameAs` and never re-matches names:
+  a row needs a link only when `reconcileSameAs` wrote one (pinned by
+  `origin-link-score.worker.test.ts`).
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). An id that page

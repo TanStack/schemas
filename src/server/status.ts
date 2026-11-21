@@ -123,12 +123,11 @@ const live = (where = sql`1`) =>
  * Bump the version when the scorer or the `Completeness` shape changes: the
  * old row then reads as no record, and scores are null until the next poll.
  */
-const COMPLETENESS_KEY = 'status:completeness:v3'
+const COMPLETENESS_KEY = 'status:completeness:v4'
 
 /**
  * Completeness of every provider with live rows: the rows `GET
  * /v1/models?pricing=1` serves, so this and the CLI score the same thing.
- * Origin links match across the whole catalog, so every row is read.
  */
 async function scoreCompleteness(
   db: Db,

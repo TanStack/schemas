@@ -93,7 +93,6 @@ export type ModelRow = {
   provider: string
   /** Exact native model id, never the slugged catalog id. */
   rawId?: string
-  aliases?: Array<string> | null
   /** The upstream row this one is linked to, as `/v1/models` serves it. */
   sameAs?: { provider: string; rawId: string } | null
   activity?: string | null
@@ -146,8 +145,8 @@ export type ProviderReport = {
   /** By activity, plus `unclassified` for rows with none. */
   activities: Partial<Record<string, ActivityReport>>
   /**
-   * Rows whose id matches a row at another provider and that no row links
-   * to, plus every row with `sameAs` set. `have` counts `sameAs` set.
+   * Rows the link rules linked (`need`) and rows with `sameAs` served
+   * (`have`): the same rows, so `need` counts only links the service writes.
    */
   originLink: FactTally & { modelSilent: number }
   silent: Array<FactKey>
@@ -212,59 +211,18 @@ export function parseLedger(markdown: string): Ledger {
 }
 
 /**
- * The ids a row matches another provider's row by: its raw id and aliases,
- * each also with dots read as hyphens. The same tiers `reconcileSameAs`
- * (`src/server/ingest/model-identity.ts`) links by.
+ * `originLink` asks only what `reconcileSameAs`
+ * (`src/server/ingest/model-identity.ts`) decided: a row needs an origin
+ * link exactly when the link rules write one, and has it when `sameAs` is
+ * served. The rules (the stated tiers, then the name tier `inferLinks` over
+ * `originNameKey` and `isOwnRow`) read what a served row does not carry:
+ * stated evidence that resolves to nothing, deprecated rows, and the
+ * namespace prefixes, so re-running them here would be a second, partial
+ * copy. A row no rule can link (no maker row, two roots, a host's own row,
+ * a declared maker's own row, stated evidence that resolves to nothing)
+ * needs none.
  */
-export function originIdKeys(row: Pick<ModelRow, 'rawId' | 'aliases'>) {
-  const ids = row.rawId === undefined ? [] : [row.rawId]
-  ids.push(...(row.aliases ?? []))
-  return new Set(ids.flatMap((id) => [id, id.replaceAll('.', '-')]))
-}
-
-/** Which rows need an origin link; built once over the whole catalog. */
-export type OriginIndex = {
-  providersById: Map<string, Set<string>>
-  /** `provider/rawId` of every row some other row links to. */
-  targets: Set<string>
-}
-
-const NO_ORIGINS: OriginIndex = { providersById: new Map(), targets: new Set() }
-
-export function originIndex(rows: Array<ModelRow>): OriginIndex {
-  const providersById = new Map<string, Set<string>>()
-  const targets = new Set<string>()
-  for (const row of rows) {
-    for (const key of originIdKeys(row)) {
-      const set = providersById.get(key) ?? new Set<string>()
-      set.add(row.provider)
-      providersById.set(key, set)
-    }
-    if (row.sameAs)
-      targets.add(modelLedgerScope(row.sameAs.provider, row.sameAs.rawId))
-  }
-  return { providersById, targets }
-}
-
-/**
- * A row with `sameAs` set needs a link and has one. Otherwise it needs one
- * when an id key matches a row at another provider, unless a row links to
- * it: a link target is the origin, not the copy.
- */
-function needsOriginLink(row: ModelRow, origins: OriginIndex): boolean {
-  if (row.sameAs) return true
-  if (
-    row.rawId !== undefined &&
-    origins.targets.has(modelLedgerScope(row.provider, row.rawId))
-  ) {
-    return false
-  }
-  return [...originIdKeys(row)].some((key) =>
-    [...(origins.providersById.get(key) ?? [])].some(
-      (provider) => provider !== row.provider,
-    ),
-  )
-}
+const linked = (row: ModelRow) => row.sameAs != null
 
 /**
  * Public endpoint id, query and leading slash stripped. The route's wire
@@ -346,7 +304,7 @@ const nonEmpty = (value: unknown) => Array.isArray(value) && value.length > 0
 const FACTS: Record<
   FactKey,
   {
-    need?: (row: ModelRow, origins: OriginIndex) => boolean
+    need?: (row: ModelRow) => boolean
     have: (row: ModelRow) => boolean
   }
 > = {
@@ -400,7 +358,7 @@ const FACTS: Record<
         .replayReasoningContent === 'boolean',
   },
   activity: { have: (row) => row.activity != null },
-  originLink: { need: needsOriginLink, have: (row) => row.sameAs != null },
+  originLink: { need: linked, have: linked },
 }
 
 /**
@@ -421,8 +379,7 @@ const FLAGS: Record<
   reasoningUnknown: {
     silencedBy: 'reasoning',
     match: (row) =>
-      FACTS.reasoning.need?.(row, NO_ORIGINS) === true &&
-      !FACTS.reasoning.have(row),
+      FACTS.reasoning.need?.(row) === true && !FACTS.reasoning.have(row),
   },
   // The catalog reads `[]` as unknown; an unknown list is stored as null.
   outputModalitiesEmpty: {
@@ -454,14 +411,12 @@ export function activityBucket(row: Pick<ModelRow, 'activity'>): string {
 
 /**
  * The facts that apply to one row and whether it carries each: its
- * activity's set, then `originLink`. Empty for an activity with no fact
- * set when no link applies. Without `origins` the link is asked only of a
- * row with `sameAs` set, which has it.
+ * activity's set, then `originLink` when `sameAs` is set. Empty for an
+ * activity with no fact set when the row has no link.
  */
 export function scoreRow(
   row: ModelRow,
   ledger: Ledger = new Map(),
-  origins: OriginIndex = NO_ORIGINS,
 ): Array<RowFact> {
   const bucket = activityBucket(row)
   const keys: Array<FactKey> = [
@@ -475,7 +430,7 @@ export function scoreRow(
       : ledger.get(modelLedgerScope(row.provider, row.rawId))
   return keys.flatMap((fact): Array<RowFact> => {
     const { need, have } = FACTS[fact]
-    if (need && !need(row, origins)) return []
+    if (need && !need(row)) return []
     const has = have(row)
     const silent =
       providerSilent?.has(fact) === true ||
@@ -523,7 +478,6 @@ export function buildReport(
   ledger: Ledger = new Map(),
   now: Date = new Date(),
 ): GapReport {
-  const origins = originIndex(rows)
   const byProvider = new Map<string, Array<ModelRow>>()
   for (const row of rows) {
     const group = byProvider.get(row.provider)
@@ -550,11 +504,7 @@ export function buildReport(
         score: null,
       })
       report.rows += 1
-      for (const { fact, have, silent: rowSilent } of scoreRow(
-        row,
-        ledger,
-        origins,
-      )) {
+      for (const { fact, have, silent: rowSilent } of scoreRow(row, ledger)) {
         const providerSilent = silent.includes(fact)
         const modelSilent = rowSilent && !providerSilent
         if (fact === 'originLink') {

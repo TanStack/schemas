@@ -411,7 +411,7 @@ describe('getServiceStatus', () => {
     }
   })
 
-  const KEY = 'status:completeness:v3'
+  const KEY = 'status:completeness:v4'
   const scoreOf = async (db: ReturnType<typeof getDb>, id: string) => {
     const status = await getServiceStatus(db, NOW)
     return {

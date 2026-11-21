@@ -24,9 +24,10 @@ that is not a models.dev price), `endpoint`, `modalities` (input) and
 which it always lacks: classify the row, do not ledger it. Rows of an
 activity with no fact set (embeddings, moderation, decision, world,
 search) are listed with `facts: null` and not scored. `originLink` is
-scored on every row: a row needs an upstream link when its raw id or an
-alias, also with dots read as hyphens, matches a row at another provider
-and no row links to it; a row with `sameAs` set has one. A provider-wide
+scored on every row: a row needs an upstream link when the link rules
+(`reconcileSameAs`) link it, and has one when `sameAs` is served. A row
+no rule can link (no declared maker's row, two roots, a maker's own row,
+a stated upstream that matches nothing) needs none. A provider-wide
 entry applies to every activity that scores that key.
 
 For a fact missing only on particular models, use the exact native raw model id:
