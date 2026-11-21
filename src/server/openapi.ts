@@ -1035,17 +1035,25 @@ export const openApiDocument = {
                 completeness: {
                   type: 'object',
                   description:
-                    'The gap-report score over the live chat models of the provider: the share filled of the eleven chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint, replayReasoningContent). Summed per model, each fact counted only where it applies. requestMap applies on chat/completions, completions, and responses routes. replayReasoningContent applies on chat/completions routes whose rows reason. A stated cached-input absence (factSources.cacheRead path not-offered) fills cacheRead. Provider-wide and exact-model source-silent exceptions are excluded. Computed at the models poll (completenessComputedAt), not per request.',
-                  required: ['score', 'chat', 'filled', 'needed', 'silent'],
+                    'The gap-report score over the live models of the provider (src/lib/completeness.ts). Each activity has its own fact set. chat: contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint, replayReasoningContent. image, video and audio: priced (any stored rate card that is not a models.dev price), endpoint, modalities (input) and outputModalities. A row with a null activity is in unclassified and counts as one missing fact (activity). Rows of an activity with no fact set (embeddings, moderation, decision, world, search) are listed with score null and do not change the score. originLink is scored on every row: a row needs an upstream link when its raw id or an alias, also with dots read as hyphens, matches a row at another provider and no row links to it; a row with sameAs set needs one and has it. Summed per model, each fact counted only where it applies. requestMap applies on chat/completions, completions, and responses routes. replayReasoningContent applies on chat/completions routes whose rows reason. A stated cached-input absence (factSources.cacheRead path not-offered) fills cacheRead. Provider-wide and exact-model source-silent exceptions are excluded. Computed at the models poll (completenessComputedAt), not per request.',
+                  required: [
+                    'score',
+                    'rows',
+                    'filled',
+                    'needed',
+                    'silent',
+                    'activities',
+                    'originLink',
+                  ],
                   properties: {
                     score: {
                       type: ['number', 'null'],
                       description:
-                        'filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models (nothing to score, not a score of zero), when no score is stored yet, and when the chat models changed since the stored score.',
+                        'filled / needed, 0 to 1, over every scored activity and originLink. 1 when every fact that applies is in silent. null when nothing is scored (every live model is of an activity with no fact set and none needs an origin link), when no score is stored yet, and when the live models changed since the stored score.',
                     },
-                    chat: {
+                    rows: {
                       type: 'integer',
-                      description: 'Live chat models scored.',
+                      description: 'Live models scored.',
                     },
                     filled: {
                       type: 'integer',
@@ -1062,6 +1070,35 @@ export const openApiDocument = {
                       items: { type: 'string' },
                       description:
                         'Facts the provider does not publish, left out of the score.',
+                    },
+                    activities: {
+                      type: 'object',
+                      description:
+                        'The score per activity of the live models, keyed by activity, plus unclassified for models with a null activity. Empty when no score is served.',
+                      additionalProperties: {
+                        type: 'object',
+                        required: ['rows', 'score', 'filled', 'needed'],
+                        properties: {
+                          rows: { type: 'integer' },
+                          score: {
+                            type: ['number', 'null'],
+                            description:
+                              'filled / needed. null when the activity has no fact set: its models are not scored.',
+                          },
+                          filled: { type: 'integer' },
+                          needed: { type: 'integer' },
+                        },
+                      },
+                    },
+                    originLink: {
+                      type: 'object',
+                      description:
+                        'Models that need an upstream link (need) and models that have one (have, sameAs set). Silent and exact-model exceptions are not subtracted here.',
+                      required: ['have', 'need'],
+                      properties: {
+                        have: { type: 'integer' },
+                        need: { type: 'integer' },
+                      },
                     },
                   },
                 },

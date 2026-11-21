@@ -68,16 +68,22 @@ describe('gap report scoring', () => {
   it('scores a complete row 1', () => {
     const full = provider('full')
     expect(full.score).toBe(1)
-    expect(full.facts.priced).toEqual({ have: 1, need: 1 })
-    expect(full.facts.efforts).toEqual({ have: 1, need: 1 })
+    expect(full.activities.chat?.facts?.priced).toEqual({ have: 1, need: 1 })
+    expect(full.activities.chat?.facts?.efforts).toEqual({ have: 1, need: 1 })
     expect(report.generatedAt).toBe('1970-01-01T00:00:00.000Z')
   })
 
   it('does not count a models.dev price as filled', () => {
     const borrowed = provider('borrowed')
     expect(borrowed.fromModelsDev).toBe(1)
-    expect(borrowed.facts.priced).toEqual({ have: 0, need: 1 })
-    expect(borrowed.facts.cacheRead).toEqual({ have: 0, need: 1 })
+    expect(borrowed.activities.chat?.facts?.priced).toEqual({
+      have: 0,
+      need: 1,
+    })
+    expect(borrowed.activities.chat?.facts?.cacheRead).toEqual({
+      have: 0,
+      need: 1,
+    })
     expect(borrowed.score).toBeCloseTo(9 / 11)
   })
 
@@ -101,8 +107,11 @@ describe('gap report scoring', () => {
       'full',
       buildReport([{ ...complete, pricing: { tables: { rate } } }]),
     )
-    expect(periods.facts.priced).toEqual({ have: 1, need: 1 })
-    expect(periods.facts.cacheRead).toEqual({ have: 0, need: 1 })
+    expect(periods.activities.chat?.facts?.priced).toEqual({ have: 1, need: 1 })
+    expect(periods.activities.chat?.facts?.cacheRead).toEqual({
+      have: 0,
+      need: 1,
+    })
     const both = {
       off_peak: rate.off_peak,
       peak: { ...rate.peak, cache_read_tokens: 2e-9 },
@@ -111,8 +120,14 @@ describe('gap report scoring', () => {
       'full',
       buildReport([{ ...complete, pricing: { tables: { rate: both } } }]),
     )
-    expect(fullPeriods.facts.priced).toEqual({ have: 1, need: 1 })
-    expect(fullPeriods.facts.cacheRead).toEqual({ have: 1, need: 1 })
+    expect(fullPeriods.activities.chat?.facts?.priced).toEqual({
+      have: 1,
+      need: 1,
+    })
+    expect(fullPeriods.activities.chat?.facts?.cacheRead).toEqual({
+      have: 1,
+      need: 1,
+    })
   })
 
   it('counts a card in another currency as priced', () => {
@@ -125,14 +140,23 @@ describe('gap report scoring', () => {
         } as ModelRow['pricing'],
       },
     ])
-    expect(provider('full', yuan).facts.priced).toEqual({ have: 1, need: 1 })
-    expect(provider('full', yuan).facts.cacheRead).toEqual({ have: 1, need: 1 })
+    expect(provider('full', yuan).activities.chat?.facts?.priced).toEqual({
+      have: 1,
+      need: 1,
+    })
+    expect(provider('full', yuan).activities.chat?.facts?.cacheRead).toEqual({
+      have: 1,
+      need: 1,
+    })
   })
 
   it('leaves a ledger fact out of the score', () => {
     const quiet = provider('quiet')
     expect(quiet.silent).toEqual(['maxOutput'])
-    expect(quiet.facts.maxOutput).toEqual({ have: 0, need: 1 })
+    expect(quiet.activities.chat?.facts?.maxOutput).toEqual({
+      have: 0,
+      need: 1,
+    })
     expect(quiet.score).toBe(1)
   })
 
@@ -156,23 +180,26 @@ describe('gap report scoring', () => {
       all,
       new Date(0),
     )
-    expect(bare.providers[0]).toMatchObject({ chat: 1, score: 1 })
+    expect(bare.providers[0]).toMatchObject({ rows: 1, score: 1 })
   })
 
-  it('treats unclassified rows with no chat rows as a gap', () => {
+  it('treats unclassified rows as a gap', () => {
     const images = provider('images')
-    expect(images).toMatchObject({ rows: 2, chat: 0, noActivity: 1, score: 0 })
+    expect(images).toMatchObject({ rows: 2, noActivity: 1, score: 0 })
     expect(report.providers[0]?.provider).toBe('images')
   })
 
-  it('prints n/a when the provider does not serve chat', () => {
+  it('prints n/a when no row is scored', () => {
     const speech = buildReport(
-      [{ provider: 'speech', activity: 'audio' }],
+      [{ provider: 'speech', activity: 'embeddings' }],
       new Map(),
       new Date(0),
     )
     expect(speech.providers[0]?.score).toBeNull()
     expect(formatTable(speech)).toContain('n/a')
+    expect(formatTable(speech)).toMatch(
+      /unscored.*originLink.*media\.outputModalities/,
+    )
     expect(failing(speech, 1, ['speech', 'absent'])).toEqual(['absent'])
   })
 
@@ -188,8 +215,11 @@ describe('gap report scoring', () => {
         { ...complete, reasoning: null },
       ]),
     )
-    expect(plain.facts.reasoning).toEqual({ have: 0, need: 1 })
-    expect(plain.facts.efforts).toEqual({ have: 0, need: 0 })
+    expect(plain.activities.chat?.facts?.reasoning).toEqual({
+      have: 0,
+      need: 1,
+    })
+    expect(plain.activities.chat?.facts?.efforts).toEqual({ have: 0, need: 0 })
   })
 
   it('asks a toggle row for reasoning and for no efforts', () => {
@@ -200,8 +230,14 @@ describe('gap report scoring', () => {
         { ...complete, reasoning: { mode: 'toggle', mandatory: true } },
       ]),
     )
-    expect(toggles.facts.reasoning).toEqual({ have: 2, need: 2 })
-    expect(toggles.facts.efforts).toEqual({ have: 0, need: 0 })
+    expect(toggles.activities.chat?.facts?.reasoning).toEqual({
+      have: 2,
+      need: 2,
+    })
+    expect(toggles.activities.chat?.facts?.efforts).toEqual({
+      have: 0,
+      need: 0,
+    })
     expect(toggles.score).toBe(1)
   })
 
@@ -215,8 +251,14 @@ describe('gap report scoring', () => {
         },
       ]),
     )
-    expect(unstated.facts.reasoning).toEqual({ have: 1, need: 1 })
-    expect(unstated.facts.efforts).toEqual({ have: 1, need: 1 })
+    expect(unstated.activities.chat?.facts?.reasoning).toEqual({
+      have: 1,
+      need: 1,
+    })
+    expect(unstated.activities.chat?.facts?.efforts).toEqual({
+      have: 1,
+      need: 1,
+    })
     expect(unstated.score).toBe(1)
   })
 
@@ -283,7 +325,10 @@ describe('gap report scoring', () => {
       outputModalitiesEmpty: ['no-output'],
       mandatoryWithNone: ['forced-none'],
     })
-    expect(flagged.facts.efforts).toEqual({ have: 4, need: 5 })
+    expect(flagged.activities.chat?.facts?.efforts).toEqual({
+      have: 4,
+      need: 5,
+    })
     expect(formatTable({ generatedAt: '', providers: [flagged] })).toContain(
       'mandatoryWithNone',
     )
@@ -320,17 +365,20 @@ describe('gap report scoring', () => {
   })
 
   it('picks the providers below target', () => {
-    expect(failing(report, 1)).toEqual(['borrowed'])
+    expect(failing(report, 1)).toEqual(['images', 'borrowed'])
     expect(failing(report, 1, ['full', 'images', 'absent'])).toEqual([
       'images',
       'absent',
     ])
-    expect(failing(report, 0.8)).toEqual([])
+    expect(failing(report, 0.8)).toEqual(['images'])
   })
 
   it('rejects an unknown ledger fact', () => {
     expect(() => parseLedger('- grok: maxOutputs — typo')).toThrow(
       /unknown fact/,
+    )
+    expect(() => parseLedger('- fal: activity — unclassified')).toThrow(
+      /classify the row/,
     )
   })
 })
@@ -370,8 +418,11 @@ describe('model-scoped source silence', () => {
       ),
     )
     expect(result.silent).toEqual([])
-    expect(result.facts.maxOutput).toEqual({ have: 1, need: 3 })
-    expect(result.modelSilent).toEqual({ maxOutput: 1 })
+    expect(result.activities.chat?.facts?.maxOutput).toEqual({
+      have: 1,
+      need: 3,
+    })
+    expect(result.activities.chat?.modelSilent).toEqual({ maxOutput: 1 })
     expect(result.score).toBeCloseTo(31 / 32)
     expect(formatTable({ generatedAt: '', providers: [result] })).toContain(
       '1/3 (1 model-silent)',
@@ -412,8 +463,13 @@ describe('model-scoped source silence', () => {
         parseLedger('- host/c: replayReasoningContent — checked own source'),
       ),
     )
-    expect(replay.facts.replayReasoningContent).toEqual({ have: 2, need: 4 })
-    expect(replay.modelSilent).toEqual({ replayReasoningContent: 1 })
+    expect(replay.activities.chat?.facts?.replayReasoningContent).toEqual({
+      have: 2,
+      need: 4,
+    })
+    expect(replay.activities.chat?.modelSilent).toEqual({
+      replayReasoningContent: 1,
+    })
   })
   it('does not turn a model-scoped entry into a provider exemption or guess missing raw ids', () => {
     const scoped = parseLedger('- host/maker/model: maxOutput — absent')
@@ -421,7 +477,7 @@ describe('model-scoped source silence', () => {
       'host',
       buildReport([{ ...complete, provider: 'host', maxOutput: null }], scoped),
     )
-    expect(result.modelSilent).toEqual({})
+    expect(result.activities.chat?.modelSilent).toEqual({})
     expect(result.score).toBeLessThan(1)
   })
   it('preserves provider-wide grammar and avoids double exclusions', () => {
@@ -446,7 +502,7 @@ describe('model-scoped source silence', () => {
       ),
     )
     expect(result.silent).toEqual(['maxOutput'])
-    expect(result.modelSilent).toEqual({})
+    expect(result.activities.chat?.modelSilent).toEqual({})
     expect(result.score).toBe(1)
     expect(() => parseLedger('- host/: maxOutput — missing model')).toThrow(
       'invalid scope',

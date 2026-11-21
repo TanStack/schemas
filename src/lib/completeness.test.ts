@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildReport, parseLedger } from './completeness.ts'
+import {
+  buildReport,
+  originIndex,
+  parseLedger,
+  rowCompleteness,
+  scoreRow,
+} from './completeness.ts'
 import type { ModelRow } from './completeness.ts'
 
 const chat: ModelRow = {
@@ -53,8 +59,14 @@ describe('applicable facts', () => {
       },
     ])
     const host = report.providers[0]
-    expect(host?.facts.replayReasoningContent).toEqual({ have: 1, need: 1 })
-    expect(host?.facts.requestMap).toEqual({ have: 1, need: 2 })
+    expect(host?.activities.chat?.facts?.replayReasoningContent).toEqual({
+      have: 1,
+      need: 1,
+    })
+    expect(host?.activities.chat?.facts?.requestMap).toEqual({
+      have: 1,
+      need: 2,
+    })
   })
 
   it('does not score requestMap on a native route', () => {
@@ -67,8 +79,13 @@ describe('applicable facts', () => {
         capabilities: { tools: true },
       },
     ])
-    expect(report.providers[0]?.facts.requestMap).toEqual({ have: 0, need: 0 })
-    expect(report.providers[0]?.facts.replayReasoningContent).toEqual({
+    expect(report.providers[0]?.activities.chat?.facts?.requestMap).toEqual({
+      have: 0,
+      need: 0,
+    })
+    expect(
+      report.providers[0]?.activities.chat?.facts?.replayReasoningContent,
+    ).toEqual({
       have: 0,
       need: 0,
     })
@@ -84,20 +101,10 @@ describe('applicable facts', () => {
         factSources: { cacheRead: { path: 'not-offered' } },
       },
     ])
-    expect(report.providers[0]?.facts.cacheRead).toEqual({ have: 1, need: 1 })
-  })
-
-  it('scores n/a when every row is a non-chat activity, and 0 when one is unclassified', () => {
-    const speech = buildReport([
-      { provider: 'speech', activity: 'audio' },
-      { provider: 'speech', activity: 'audio' },
-    ])
-    expect(speech.providers[0]?.score).toBeNull()
-    const missed = buildReport([
-      { provider: 'images', activity: 'image' },
-      { provider: 'images', activity: null },
-    ])
-    expect(missed.providers[0]?.score).toBe(0)
+    expect(report.providers[0]?.activities.chat?.facts?.cacheRead).toEqual({
+      have: 1,
+      need: 1,
+    })
   })
 
   it('leaves a native replay row out of a model-scoped ledger denominator', () => {
@@ -105,9 +112,120 @@ describe('applicable facts', () => {
       [{ ...chat, schemaEndpointId: 'v1/messages', requestMap: null }],
       parseLedger('- host/m: replayReasoningContent — native route'),
     )
-    expect(report.providers[0]?.facts.replayReasoningContent.need).toBe(0)
+    const host = report.providers[0]?.activities.chat
+    expect(host?.facts?.replayReasoningContent?.need).toBe(0)
+    expect(host?.modelSilent.replayReasoningContent).toBeUndefined()
+  })
+})
+
+describe('activities other than chat', () => {
+  const speech: ModelRow = {
+    provider: 'speech',
+    rawId: 'tts',
+    activity: 'audio',
+    modalities: { input: ['text'], output: ['audio'] },
+    pricing: { tables: {} },
+    schemaEndpointId: 'v1/text-to-speech',
+  }
+
+  it('scores an audio-only provider on its media facts', () => {
+    const report = buildReport([
+      speech,
+      { ...speech, rawId: 'bare', modalities: null, pricing: null },
+    ])
+    const audio = report.providers[0]?.activities.audio
+    expect(audio?.facts).toEqual({
+      priced: { have: 1, need: 2 },
+      endpoint: { have: 2, need: 2 },
+      modalities: { have: 1, need: 2 },
+      outputModalities: { have: 1, need: 2 },
+    })
+    expect(audio?.score).toBe(5 / 8)
+    expect(report.providers[0]?.score).toBe(5 / 8)
+  })
+
+  it('does not count a models.dev card as a media price', () => {
+    const report = buildReport([
+      {
+        ...speech,
+        pricing: { tables: {}, source: { url: 'https://models.dev/x' } },
+      },
+    ])
+    expect(report.providers[0]?.activities.audio?.facts?.priced).toEqual({
+      have: 0,
+      need: 1,
+    })
+  })
+
+  it('counts an unclassified row as a gap on every provider', () => {
+    const report = buildReport([speech, { provider: 'speech', activity: null }])
+    const p = report.providers[0]
+    expect(p?.noActivity).toBe(1)
+    expect(p?.activities.unclassified?.facts).toEqual({
+      activity: { have: 0, need: 1 },
+    })
+    expect(p?.score).toBe(4 / 5)
+    const only = buildReport([{ provider: 'x', activity: null }])
+    expect(only.providers[0]?.score).toBe(0)
+  })
+
+  it('lists an activity with no fact set without scoring it', () => {
+    const report = buildReport([
+      { provider: 'embed', rawId: 'e', activity: 'embeddings' },
+    ])
+    const p = report.providers[0]
+    expect(p?.activities.embeddings).toMatchObject({
+      rows: 1,
+      facts: null,
+      score: null,
+    })
+    expect(p?.score).toBeNull()
+  })
+})
+
+describe('origin links', () => {
+  const origin: ModelRow = { provider: 'maker', rawId: 'model-4-5' }
+  const linked: ModelRow = {
+    provider: 'gateway',
+    rawId: 'model-4.5',
+    sameAs: { provider: 'maker', rawId: 'model-4-5' },
+  }
+
+  it('needs a link where another provider lists the same id', () => {
+    const report = buildReport([
+      origin,
+      linked,
+      { provider: 'host', rawId: 'model-4.5' },
+      { provider: 'host', rawId: 'own-model' },
+    ])
+    const by = (id: string) =>
+      report.providers.find((p) => p.provider === id)?.originLink
+    // The link target is the origin: it needs no link of its own.
+    expect(by('maker')).toEqual({ have: 0, need: 0, modelSilent: 0 })
+    expect(by('gateway')).toEqual({ have: 1, need: 1, modelSilent: 0 })
+    // Matches after dots are read as hyphens; `own-model` matches nothing.
+    expect(by('host')).toEqual({ have: 0, need: 1, modelSilent: 0 })
+  })
+
+  it('matches by alias and ignores ids at the same provider', () => {
+    const report = buildReport([
+      { provider: 'maker', rawId: 'm-latest', aliases: ['m-1'] },
+      { provider: 'maker', rawId: 'm-1' },
+      { provider: 'host', rawId: 'm-1' },
+    ])
+    const by = (id: string) =>
+      report.providers.find((p) => p.provider === id)?.originLink.need
+    expect(by('maker')).toBe(2)
+    expect(by('host')).toBe(1)
+  })
+
+  it('names the missing facts of one row', () => {
+    const row: ModelRow = { ...chat, maxOutput: null }
+    const origins = originIndex([row, { provider: 'other', rawId: 'm' }])
     expect(
-      report.providers[0]?.modelSilent?.replayReasoningContent,
-    ).toBeUndefined()
+      rowCompleteness(
+        scoreRow(row, parseLedger('- host: cacheRead — none'), origins),
+      ),
+    ).toEqual({ filled: 9, needed: 11, missing: ['maxOutput', 'originLink'] })
   })
 })
