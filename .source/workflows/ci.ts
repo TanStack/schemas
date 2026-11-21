@@ -3,10 +3,17 @@
 // GitHub) gets checks too. GitHub CI stays as it is; zizmor stays there.
 //
 // No secrets and no variables: a pull request run is someone's code.
-import { defineWorkflow, pullRequest, push, setup } from '@tanstack-source/ci'
+import {
+  defineWorkflow,
+  manual,
+  pullRequest,
+  push,
+  setup,
+} from '@tanstack-source/ci'
 
 export default defineWorkflow('ci', {
-  on: [pullRequest(), push({ branches: ['main'] })],
+  // manual(): run a branch by hand (`src workflow run ci --ref <branch>`).
+  on: [pullRequest(), push({ branches: ['main'] }), manual()],
 }).job('ci', {
   // Full history: the changeset check diffs against origin/main.
   checkout: { depth: 0 },
