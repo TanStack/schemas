@@ -12,6 +12,7 @@ import {
   changes,
   endpoints,
   models,
+  probeObservations,
   providers,
   schemaVersions,
 } from '../../db/schema.ts'
@@ -99,25 +100,45 @@ const haiku: ModelInfo = {
 }
 
 describe('pollProviderModels', () => {
-  it('fills a gap from a probe record, dated and probe-verified (#717)', async () => {
+  it('fills a gap from served probe observations, dated and probe-verified (#717)', async () => {
     const id = 'groq'
     const deps = await freshDeps(id)
     const rawId = 'openai/gpt-oss-safeguard-20b'
-    await pollProviderModels(
-      deps,
-      stubProvider(id, [
-        {
-          rawId,
-          activity: 'chat',
-          schemaEndpointId: 'openai/v1/chat/completions',
-          reasoning: {
-            mode: 'effort',
-            mandatory: null,
-            efforts: ['low', 'medium', 'high'],
-          },
+    const listing = stubProvider(id, [
+      {
+        rawId,
+        activity: 'chat',
+        schemaEndpointId: 'openai/v1/chat/completions',
+        reasoning: {
+          mode: 'effort',
+          mandatory: null,
+          efforts: ['low', 'medium', 'high'],
         },
-      ]),
+      },
+    ])
+    await pollProviderModels(deps, listing)
+    // Two runs that agree, as the probe cron would append them.
+    const facts: Array<[string, number | boolean]> = [
+      ['maxOutput', 65536],
+      ['reasoning.mandatory', true],
+      ['replayReasoningContent', false],
+    ]
+    await deps.db.insert(probeObservations).values(
+      ['run-1', 'run-2'].flatMap((runId, i) =>
+        facts.map(([fact, value]) => ({
+          runId,
+          providerId: id,
+          rawId,
+          route: 'openai/v1/chat/completions',
+          fact,
+          value,
+          status: 400,
+          message: 'test',
+          observedAt: 1_795_000_000 + i * 3_600,
+        })),
+      ),
     )
+    await pollProviderModels(deps, listing)
     const [row] = await deps.db
       .select()
       .from(models)

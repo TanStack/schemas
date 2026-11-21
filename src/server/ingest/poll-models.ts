@@ -30,6 +30,7 @@ import {
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
 import { keepValidReasoning } from '#/server/providers/reasoning-config.ts'
 import { withProbedFacts } from '#/server/providers/probes/index.ts'
+import type { ServedProbeFact } from '#/server/providers/probes/types.ts'
 import { KNOWLEDGE_CUTOFF } from '#/server/providers/types.ts'
 import { chatRequestMap } from '#/server/providers/request-map.ts'
 import {
@@ -80,6 +81,7 @@ import {
   nullModelsDevRateCards,
   storedCardIsPrior,
 } from './retire-models-dev.ts'
+import { loadServedProbeFacts } from './probe-facts.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 import {
@@ -170,17 +172,19 @@ function requestMapFor(providerId: string, info: ModelInfo) {
     : chatRequestMap(providerId, info.rawId, info.activity ?? null)
 }
 
-/** Probe records fill the gaps a row still has (issue #717). */
+/** Served probe facts fill the gaps a row still has (issue #717). */
 function probed(
   info: ModelInfo,
   providerId: string,
   bound: string | null,
+  served: Array<ServedProbeFact>,
 ): ModelInfo {
   return withProbedFacts(
     info,
     providerId,
     bound,
     requestMapFor(providerId, info),
+    served,
   )
 }
 
@@ -785,6 +789,7 @@ export async function pollProviderModels(
     .select()
     .from(models)
     .where(eq(models.providerId, provider.id))
+  const servedProbes = await loadServedProbeFacts(db, provider.id)
   const existingById = new Map(existingRows.map((m) => [m.id, m]))
   // Row id → deprecations page entry; the first spelling of an id wins.
   let deprecationIndex: Map<string, ModelDeprecation> | null = null
@@ -927,6 +932,7 @@ export async function pollProviderModels(
           { ...enriched, pricing: card, factSources: factSources ?? undefined },
           provider.id,
           bound,
+          servedProbes,
         ),
         existing,
       ),

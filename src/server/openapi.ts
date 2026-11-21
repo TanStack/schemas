@@ -605,7 +605,7 @@ export const openApiDocument = {
             description:
               'Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. ' +
               'JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. ' +
-              '`provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call recorded in `src/server/providers/probes/<provider>.ts` on `provenance.verifiedAt` (`YYYY-MM-DD`). Re-run it with `pnpm run probe -- <provider> [--write]`. A record older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.',
+              '`provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call dated `provenance.verifiedAt` (`YYYY-MM-DD`): a route record in `src/server/providers/probes/<provider>.ts`, or, for a model fact, two agreeing observations the Worker recorded from its own requests. A probe older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.',
             content: {
               'application/json': { schema: { type: 'object' } },
               'text/typescript': { schema: { type: 'string' } },
@@ -773,6 +773,33 @@ export const openApiDocument = {
           '401': errorResponse,
           '404': errorResponse,
           '502': errorResponse,
+        },
+      },
+    },
+    '/v1/admin/probes/{provider}': {
+      get: {
+        operationId: 'listProbeObservations',
+        summary:
+          'Audit the live probe observations for a provider (admin only, read-only)',
+        description:
+          'Every `probe_observations` row the probe cron appended for this provider, newest first: model, route, fact, value (null when the response stated nothing), status, the provider message that is the evidence, observedAt, runId, and `served` (true for the two agreeing observations behind a served value). `?model=` narrows to one raw id.',
+        parameters: [
+          providerParam,
+          {
+            name: 'model',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+          },
+        ],
+        security: [{ adminKey: [] }],
+        responses: {
+          '200': {
+            description: 'Observations.',
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+          '401': errorResponse,
+          '404': errorResponse,
         },
       },
     },
@@ -1028,7 +1055,7 @@ export const openApiDocument = {
                 staleProbes: {
                   type: 'integer',
                   description:
-                    'Present only when this provider has probe records older than 90 days. The probed facts stay served. Does not change status. Re-run with `pnpm run probe -- <provider> --write`.',
+                    'Present only when this provider has probed facts last verified more than 90 days ago. The probed facts stay served. Does not change status. The Worker re-verifies probed facts weekly.',
                 },
                 priceClearsRefused: {
                   type: 'object',

@@ -16,6 +16,7 @@ const EXCLUDED_CAPABILITIES = new Set([
   'syncProvider',
   'extractFalPricing',
   'exportCatalog',
+  'listProbeObservations',
 ])
 
 /**

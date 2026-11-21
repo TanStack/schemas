@@ -3,37 +3,95 @@ import type { ChatRequestMap } from '../request-map.ts'
 import { reasoningViolation } from '../types.ts'
 import type { FactSource, ModelInfo } from '../types.ts'
 import type { ChatCompletionsProbe } from './chat-completions.ts'
-import { probe as groqProbe } from './groq.ts'
 import {
   OPENCODE_GO_PROBE_SOURCE,
   records as opencodeGo,
 } from './opencode-go.ts'
-import { records as groqRecords } from './records/groq.ts'
 import { probeIsStale } from './types.ts'
-import type { ProbedFactRecord, ProbeRecord } from './types.ts'
+import type { ProbeRecord, ServedProbeFact } from './types.ts'
 
 const SOURCE: Record<string, string> = {
   'opencode-go': OPENCODE_GO_PROBE_SOURCE,
 }
 
-/** Every committed probe. Add a provider by importing its module here. */
+/** LEGACY hand-written route records (see `ProbeRecord`). */
 export const probeRecords: Array<ProbeRecord> = [...opencodeGo]
 
 /**
- * Providers on the generic `chat/completions` probe (issue #717). Opt in
- * with `probes/<provider>.ts` exporting a `ChatCompletionsProbe`, an empty
- * `records/<provider>.ts`, and one entry in each list below. Set
- * `mandatoryRule` only for a provider whose `reasoning_effort` level list
- * is per model and is the model's only reasoning control.
+ * Secret name assumed for the LLM Gateway key (not final). The probe reads
+ * it from here only; llmgateway stays a disabled gateway either way.
  */
-export const chatProbes: Array<ChatCompletionsProbe> = [groqProbe]
+export const LLMGATEWAY_KEY_SECRET = 'LLMGATEWAY_API_KEY'
 
-/** Every committed fact a live response stated. */
-export const probedFactRecords: Array<ProbedFactRecord> = [...groqRecords]
+/**
+ * Providers on the generic `chat/completions` probe (issue #717). `url` is
+ * the adapter's API server plus the chat route its rows bind
+ * (`generationEndpointId`); the probe applies only to rows bound to
+ * exactly `route`. Set `mandatoryRule` only for a provider whose
+ * `reasoning_effort` level list is per model and is the model's only
+ * reasoning control. A missing key is a logged skip.
+ *
+ * `checks` lists only the checks a rule reads in that provider's own
+ * wording (a captured fixture shows it), so every request is an expected
+ * 400. "Probe everything new" means every new model of a provider listed
+ * here. To add a provider: capture its responses with the read-only
+ * `pnpm run probe -- <provider> <rawId>` (add its entry first with the
+ * checks to try), add a rule to `classifyProbeResponse` and the body to
+ * `fixtures/probe-responses.json`, then list only the checks that decide.
+ * Never list a check its provider answers with a 2xx: that is a billed
+ * completion no rule can read.
+ *
+ * Not here: providers whose captured responses no rule reads yet (the
+ * fixtures show Fireworks, Together and xAI answer `limits` with a 200),
+ * perplexity (rows bind `v1/agent`), opencode-go (no key). Gateways and
+ * resellers are not listed; llmgateway is listed only to name its secret
+ * and stays off as a `gateway`.
+ */
+export const chatProbes: Array<ChatCompletionsProbe> = [
+  {
+    provider: 'openai',
+    url: 'https://api.openai.com/v1/chat/completions',
+    route: 'chat/completions',
+    keyEnv: 'OPENAI_API_KEY',
+    // "'reasoning_effort' does not support 'none' with this model.
+    // Supported values are: …" is OpenAI's own per-model list.
+    mandatoryRule: 'openai',
+    // `replay` is a 200 on OpenAI (fixture openai-replay-gpt-4o-mini).
+    checks: ['limits', 'off'],
+  },
+  {
+    provider: 'groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    route: 'openai/v1/chat/completions',
+    keyEnv: 'GROQ_API_KEY',
+    // Groq's level list is per model (qwen3 takes `none`, gpt-oss does
+    // not), and `reasoning_effort` is the gpt-oss models' only control.
+    mandatoryRule: 'groq',
+    checks: ['limits', 'replay', 'off'],
+  },
+  {
+    provider: 'mistral',
+    url: 'https://api.mistral.ai/v1/chat/completions',
+    route: 'v1/chat/completions',
+    keyEnv: 'MISTRAL_API_KEY',
+    // `limits` is a 200 on Mistral (fixture mistral-limits-codestral-2508);
+    // `replay` is a pydantic 422 the replay rule reads.
+    checks: ['replay'],
+  },
+  {
+    provider: 'llmgateway',
+    url: 'https://api.llmgateway.io/v1/chat/completions',
+    route: 'v1/chat/completions',
+    keyEnv: LLMGATEWAY_KEY_SECRET,
+    // No captured response shows a 400 in LLM Gateway's own wording rather
+    // than one forwarded from the upstream; until one does, it stays off.
+    gateway: true,
+    checks: [],
+  },
+]
 
-/** The generated records file of a chat probe provider. */
-export function probedFactFile(provider: string): string {
-  return `src/server/providers/probes/records/${provider}.ts`
+export function chatProbeFor(provider: string): ChatCompletionsProbe | null {
+  return chatProbes.find((probe) => probe.provider === provider) ?? null
 }
 
 export function probesFor(provider: string): Array<ProbeRecord> {
@@ -76,39 +134,41 @@ export function probeFactSource(
   }
 }
 
-/** Records whose `verifiedAt` is older than `PROBE_STALE_DAYS`. */
-export function staleProbeCount(provider: string, now = new Date()): number {
-  return [
-    ...probesFor(provider),
-    ...probedFactRecords.filter((record) => record.provider === provider),
-  ].filter((record) => probeIsStale(record.verifiedAt, now)).length
+/** LEGACY route records whose `verifiedAt` is older than `PROBE_STALE_DAYS`. */
+export function staleRouteRecordCount(
+  provider: string,
+  now = new Date(),
+): number {
+  return probesFor(provider).filter((record) =>
+    probeIsStale(record.verifiedAt, now),
+  ).length
 }
 
-function probedSource(record: ProbedFactRecord): FactSource {
+function probedSource(fact: ServedProbeFact): FactSource {
   return {
     derivation: 'probe-verified',
-    verifiedAt: record.verifiedAt,
-    sourceUrl: `${probedFactFile(record.provider)}#${record.id}`,
+    verifiedAt: fact.verifiedAt,
+    sourceUrl: fact.sourceUrl,
   }
 }
 
 /**
- * Fills a row's empty facts from probe records naming this exact model
- * and the route the row binds. A stated value is never replaced: a probe
- * fills a gap. `requestMap` is the map the row would store.
+ * Fills a row's empty facts from served probe facts naming this exact
+ * model and the route the row binds. A stated value is never replaced: a
+ * probe fills a gap. `requestMap` is the map the row would store.
  */
 export function withProbedFacts(
   info: ModelInfo,
   provider: string,
   route: string | null,
   requestMap: ChatRequestMap | null,
-  records: Array<ProbedFactRecord> = probedFactRecords,
+  served: Array<ServedProbeFact>,
 ): ModelInfo {
-  const mine = records.filter(
-    (record) =>
-      record.provider === provider &&
-      record.model === info.rawId &&
-      record.route === route,
+  const mine = served.filter(
+    (fact) =>
+      fact.provider === provider &&
+      fact.model === info.rawId &&
+      fact.route === route,
   )
   if (mine.length === 0) return info
   const next: ModelInfo = { ...info, factSources: { ...info.factSources } }

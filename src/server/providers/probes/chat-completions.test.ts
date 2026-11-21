@@ -2,20 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   classifyProbeResponse,
-  mergeProbedRecords,
   probeBody,
   probeChecks,
+  redactKey,
 } from './chat-completions.ts'
 import type { MandatoryRule, ProbeCheck } from './chat-completions.ts'
 import responses from './fixtures/probe-responses.json'
-import {
-  chatProbes,
-  probedFactRecords,
-  staleProbeCount,
-  withProbedFacts,
-} from './index.ts'
-import { records as groqRecords } from './records/groq.ts'
-import type { ProbedFactRecord } from './types.ts'
+import { chatProbes, withProbedFacts } from './index.ts'
+import type { ServedProbeFact } from './types.ts'
 
 /**
  * Real bodies from live probe calls on 2026-11-21 (account ids and a
@@ -87,7 +81,7 @@ describe('classifyProbeResponse', () => {
     ).toHaveProperty('undecided')
     expect(
       probeChecks({ ...chatProbes[0]!, mandatoryRule: undefined }),
-    ).toEqual(['limits', 'replay'])
+    ).toEqual(['limits'])
   })
 
   it('records nothing when the level list has an off value', () => {
@@ -106,23 +100,27 @@ describe('classifyProbeResponse', () => {
     expect(probeBody('off', 'm').max_tokens).toBe(1)
     expect(probeBody('limits', 'm').stream).toBe(true)
   })
+
+  it('redacts the key and its leading and trailing fragments', () => {
+    const key = 'sk-proj-abcdef0123456789xyzXYZ'
+    expect(
+      redactKey(`bad key ${key}; also sk-proj-…6789xyzXYZ`, key),
+    ).not.toMatch(/sk-proj-|xyzXYZ/)
+  })
 })
 
 function record(
-  fact: ProbedFactRecord['fact'],
+  fact: ServedProbeFact['fact'],
   value: number | boolean,
-): ProbedFactRecord {
+): ServedProbeFact {
   return {
-    id: `m:${fact}`,
     provider: 'p',
     model: 'm',
     fact,
     value,
     route: 'v1/chat/completions',
     verifiedAt: '2026-11-21',
-    ranBy: 'test',
-    request: { url: 'https://example.com', body: {} },
-    evidence: { status: 400, message: 'x' },
+    sourceUrl: 'https://example.com/v1/chat/completions',
   }
 }
 
@@ -133,10 +131,10 @@ describe('withProbedFacts', () => {
     record('replayReasoningContent', false),
     record('reasoning.mandatory', true),
   ]
-  const source = (id: string) => ({
+  const source = (_fact: string) => ({
     derivation: 'probe-verified',
     verifiedAt: '2026-11-21',
-    sourceUrl: `src/server/providers/probes/records/p.ts#m:${id}`,
+    sourceUrl: 'https://example.com/v1/chat/completions',
   })
 
   it('fills empty facts with a dated probe-verified source', () => {
@@ -217,100 +215,5 @@ describe('withProbedFacts', () => {
       [record('reasoning.mandatory', true)],
     )
     expect(withNone.reasoning?.mandatory).toBeNull()
-  })
-
-  it('counts the committed groq records as current', () => {
-    expect(staleProbeCount('groq', new Date('2026-11-22T00:00:00Z'))).toBe(0)
-    expect(staleProbeCount('groq', new Date('2027-03-01T00:00:00Z'))).toBe(6)
-  })
-})
-
-describe('mergeProbedRecords', () => {
-  const now = new Date('2026-11-28T00:00:00Z')
-  const groq = (over: Partial<ProbedFactRecord>): ProbedFactRecord => ({
-    ...record('maxOutput', 65536),
-    provider: 'groq',
-    id: 'm:maxOutput',
-    ...over,
-  })
-
-  it("never reads or writes another provider's record with the same id", () => {
-    const together = groq({ provider: 'together', verifiedAt: '2026-11-20' })
-    const found = groq({ verifiedAt: '2026-11-28' })
-    const { records } = mergeProbedRecords('groq', [together], [found], now)
-    expect(records).toEqual([found])
-  })
-
-  it('keeps a recent same value, re-dates an old one, replaces a new value', () => {
-    const recent = groq({ verifiedAt: '2026-11-21' })
-    const old = groq({
-      id: 'm:contextWindow',
-      fact: 'contextWindow',
-      value: 8,
-      verifiedAt: '2026-08-01',
-    })
-    const changed = groq({
-      id: 'm:reasoning.mandatory',
-      fact: 'reasoning.mandatory',
-      value: true,
-      verifiedAt: '2026-11-21',
-    })
-    const found = [
-      groq({ verifiedAt: '2026-11-28' }),
-      { ...old, verifiedAt: '2026-11-28' },
-      { ...changed, value: false, verifiedAt: '2026-11-28' },
-    ]
-    const { records } = mergeProbedRecords(
-      'groq',
-      [recent, old, changed],
-      found,
-      now,
-    )
-    expect(
-      records.map((item) => [item.id, item.verifiedAt, item.value]),
-    ).toEqual([
-      ['m:contextWindow', '2026-11-28', 8],
-      ['m:maxOutput', '2026-11-21', 65536],
-      ['m:reasoning.mandatory', '2026-11-28', false],
-    ])
-  })
-
-  it('keeps and lists a stored record the run did not decide', () => {
-    const stored = groq({})
-    const { records, unconfirmed } = mergeProbedRecords(
-      'groq',
-      [stored],
-      [],
-      now,
-    )
-    expect(records).toEqual([stored])
-    expect(unconfirmed).toEqual([stored])
-  })
-
-  it('rewrites the committed groq records unchanged from their own evidence', () => {
-    // Re-classify each committed record's evidence, then merge as a run would.
-    const found = groqRecords.map((item) => {
-      const check: ProbeCheck =
-        item.fact === 'maxOutput'
-          ? 'limits'
-          : item.fact === 'replayReasoningContent'
-            ? 'replay'
-            : 'off'
-      const outcome = classifyProbeResponse(
-        check,
-        item.evidence.status,
-        JSON.stringify({ error: { message: item.evidence.message } }),
-        'groq',
-      )
-      expect(outcome).toMatchObject({ fact: item.fact, value: item.value })
-      return item
-    })
-    const { records } = mergeProbedRecords(
-      'groq',
-      probedFactRecords,
-      found,
-      new Date('2026-11-21T00:00:00Z'),
-    )
-    expect(records).toEqual(groqRecords)
   })
 })

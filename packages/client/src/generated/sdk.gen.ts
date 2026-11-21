@@ -43,6 +43,9 @@ import type {
   ListChangesResponses,
   ListModelsData,
   ListModelsResponses,
+  ListProbeObservationsData,
+  ListProbeObservationsErrors,
+  ListProbeObservationsResponses,
   ListProviderModelsData,
   ListProviderModelsErrors,
   ListProviderModelsResponses,
@@ -311,6 +314,28 @@ export const syncProvider = <ThrowOnError extends boolean = false>(
   >({
     security: [{ name: 'X-Admin-Key', type: 'apiKey' }],
     url: '/v1/admin/sync/{provider}',
+    ...options,
+  })
+
+/**
+ * Audit the live probe observations for a provider (admin only, read-only)
+ *
+ * Every `probe_observations` row the probe cron appended for this provider, newest first: model, route, fact, value (null when the response stated nothing), status, the provider message that is the evidence, observedAt, runId, and `served` (true for the two agreeing observations behind a served value). `?model=` narrows to one raw id.
+ */
+export const listProbeObservations = <ThrowOnError extends boolean = false>(
+  options: Options<ListProbeObservationsData, ThrowOnError>,
+): RequestResult<
+  ListProbeObservationsResponses,
+  ListProbeObservationsErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).get<
+    ListProbeObservationsResponses,
+    ListProbeObservationsErrors,
+    ThrowOnError
+  >({
+    security: [{ name: 'X-Admin-Key', type: 'apiKey' }],
+    url: '/v1/admin/probes/{provider}',
     ...options,
   })
 

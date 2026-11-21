@@ -33,6 +33,7 @@ import {
   specSyncShard,
   syncAllProviders,
 } from '#/server/ingest/sync.ts'
+import { PROBE_CRON, runProbeCron } from '#/server/ingest/probe-facts.ts'
 import { recordCompleteness } from '#/server/status.ts'
 import { recordRowShape } from '#/server/row-shape.ts'
 import { runWebhookTick } from '#/server/webhooks.ts'
@@ -302,6 +303,24 @@ export default {
           gatewayId: env.AI_GATEWAY_ID,
         }).then((outcome) => {
           console.log(JSON.stringify({ job: 'fal-pricing-extract', outcome }))
+        }),
+      )
+      return
+    }
+    // Live fact probes (issue #717): their own hourly firing, so the
+    // request cap and subrequests never share the 15-minute poll's budget.
+    if (controller.cron === PROBE_CRON) {
+      ctx.waitUntil(
+        // `observed_at` is the firing's scheduled time, so two firings are
+        // exactly PROBE_RUN_GAP_SECONDS apart and an overlap is not.
+        // runProbeCron reports a failure as ingest_failed and rethrows.
+        runProbeCron({
+          db: getDb(env),
+          secrets: env,
+          now: () => Math.floor(controller.scheduledTime / 1000),
+          posthogKey: env.POSTHOG_PROJECT_KEY,
+        }).then((outcome) => {
+          console.log(JSON.stringify({ job: 'probe-run', outcome }))
         }),
       )
       return

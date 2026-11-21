@@ -668,6 +668,39 @@ export const cacheMeta = sqliteTable('cache_meta', {
     .default(false),
 })
 
+// ---------------------------------------------------------------------------
+// Live probe observations (issue #717). Append-only: the Worker inserts one
+// row per probe request it sent and never updates or deletes one. `value`
+// is the JSON fact the response stated, null when it stated nothing (the
+// row is then only the attempt, with the reason in `message`). Which value
+// is served is computed from these rows (`servedProbeFacts`).
+// ---------------------------------------------------------------------------
+
+export const probeObservations = sqliteTable(
+  'probe_observations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: text('run_id').notNull(),
+    providerId: text('provider_id')
+      .notNull()
+      .references(() => providers.id, { onDelete: 'cascade' }),
+    rawId: text('raw_id').notNull(),
+    route: text('route').notNull(),
+    fact: text('fact').notNull(),
+    value: text('value', { mode: 'json' }).$type<number | boolean | null>(),
+    status: integer('status').notNull(),
+    message: text('message').notNull(),
+    observedAt: integer('observed_at').notNull(),
+  },
+  (table) => [
+    index('probe_observations_provider_model_idx').on(
+      table.providerId,
+      table.rawId,
+      table.fact,
+    ),
+  ],
+)
+
 export const subscriptions = sqliteTable(
   'subscriptions',
   {

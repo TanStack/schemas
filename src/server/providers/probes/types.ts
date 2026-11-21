@@ -1,10 +1,6 @@
 /**
- * A live check against a provider API, kept as data (issue #461).
- * One module per provider under this directory. Adapters bind a fact only
- * when a record names that exact model and route. A record older than
- * `PROBE_STALE_DAYS` is still served; `GET /v1/status` counts those as
- * `staleProbes`. Re-run with `pnpm run probe -- <provider> [--write]`;
- * `.source/workflows/probe.ts` runs it weekly for the chat probes.
+ * A served probe fact older than `PROBE_STALE_DAYS` is still served;
+ * `GET /v1/status` counts those as `staleProbes`.
  */
 export const PROBE_STALE_DAYS = 90
 
@@ -24,6 +20,12 @@ export interface ProbeExpect {
   sse?: boolean
 }
 
+/**
+ * LEGACY (issue #461, kept untouched by #717): the hand-written OpenCode Go
+ * route records in `opencode-go.ts`. Nothing in the Worker re-observes
+ * them yet, so they are still source, not D1 data. `pnpm run probe --
+ * opencode-go` checks them read-only; nothing re-dates them.
+ */
 export interface ProbeRecord {
   id: string
   provider: string
@@ -54,26 +56,22 @@ export type ProbedFact =
   | 'reasoning.mandatory'
 
 /**
- * One fact a live response stated. Written only by
- * `pnpm run probe -- <provider> --write` into `records/<provider>.ts`;
- * never by hand. A run that cannot decide leaves the record as it was.
+ * A probed fact the catalog may serve: two decided observations from
+ * separate runs agreed (`servedProbeFacts`). Built from `probe_observations`
+ * rows the Worker wrote from its own live responses; never typed in.
  */
-export interface ProbedFactRecord {
-  id: string
+export interface ServedProbeFact {
   provider: string
-  /** Catalog raw id. A record never applies to another id in the family. */
+  /** Catalog raw id. Never applies to another id in the family. */
   model: string
   fact: ProbedFact
   value: number | boolean
-  /** Endpoint id the row must bind for the record to apply. */
+  /** Endpoint id the row must bind for the fact to apply. */
   route: string
-  /** `YYYY-MM-DD` of the run whose response stated `value`. */
+  /** `YYYY-MM-DD` of the newer agreeing observation. */
   verifiedAt: string
-  ranBy: string
-  /** What was sent, without headers. */
-  request: { url: string; body: Record<string, unknown> }
-  /** The status and the error message that stated the value. */
-  evidence: { status: number; message: string }
+  /** The endpoint the probe called. No secrets. */
+  sourceUrl: string
 }
 
 const DAY_MS = 86_400_000
