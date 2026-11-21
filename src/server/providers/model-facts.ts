@@ -282,9 +282,14 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // markdown page states (#543). A v40 page entry has no markdown price
 // and would log pricing_lost until the TTL.
 // v42: the BytePlus pricing entry gained `named` (#646); a v41 entry has none.
-// v43: Gemini model pages read "Grounding with Google Search" as
-// `googleSearch` (#707). A v42 entry would leave it out for six hours.
-const DOCS_CACHE_VERSION = 'v43'
+// v43: an OpenAI page that rejects `none` effort is effort mode, mandatory
+// true (#711). A v42 entry would keep GPT-6.2 reasoning null for six hours.
+// v44: a Mistral model page entry gained `releasedAt` from its markdown
+// twin (#708); a v43 entry has none.
+// v45: Gemini model pages read "Grounding with Google Search" as
+// `googleSearch` (#707), and OpenAI pages cache their Endpoints support.
+// A v44 entry would leave both out for six hours.
+const DOCS_CACHE_VERSION = 'v45'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

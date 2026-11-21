@@ -755,7 +755,7 @@ describe('mistral model page price and max output', () => {
           [[tip('Text input'), tip('Text output')]],
         ),
       'https://docs.mistral.ai/models/mistral-medium-3-5-26-04.md':
-        '- Pricing: Input $1.5 /M Tokens; Output $7.5 /M Tokens\n',
+        '- Release date: 2026-04-28\n- Pricing: Input $1.5 /M Tokens; Output $7.5 /M Tokens\n',
       [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
     }
     globalThis.fetch = ((url: string) => {
@@ -829,7 +829,7 @@ describe('mistral model page price and max output', () => {
         [[tip('Text input'), tip('Text output')]],
       ),
       'https://docs.mistral.ai/models/leanstral-1-5.md':
-        '- Pricing: Free; Input $0 /M Tokens; Output $0 /M Tokens\n',
+        '- Release date: 2026-06-30\n- Pricing: Free; Input $0 /M Tokens; Output $0 /M Tokens\n',
       [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
     }
     globalThis.fetch = ((url: string) => {
@@ -848,8 +848,10 @@ describe('mistral model page price and max output', () => {
       ])
       expect(lookup.seen.has('voxtral-mini-tts-2603')).toBe(false)
       expect(lookup('voxtral-mini-tts-2603').pricing).toBeUndefined()
+      // The 404 twin is unread for the release date too (#708).
       expect(lookup('voxtral-mini-tts-2603').absent).toEqual({
         pricing: 'unavailable',
+        releasedAt: 'unavailable',
       })
       expect(lookup('voxtral-mini-tts-2603').modalities).toEqual({
         input: ['text'],

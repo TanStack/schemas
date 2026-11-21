@@ -211,6 +211,7 @@ export interface ModelFactSources {
    */
   capabilities?: Record<string, FactSource>
   knowledgeCutoff?: FactSource
+  releasedAt?: FactSource
   /** Covers `openWeights` and `weightsUrl`. */
   openWeights?: FactSource
   reasoning?: FactSource

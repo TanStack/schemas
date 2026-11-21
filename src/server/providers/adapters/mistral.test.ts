@@ -9,11 +9,19 @@ import {
 } from '../fixtures/mistral-model-page.ts'
 import { provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
-import { MISTRAL_WEBSEARCH_URL } from '../mistral-pricing.ts'
+import {
+  MISTRAL_WEBSEARCH_URL,
+  parseMistralMarkdownReleaseDate,
+} from '../mistral-pricing.ts'
 import { MISTRAL_REASONING_URL } from '../reasoning-config.ts'
 
 const MODELS_PAGE = readFileSync(
   new URL('../fixtures/mistral-models.md.txt', import.meta.url),
+  'utf8',
+)
+// https://docs.mistral.ai/models/mistral-small-4-0-26-03.md, 2026-11-21.
+const SMALL_4_MARKDOWN = readFileSync(
+  new URL('../fixtures/mistral-small-4-0-26-03.md.txt', import.meta.url),
   'utf8',
 )
 
@@ -110,11 +118,8 @@ describe('mistral listModels', () => {
           }) => rest,
         ),
       ).toEqual([
-        {
-          rawId: 'mistral-small-latest',
-          releasedAt: 1_700_000_000,
-          activity: null,
-        },
+        // `created` is the request time on every row (#708), not a date.
+        { rawId: 'mistral-small-latest', releasedAt: null, activity: null },
         { rawId: 'mistral-embed', releasedAt: null, activity: 'embeddings' },
       ])
     } finally {
@@ -160,6 +165,8 @@ describe('mistral listModels modalities', () => {
             ],
           ],
         ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        SMALL_4_MARKDOWN,
       [MISTRAL_REASONING_URL]:
         '- `mistral-small-latest`: Supports adjustable reasoning via the `reasoning_effort` parameter.',
       'https://docs.mistral.ai/models':
@@ -222,6 +229,15 @@ describe('mistral listModels modalities', () => {
       expect(vibe?.factSources?.modalities?.sourceUrl).toBe(
         'https://docs.mistral.ai/models/mistral-small-4-0-26-03',
       )
+      // The markdown twin's `Release date: 2026-03-16` (#708).
+      expect(small?.releasedAt).toBe(Date.UTC(2026, 2, 16) / 1000)
+      expect(small?.factSources?.releasedAt).toMatchObject({
+        derivation: 'docs-derived',
+        sourceUrl: 'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md',
+        path: 'Release date',
+      })
+      expect(vibe?.releasedAt).toBe(small?.releasedAt)
+      expect(unpriced?.releasedAt).toBeNull()
       // No page names this id: unknown, not a guess, and not a cleared price.
       expect(unpriced?.modalities).toBeUndefined()
       expect(unpriced?.factSources?.modalities).toBeUndefined()
@@ -229,6 +245,90 @@ describe('mistral listModels modalities', () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+})
+
+describe('mistral listModels release dates', () => {
+  it('lets the listing alias settle an id two pages date differently', async () => {
+    const page = (ids: Array<string>) =>
+      mistralModelPage(ids, [[tip('Text input'), tip('Audio output')]])
+    const pages: Record<string, string> = {
+      'https://api.mistral.ai/v1/models': JSON.stringify({
+        data: [
+          { id: 'voxtral-mini-tts-2603', aliases: ['voxtral-mini-tts-latest'] },
+          { id: 'voxtral-mini-tts-latest', aliases: ['voxtral-mini-tts-2603'] },
+          { id: 'voxtral-mini-tts-3-0' },
+          { id: 'tts-orphan' },
+        ],
+      }),
+      'https://docs.mistral.ai/inference/pricing': `<h2>Audio models</h2>
+<p>Prices /M Chars</p>
+<table>
+<tr><td><a href="/models/voxtral-tts-26-03">TTS</a></td><td>$16</td></tr>
+<tr><td><a href="/models/voxtral-mini-tts-3-0">TTS 3</a></td><td>$16</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+      // Both pages name `-latest` and `tts-orphan`, with different dates.
+      'https://docs.mistral.ai/models/voxtral-tts-26-03': page([
+        'voxtral-mini-tts-2603',
+        'voxtral-mini-tts-latest',
+        'tts-orphan',
+      ]),
+      'https://docs.mistral.ai/models/voxtral-tts-26-03.md':
+        '- Release date: 2026-03-23\n',
+      'https://docs.mistral.ai/models/voxtral-mini-tts-3-0': page([
+        'voxtral-mini-tts-3-0',
+        'voxtral-mini-tts-latest',
+        'tts-orphan',
+      ]),
+      'https://docs.mistral.ai/models/voxtral-mini-tts-3-0.md':
+        '- Release date: 2026-10-20\n',
+    }
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const body = pages[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('not found', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const { models } = await provider.listModels({ MISTRAL_API_KEY: 'k' })
+      const byId = new Map(models.map((model) => [model.rawId, model]))
+      const latest = byId.get('voxtral-mini-tts-latest')
+      // The listing says `-latest` is the 2603 snapshot: its page's date.
+      expect(latest?.releasedAt).toBe(Date.UTC(2026, 2, 23) / 1000)
+      expect(latest?.factSources?.releasedAt?.sourceUrl).toBe(
+        'https://docs.mistral.ai/models/voxtral-tts-26-03.md',
+      )
+      expect(byId.get('voxtral-mini-tts-3-0')?.releasedAt).toBe(
+        Date.UTC(2026, 9, 20) / 1000,
+      )
+      // Same page conflict, no mutual alias: no date.
+      const orphan = byId.get('tts-orphan')
+      expect(orphan?.releasedAt).toBeNull()
+      expect(orphan?.factSources?.releasedAt).toBeUndefined()
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
+describe('parseMistralMarkdownReleaseDate', () => {
+  it('reads the page date, null for a page with none, throws on junk', () => {
+    expect(parseMistralMarkdownReleaseDate(SMALL_4_MARKDOWN)).toBe(
+      Date.UTC(2026, 2, 16) / 1000,
+    )
+    // Timestral pages state no release date.
+    expect(parseMistralMarkdownReleaseDate('- Version: 1.0\n')).toBeNull()
+    expect(() =>
+      parseMistralMarkdownReleaseDate('- Release date: March 2026\n'),
+    ).toThrow(/release date/)
+    expect(() =>
+      parseMistralMarkdownReleaseDate('- Release date: 2026-02-30\n'),
+    ).toThrow(/release date/)
   })
 })
 
