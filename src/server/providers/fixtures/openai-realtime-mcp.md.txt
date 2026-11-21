@@ -58,6 +58,128 @@ const event = {
 ws.send(JSON.stringify(event));
 ```
 
+```python
+event = {
+    "type": "session.update",
+    "session": {
+        "type": "realtime",
+        "model": "gpt-realtime-2.1",
+        "output_modalities": ["text"],
+        "tools": [
+            {
+                "type": "mcp",
+                "server_label": "openai_docs",
+                "server_url": "https://developers.openai.com/mcp",
+                "allowed_tools": ["search_openai_docs", "fetch_openai_doc"],
+                "require_approval": "never",
+            }
+        ],
+    },
+}
+
+ws.send(json.dumps(event))
+```
+
+```go
+if err := conn.Send(ctx, realtime.RealtimeClientEventParamOfSessionUpdate(realtime.RealtimeSessionCreateRequestParam{
+	Model:            "gpt-realtime-2.1",
+	OutputModalities: []string{"text"},
+	Tools: realtime.RealtimeToolsConfigParam{
+		{
+			OfMcp: &realtime.RealtimeToolsConfigUnionMcpParam{
+				ServerLabel: "openai_docs",
+				ServerURL:   openai.String("https://developers.openai.com/mcp"),
+				AllowedTools: realtime.RealtimeToolsConfigUnionMcpAllowedToolsParam{
+					OfMcpAllowedTools: []string{"search_openai_docs", "fetch_openai_doc"},
+				},
+				RequireApproval: realtime.RealtimeToolsConfigUnionMcpRequireApprovalParam{
+					OfMcpToolApprovalSetting: openai.String("never"),
+				},
+			},
+		},
+	},
+})); err != nil {
+	return err
+}
+```
+
+```java
+import com.openai.client.okhttp.OkHttpClient;
+import com.openai.core.ClientOptions;
+import com.openai.helpers.RealtimeConnection;
+import com.openai.helpers.RealtimeWebSocketOptions;
+import com.openai.models.realtime.*;
+import java.util.List;
+
+connection.send(
+    RealtimeClientEvent.ofSessionUpdate(
+        SessionUpdateEvent.builder()
+            .session(
+                RealtimeSessionCreateRequest.builder()
+                    .model("gpt-realtime-2.1")
+                    .addOutputModality(RealtimeSessionCreateRequest.OutputModality.TEXT)
+                    .addTool(
+                        RealtimeToolsConfigUnion.Mcp.builder()
+                            .serverLabel("openai_docs")
+                            .serverUrl("https://developers.openai.com/mcp")
+                            .allowedToolsOfMcp(
+                                List.of("search_openai_docs", "fetch_openai_doc"))
+                            .requireApproval(
+                                RealtimeToolsConfigUnion.Mcp.RequireApproval
+                                    .McpToolApprovalSetting.NEVER)
+                            .build())
+                    .build())
+            .build()));
+```
+
+```csharp
+using OpenAI.Realtime;
+
+#pragma warning disable OPENAI002
+
+await session.SendCommandAsync(new RealtimeClientCommandSessionUpdate(new RealtimeConversationSessionOptions
+{
+    Model = "gpt-realtime-2.1",
+    OutputModalities =
+    {
+        RealtimeOutputModality.Text
+    },
+    Tools =
+    {
+        new RealtimeMcpTool("openai_docs", new Uri("https://developers.openai.com/mcp"))
+        {
+            AllowedTools = new()
+            {
+                ToolNames =
+                {
+                    "search_openai_docs",
+                    "fetch_openai_doc"
+                }
+            },
+            ToolCallApprovalPolicy = RealtimeDefaultMcpToolCallApprovalPolicy.NeverRequireApproval
+        }
+    }
+}), timeout.Token);
+```
+
+```ruby
+connection.session.update(
+  type: :realtime,
+  model: "gpt-realtime-2.1",
+  output_modalities: [:text],
+  tools: [
+    {
+      type: :mcp,
+      server_label: "openai_docs",
+      server_url: "https://developers.openai.com/mcp",
+      allowed_tools: ["search_openai_docs", "fetch_openai_doc"],
+      require_approval: :never
+    }
+  ]
+)
+```
+
+
 ### Legacy connectors
 
 `connector_id` is deprecated for models released after September 1,
@@ -98,3 +220,149 @@ const event = {
 
 ws.send(JSON.stringify(event));
 ```
+
+```python
+import os
+
+connector_authorization = os.environ["OPENAI_CONNECTOR_AUTHORIZATION"]
+
+event = {
+    "type": "session.update",
+    "session": {
+        "type": "realtime",
+        "model": "gpt-realtime-1.5",
+        "output_modalities": ["text"],
+        "tools": [
+            {
+                "type": "mcp",
+                "server_label": "google_calendar",
+                "connector_id": "connector_googlecalendar",
+                "authorization": connector_authorization,
+                "allowed_tools": ["search_events", "read_event"],
+                "require_approval": "never",
+            }
+        ],
+    },
+}
+
+ws.send(json.dumps(event))
+```
+
+```go
+accessToken := os.Getenv("OPENAI_MCP_ACCESS_TOKEN")
+if accessToken == "" {
+	return fmt.Errorf("OPENAI_MCP_ACCESS_TOKEN is required")
+}
+
+if err := conn.Send(ctx, realtime.RealtimeClientEventParamOfSessionUpdate(realtime.RealtimeSessionCreateRequestParam{
+	Model:            "gpt-realtime-1.5",
+	OutputModalities: []string{"text"},
+	Tools: realtime.RealtimeToolsConfigParam{
+		{
+			OfMcp: &realtime.RealtimeToolsConfigUnionMcpParam{
+				ServerLabel:   "google_calendar",
+				ConnectorID:   "connector_googlecalendar",
+				Authorization: param.NewOpt(accessToken),
+				AllowedTools: realtime.RealtimeToolsConfigUnionMcpAllowedToolsParam{
+					OfMcpAllowedTools: []string{"search_events", "read_event"},
+				},
+				RequireApproval: realtime.RealtimeToolsConfigUnionMcpRequireApprovalParam{
+					OfMcpToolApprovalSetting: openai.String("never"),
+				},
+			},
+		},
+	},
+})); err != nil {
+	return err
+}
+```
+
+```java
+import com.openai.client.okhttp.OkHttpClient;
+import com.openai.core.ClientOptions;
+import com.openai.helpers.RealtimeConnection;
+import com.openai.helpers.RealtimeWebSocketOptions;
+import com.openai.models.realtime.*;
+import java.util.List;
+
+connection.send(
+    RealtimeClientEvent.ofSessionUpdate(
+        SessionUpdateEvent.builder()
+            .session(
+                RealtimeSessionCreateRequest.builder()
+                    .model("gpt-realtime-1.5")
+                    .addOutputModality(RealtimeSessionCreateRequest.OutputModality.TEXT)
+                    .addTool(
+                        RealtimeToolsConfigUnion.Mcp.builder()
+                            .serverLabel("google_calendar")
+                            .connectorId(
+                                RealtimeToolsConfigUnion.Mcp.ConnectorId
+                                    .CONNECTOR_GOOGLECALENDAR)
+                            .authorization(System.getenv("OPENAI_CONNECTOR_AUTHORIZATION"))
+                            .allowedToolsOfMcp(List.of("search_events", "read_event"))
+                            .requireApproval(
+                                RealtimeToolsConfigUnion.Mcp.RequireApproval
+                                    .McpToolApprovalSetting.NEVER)
+                            .build())
+                    .build())
+            .build()));
+```
+
+```csharp
+using OpenAI.Realtime;
+
+#pragma warning disable OPENAI002
+
+await session.SendCommandAsync(new RealtimeClientCommandSessionUpdate(new RealtimeConversationSessionOptions
+{
+    Model = "gpt-realtime-1.5",
+    OutputModalities =
+    {
+        RealtimeOutputModality.Text
+    },
+    Tools =
+    {
+        new RealtimeMcpTool("google_calendar", RealtimeMcpToolConnectorId.GoogleCalendar)
+        {
+            AuthorizationToken = Environment.GetEnvironmentVariable("OPENAI_CONNECTOR_AUTHORIZATION")!,
+            AllowedTools = new()
+            {
+                ToolNames =
+                {
+                    "search_events",
+                    "read_event"
+                }
+            },
+            ToolCallApprovalPolicy = RealtimeDefaultMcpToolCallApprovalPolicy.NeverRequireApproval
+        }
+    }
+}), timeout.Token);
+```
+
+```ruby
+access_token = ENV.fetch("OPENAI_MCP_ACCESS_TOKEN")
+
+connection.session.update(
+  type: :realtime,
+  model: "gpt-realtime-1.5",
+  output_modalities: [:text],
+  tools: [
+    {
+      type: :mcp,
+      server_label: "google_calendar",
+      connector_id: "connector_googlecalendar",
+      authorization: access_token,
+      allowed_tools: ["search_events", "read_event"],
+      require_approval: :never
+    }
+  ]
+)
+```
+
+
+Remote MCP servers 
+  **don't automatically receive the full conversation context**,
+  but **they can see any data the model sends in a tool call**.
+  **Keep the tool surface narrow** with `allowed_tools`,
+  and require approval for any action you would not auto-run.
+

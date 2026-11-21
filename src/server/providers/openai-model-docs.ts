@@ -1150,8 +1150,12 @@ export async function openaiModelFacts(
         absent: { ...facts.absent, serverTools: 'unavailable' },
       }
     }
-    return realtimeMcp.rawIds.includes(rawId)
-      ? withRealtimeMcp(facts, realtimeMcp.hash)
+    const heading = realtimeMcp.headings[rawId]
+    if (heading) return withRealtimeMcp(facts, heading, realtimeMcp.hash)
+    // The samples follow the newest model, so one the guide stops naming
+    // may still take mcp: keep its stored tools unless its page names some.
+    return facts.serverTools == null && !facts.factSources?.serverTools
+      ? { ...facts, absent: { ...facts.absent, serverTools: 'unavailable' } }
       : facts
   }
   /** `docsFacts`, with the facts a failed docs load feeds left unavailable. */

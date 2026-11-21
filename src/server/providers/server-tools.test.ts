@@ -271,20 +271,48 @@ describe('a read page that names no tool is source-silent (#707)', () => {
   })
 
   it('OpenAI: realtime ids the MCP guide samples name take hosted mcp', async () => {
-    // developers.openai.com/api/docs/guides/realtime-mcp.md, 2026-11-21,
-    // cut down: the gpt-realtime-2.1 server_url sample and the
-    // gpt-realtime-1.5 connector sample.
+    // developers.openai.com/api/docs/guides/realtime-mcp.md, 2026-11-21:
+    // "Choose a tool type" and the "Configure an MCP tool" and "Legacy
+    // connectors" sections with every sample language.
     const guide = readFileSync(
       new URL('./fixtures/openai-realtime-mcp.md.txt', import.meta.url),
       'utf8',
     )
+    // Only the TypeScript and Python samples are read.
     expect(parseOpenAiRealtimeMcp(guide)).toEqual([
-      'gpt-realtime-2.1',
-      'gpt-realtime-1.5',
+      {
+        model: 'gpt-realtime-2.1',
+        heading: 'Configure an MCP tool',
+        lang: 'typescript',
+      },
+      {
+        model: 'gpt-realtime-2.1',
+        heading: 'Configure an MCP tool',
+        lang: 'python',
+      },
+      {
+        model: 'gpt-realtime-1.5',
+        heading: 'Legacy connectors',
+        lang: 'typescript',
+      },
+      {
+        model: 'gpt-realtime-1.5',
+        heading: 'Legacy connectors',
+        lang: 'python',
+      },
     ])
     expect(() =>
       parseOpenAiRealtimeMcp(guide.replaceAll('"mcp"', '"remote_mcp"')),
     ).toThrow(/no sample/)
+    // A second model in one mcp sample (a transcription model) is not bound.
+    expect(() =>
+      parseOpenAiRealtimeMcp(
+        guide.replace(
+          'output_modalities: ["text"],',
+          'output_modalities: ["text"],\n    transcription: { model: "gpt-realtime-whisper" },',
+        ),
+      ),
+    ).toThrow(/gpt-realtime-2.1, gpt-realtime-whisper/)
     const page = (id: string) =>
       [
         `Model ID: \`${id}\``,
@@ -307,14 +335,32 @@ describe('a read page that names no tool is source-silent (#707)', () => {
           mcp: {
             derivation: 'docs-derived',
             sourceUrl: OPENAI_REALTIME_MCP_URL,
+            path: 'Configure an MCP tool (sample)',
           },
         },
       },
     })
     expect(facts('gpt-realtime-1.5').serverTools).toEqual(['mcp'])
-    // The guide keeps no model list: an id its samples skip states nothing.
+    expect(facts('gpt-realtime-1.5').factSources?.serverTools).toMatchObject({
+      mcp: { path: 'Legacy connectors (sample)' },
+    })
+    // The guide is not a complete list: an id its samples skip gets no
+    // entry and keeps whatever is stored.
     expect(facts('gpt-realtime-2').serverTools).toBeNull()
     expect(facts('gpt-realtime-2').factSources?.serverTools).toBeUndefined()
+    expect(facts('gpt-realtime-2').absent?.serverTools).toBe('unavailable')
+
+    // Samples follow the newest model: the id they stop naming keeps its
+    // stored ["mcp"] instead of being written null.
+    serve({
+      ...pages,
+      [OPENAI_REALTIME_MCP_URL]: guide.replaceAll(
+        'gpt-realtime-2.1',
+        'gpt-realtime-3',
+      ),
+    })
+    const rotated = await openaiModelFacts(ids)
+    expect(rotated('gpt-realtime-2.1').absent?.serverTools).toBe('unavailable')
 
     serve(pages)
     const failed = await openaiModelFacts(ids)
