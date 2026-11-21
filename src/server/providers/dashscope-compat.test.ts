@@ -79,6 +79,7 @@ describe('parseDashscopeCompat', () => {
     }
     expect(dashscopeCompatCovers('decision-model-preview', scope)).toBe(false)
     expect(dashscopeCompatCovers('qwen-audio-turbo', scope)).toBe(false)
+    expect(dashscopeCompatCovers('qwen2-audio-instruct', scope)).toBe(false)
   })
 
   it('reads the live page, whose cells carry MDX style attributes', async () => {

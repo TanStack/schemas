@@ -144,6 +144,37 @@ export async function openCodeRouteSpec(
   }
 }
 
+/**
+ * Chat routes a provider's docs state, with no published request schema
+ * (issue #716). Each path is stored route-only so a listed model can bind
+ * it (`bindStoredRoutesWithoutSchemas`); classify with
+ * `classifyOpenCodeRoute`.
+ */
+export function routeOnlyChatSpec(
+  paths: Array<string>,
+  source: { url: string; hash: string },
+): SpecFetchResult {
+  if (paths.length === 0) throw new Error(`${source.url}: states no route`)
+  const operation: OpenApiOperation = {
+    [ROUTE_ONLY_MARKER]: true,
+    [ROUTE_ACTIVITY]: 'chat',
+    'x-modelschemas-method-source': source,
+    responses: {},
+  }
+  return {
+    specs: [
+      {
+        openapi: '3.1.0',
+        paths: Object.fromEntries(
+          paths.map((path) => [`/${path}`, { post: operation }]),
+        ),
+      },
+    ],
+    sources: [source],
+    outputStrategy: 'post-200',
+  }
+}
+
 export function classifyOpenCodeRoute(
   _path: string,
   operation: Record<string, unknown>,

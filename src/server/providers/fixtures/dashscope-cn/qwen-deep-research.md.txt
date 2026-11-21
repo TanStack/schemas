@@ -1,0 +1,20 @@
+# 深入研究（Qwen-Deep-Research）
+
+> 自动完成复杂研究课题——规划研究步骤、执行多轮联网搜索与信息整合，最终生成结构化研究报告，无需手动搜索。
+
+<meta property="og:title" content="深入研究（Qwen-Deep-Research）" />
+
+<Note>
+  本文档仅适用于华北2（北京）地域。如需使用模型，需使用华北2（北京）地域的[API Key](https://bailian.console.aliyun.com/model/settings/api-key)。
+</Note>
+
+## 快速开始 <span id="e3fc617de8ilo" />
+
+您需要已[获取与配置 API Key](/zh/model-studio/get-api-key)并[配置API Key到环境变量](/zh/model-studio/configure-api-key-through-environment-variables)。如果通过SDK调用，还需要[安装DashScope SDK](/zh/model-studio/install-sdk)。
+
+模型采用两步工作流：<strong>第一步</strong>，模型提出细化问题，确认你的研究方向；<strong>第二步</strong>，基于你的回复执行完整研究并生成报告。第一步不是多余的——它让模型在启动耗时的多轮搜索前先对齐研究范围，避免跑偏。
+
+> 模型目前仅支持 DashScope SDK调用，暂不支持 Java 版 DashScope SDK，也不支持 OpenAI 兼容接口调用。
+
+<CodeGroup dropdown>
+  ```python expandable

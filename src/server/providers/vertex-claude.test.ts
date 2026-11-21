@@ -8,6 +8,7 @@ import {
   VERTEX_CLAUDE_PRICING_URL,
   VERTEX_CLAUDE_URL,
   vertexClaudeModels,
+  vertexClaudeRoute,
 } from './vertex-claude.ts'
 import { normModelName } from './vertex-text.ts'
 
@@ -162,5 +163,19 @@ describe('vertexClaudeModels cache', () => {
     ])
     expect(rows[0]?.rawId).toBe('claude-sonnet-4-6')
     expect(rows[0]?.pricing).not.toBeNull()
+  })
+})
+
+describe('vertexClaudeRoute (issue #716)', () => {
+  const page = fixture('use-claude')
+  it('reads the :rawPredict URL with Vertex placeholders', () => {
+    expect(vertexClaudeRoute(page)).toBe(
+      'v1/projects/{projectsId}/locations/{locationsId}/publishers/anthropic/models/{modelsId}:rawPredict',
+    )
+  })
+  it('throws when the page states no :rawPredict URL', () => {
+    expect(() =>
+      vertexClaudeRoute(page.replaceAll(':rawPredict', ':predict')),
+    ).toThrow(/no :rawPredict URL/)
   })
 })
