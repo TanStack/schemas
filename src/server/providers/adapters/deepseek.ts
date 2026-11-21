@@ -39,6 +39,7 @@ function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'deepseek',
+  makesOwnModels: true,
   displayName: 'DeepSeek',
   authEnvVar: 'DEEPSEEK_API_KEY',
   specSourceUrl: DEEPSEEK_CHAT_DOCS,

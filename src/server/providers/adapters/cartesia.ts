@@ -208,6 +208,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
 
 export const provider: ProviderConfig = {
   id: 'cartesia',
+  makesOwnModels: true,
   displayName: 'Cartesia',
   authEnvVar: 'CARTESIA_API_KEY',
   specSourceUrl: CARTESIA_API_INDEX_URL,

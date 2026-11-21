@@ -637,6 +637,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'kling',
+  makesOwnModels: true,
   displayName: 'Kling AI',
   authEnvVar: 'KLING_API_KEY',
   specSourceUrl: KLING_DOCS_URL,

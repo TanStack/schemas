@@ -232,6 +232,7 @@ async function load(
 
 export const provider: ProviderConfig = {
   id: 'xiaomi',
+  makesOwnModels: true,
   // Hosts' `maker/model` ids (Novita `xiaomimimo/mimo-v2.6-pro`).
   modelNamespaces: ['xiaomimimo'],
   displayName: 'Xiaomi',

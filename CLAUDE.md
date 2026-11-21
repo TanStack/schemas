@@ -257,24 +257,45 @@ ones).
   `probes/records/<provider>.ts` (never by hand); the poller fills only
   empty facts from it (`withProbedFacts`). `.source/workflows/probe.ts`
   runs it weekly and opens a PR on `probe/weekly` when a record changed.
-- **sameAs links** (issue #199, `src/server/ingest/model-identity.ts`): a
-  reseller row links to the upstream row its own provider names — never
-  inferred from a similar name alone, and never a copied fact. Adapters
-  state the upstream with `ProviderConfig.upstreamModelIdentity`
-  (OpenRouter, Vercel, Azure, Perplexity's `anthropic/`-style ids — not
-  OpenCode, whose AI SDK package column names the wire protocol, not the
-  maker); polls store it as evidence
+- **sameAs links** (issues #199, #719, `src/server/ingest/model-identity.ts`):
+  a row links to the row at another provider it is the same model as;
+  never a copied fact. A stated link wins: adapters state the upstream
+  with `ProviderConfig.upstreamModelIdentity` or per-row `ModelInfo.upstream`
+  (llmgateway, vercel, openrouter, azure, perplexity, lovable,
+  amazon-bedrock, replicate official rows, google-vertex-anthropic, groq,
+  together, novita, huggingface; not OpenCode, whose AI SDK package column
+  names the wire protocol, not the maker). OpenRouter states a `:variant`
+  id's base when both share a `canonical_slug`; the suffix goes in the
+  evidence as `variant`. A row with stated evidence that resolves to
+  nothing is never linked by name. A row with no stated upstream at a
+  provider that is not a declared maker may be linked by name (decision
+  of 2026-11-21): `originNameKey` (`src/lib/origin-key.ts`, the one
+  normaliser) lowercases, drops a provider-id or namespace prefix and
+  Bedrock's version, and reads dots as hyphens; it links when every
+  candidate (a resolved stated row, or a declared maker's row with no
+  `maker`) leads to one root, else no link. `factSources.sameAs` is then
+  `{ derivation: 'name-inferred', key, candidates }`
+  (`models.same_as_inference`). `models.root_model_id` is the chain's end
+  when it is more than one hop away (served as `sameAsRoot`); a loop drops
+  the link. `firstParty` is derived on read (`src/server/first-party.ts`)
+  from `ProviderConfig.makesOwnModels` (mirrored to
+  `providers.makes_own_models`), the links, `maker` and the namespaces:
+  `false` on a link or a `maker` naming someone else, `true` when links end
+  here or the provider is a declared maker (a maker that also hosts other
+  makers' models needs the maker source read for the row), else null.
+  Polls store stated evidence
   (`models.upstream_provider`/`upstream_raw_id`/`upstream_source`), writing
   only what changed. Names gateways use for a provider (`google` → gemini)
   are rows in `provider_model_namespaces`, mirrored from
   `ProviderConfig.modelNamespaces` on each poll by `ensureProviderRow`.
   `reconcileSameAs` runs once per poll run, across all providers, and
   resolves evidence to `same_as_model_id`: exact id, then alias, then
-  dots-as-hyphens; ambiguous or missing → null. Each link change emits
-  `model.updated`. The catalog serves the link, with the evidence as
-  `factSources.sameAs`, only while the row's current evidence still names
-  that target. Cloudflare AI Gateway is held until it has its own listing.
-  Migration `0012` is hand-written (in-place `ALTER TABLE`, no rebuild).
+  dots-as-hyphens; ambiguous or missing → null; then the name tier. Each
+  change to the link or its root emits `model.updated`. The catalog serves
+  the link, with the evidence as `factSources.sameAs`, only while the
+  row's current evidence still names that target. Cloudflare AI Gateway is
+  held until it has its own listing. Migrations `0012` and `0021` are
+  hand-written (in-place `ALTER TABLE`, no rebuild).
 - **API** (`src/routes/v1/`): catalog and schema reads (`getDb(env, { replica: true })`,
   ETag/304 and `public, max-age` via `http-cache.ts`), `POST /v1/validate`
   (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),

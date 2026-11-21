@@ -21,6 +21,8 @@ const row: Model = {
   provider: 'anthropic',
   rawId: 'claude-sonnet-4-5',
   sameAs: null,
+  sameAsRoot: null,
+  firstParty: true,
   activity: 'chat',
   displayName: null,
   schemaEndpointId: null,

@@ -154,6 +154,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'worldlabs',
+  makesOwnModels: true,
   displayName: 'World Labs',
   authEnvVar: 'WORLDLABS_API_KEY',
   specSourceUrl: WORLDLABS_OPENAPI_URL,

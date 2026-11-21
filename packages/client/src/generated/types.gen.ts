@@ -680,7 +680,7 @@ export type ModelLinks = {
 
 export type FactSource = {
   /**
-   * How the fact was arrived at. source-silent: the provider publishes no value for it (docs/source-silent ledger).
+   * How the fact was arrived at. source-silent: the provider publishes no value for it (docs/source-silent ledger). name-inferred: sameAs only, a link no provider stated, drawn from a matching id (see key and candidates).
    */
   derivation:
     | 'listing'
@@ -690,6 +690,7 @@ export type FactSource = {
     | 'probe-verified'
     | 'docs-derived'
     | 'source-silent'
+    | 'name-inferred'
   sourceUrl?: string
   sourceHash?: string
   /**
@@ -716,6 +717,21 @@ export type FactSource = {
    * sameAs only: the id matched after dots were read as hyphens.
    */
   normalized?: true
+  /**
+   * sameAs only: the variant suffix the host's listing states for this id (OpenRouter's batch, free), taken off before matching.
+   */
+  variant?: string
+  /**
+   * name-inferred sameAs only: the normalised id every candidate matched.
+   */
+  key?: string
+  /**
+   * name-inferred sameAs only: every row at another provider the key matched. Each leads to the linked row.
+   */
+  candidates?: Array<{
+    provider: string
+    rawId: string
+  }>
 }
 
 /**
@@ -761,7 +777,23 @@ export type ModelFactSources = {
   aliases?: FactSource
   aliasOf?: FactSource
   maker?: FactSource
+  firstParty?: FirstPartySource
 } | null
+
+/**
+ * What decided firstParty: provider-declared (the provider's maker declaration), linked-from (count rows' sameAs chains end here), maker (the row's maker and its source), or same-as (the row links to another provider's row).
+ */
+export type FirstPartySource = {
+  decidedBy: 'provider-declared' | 'linked-from' | 'maker' | 'same-as'
+  /**
+   * linked-from only.
+   */
+  count?: number
+  /**
+   * maker only: factSources.maker.
+   */
+  source?: FactSource
+}
 
 export type FactDiscrepancy = {
   field: string
@@ -782,12 +814,23 @@ export type Model = {
   provider: string
   rawId: string
   /**
-   * The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.
+   * The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.
    */
   sameAs: {
     provider: string
     rawId: string
   } | null
+  /**
+   * The row the sameAs chain ends at (LLM Gateway to Azure to Anthropic serves the Anthropic row). Equal to sameAs on a one-hop link; null when sameAs is null. Resolved when links are reconciled, after each models poll.
+   */
+  sameAsRoot: {
+    provider: string
+    rawId: string
+  } | null
+  /**
+   * Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true when other rows' sameAs chains end at this row, or when the provider is declared a maker; on a declared maker that also hosts other makers' models (a row whose maker names someone else), only where the maker source was read for this row. null otherwise. Derived on read; factSources.firstParty says what decided it.
+   */
+  firstParty: boolean | null
   activity:
     | 'chat'
     | 'image'
@@ -915,12 +958,23 @@ export type ExportModel = {
   provider: string
   rawId: string
   /**
-   * The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.
+   * The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.
    */
   sameAs: {
     provider: string
     rawId: string
   } | null
+  /**
+   * The row the sameAs chain ends at (LLM Gateway to Azure to Anthropic serves the Anthropic row). Equal to sameAs on a one-hop link; null when sameAs is null. Resolved when links are reconciled, after each models poll.
+   */
+  sameAsRoot: {
+    provider: string
+    rawId: string
+  } | null
+  /**
+   * Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true when other rows' sameAs chains end at this row, or when the provider is declared a maker; on a declared maker that also hosts other makers' models (a row whose maker names someone else), only where the maker source was read for this row. null otherwise. Derived on read; factSources.firstParty says what decided it.
+   */
+  firstParty: boolean | null
   activity:
     | 'chat'
     | 'image'

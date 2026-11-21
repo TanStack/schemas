@@ -16,8 +16,15 @@ import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import type {
   FactSource,
   ModelFactSources,
+  SameAsInference,
   SpecGrain,
 } from '#/server/providers/types.ts'
+import {
+  firstParty,
+  linkedFromCount,
+  loadMakerContext,
+} from '#/server/first-party.ts'
+import type { MakerContext } from '#/server/first-party.ts'
 import {
   factDiscrepancies,
   openRouterJoinIds,
@@ -87,6 +94,7 @@ function specDescriptor(
 type ModelRow = typeof models.$inferSelect
 
 const upstreamModel = alias(models, 'upstream_model')
+const rootModel = alias(models, 'root_model')
 const aliasTarget = alias(models, 'alias_target')
 const catalogSelection = {
   row: models,
@@ -95,7 +103,9 @@ const catalogSelection = {
     rawId: upstreamModel.rawId,
     aliases: upstreamModel.aliases,
   },
+  root: { provider: rootModel.providerId, rawId: rootModel.rawId },
   aliasOf: aliasTarget.rawId,
+  linkedFrom: linkedFromCount,
 }
 
 /**
@@ -116,25 +126,43 @@ interface UpstreamRow {
   aliases: Array<string> | null
 }
 
+type LinkMatch = 'published' | 'normalized' | 'inferred' | null
+
 // The stored link is only as fresh as the last reconcile, so it is served
 // only while the row's current evidence still names that target. The
 // evidence is its provenance: a link with no source, or a source with no
 // link, would each read as a claim nobody made.
+// A name-inferred link (issue #719) is served with the inference it was
+// written with, and only on a row that states no upstream.
 function linkMatch(
   row: ModelRow,
   upstream: UpstreamRow | null | undefined,
-): 'published' | 'normalized' | null {
+): LinkMatch {
   const stated = row.upstreamRawId
+  if (upstream && stated === null && row.sameAsInference) return 'inferred'
   if (!upstream || stated === null || !row.upstreamSource) return null
   const ids = [upstream.rawId, ...(upstream.aliases ?? [])]
   if (ids.includes(stated)) return 'published'
   return ids.includes(stated.replaceAll('.', '-')) ? 'normalized' : null
 }
 
+function sameAsSource(
+  row: ModelRow,
+  match: Exclude<LinkMatch, null>,
+): NonNullable<ModelFactSources['sameAs']> {
+  if (match === 'inferred') {
+    const inference = row.sameAsInference as SameAsInference
+    return { derivation: 'name-inferred', ...inference }
+  }
+  const source = row.upstreamSource as FactSource
+  return match === 'published' ? source : { ...source, normalized: true }
+}
+
 function modelFactSources(
   row: ModelRow,
-  match: ReturnType<typeof linkMatch>,
+  match: LinkMatch,
   aliasOf: string | null,
+  firstPartySource: ModelFactSources['firstParty'],
 ): ModelFactSources | null {
   const sources = (row.factSources as ModelFactSources | null) ?? null
   // Like sameAs: a stated target that resolves to no live row serves
@@ -157,12 +185,12 @@ function modelFactSources(
     trainingSource && withGo
       ? { ...withGo, trainsOnRequestData: trainingSource }
       : withGo
-  if (match === null) return merged
-  const source = row.upstreamSource as FactSource
-  return {
+  const out = {
     ...merged,
-    sameAs: match === 'published' ? source : { ...source, normalized: true },
+    ...(match === null ? {} : { sameAs: sameAsSource(row, match) }),
+    ...(firstPartySource ? { firstParty: firstPartySource } : {}),
   }
+  return Object.keys(out).length > 0 || merged !== null ? out : null
 }
 
 function encodeEndpointId(endpointId: string): string {
@@ -175,8 +203,13 @@ function toApiModel(
     includeFactSources?: boolean
     pricing?: 'compact' | 'full'
     upstream?: UpstreamRow | null
+    /** The end of the sameAs chain when it is more than one hop away. */
+    root?: { provider: string; rawId: string } | null
     /** The live target of `row.aliasOf`, resolved by the query. */
     aliasOf?: string | null
+    /** Rows whose sameAs chain ends at this row. */
+    linkedFrom?: number
+    makers?: MakerContext
   } = {},
 ) {
   const schemaEndpointId = resolveSchemaEndpointId({
@@ -197,14 +230,30 @@ function toApiModel(
   const match = linkMatch(row, opts.upstream)
   const aliasOf = opts.aliasOf ?? null
   const go = openCodeGoFacts(row.providerId, row.rawId)
+  const sameAs =
+    match && opts.upstream
+      ? { provider: opts.upstream.provider, rawId: opts.upstream.rawId }
+      : null
+  const stored = (row.factSources as ModelFactSources | null) ?? null
+  const party = opts.makers
+    ? firstParty(
+        {
+          providerId: row.providerId,
+          maker: row.maker,
+          makerSource: stored?.maker,
+          sameAsProvider: sameAs?.provider ?? null,
+          linkedFrom: opts.linkedFrom ?? 0,
+        },
+        opts.makers,
+      )
+    : { value: null }
   return {
     id: row.id,
     provider: row.providerId,
     rawId: row.rawId,
-    sameAs:
-      match && opts.upstream
-        ? { provider: opts.upstream.provider, rawId: opts.upstream.rawId }
-        : null,
+    sameAs,
+    sameAsRoot: sameAs && (opts.root ?? sameAs),
+    firstParty: party.value,
     activity: row.activity,
     displayName: row.displayName,
     schemaEndpointId,
@@ -237,7 +286,7 @@ function toApiModel(
           factSources: withSourceSilentEvidence(
             row,
             schemaEndpointId,
-            modelFactSources(row, match, aliasOf),
+            modelFactSources(row, match, aliasOf, party.source),
             sourceSilentEvidenceLedger,
           ),
         }
@@ -300,6 +349,20 @@ export async function getProviderCatalog(db: Db, providerId: string) {
   }
 }
 
+/**
+ * Catalog rows with their link targets: sameAs and its chain root are
+ * primary-key joins; the linked-from count reads the two link indexes.
+ */
+function catalogRows(db: Db) {
+  return db
+    .select(catalogSelection)
+    .from(models)
+    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
+    .leftJoin(rootModel, eq(models.rootModelId, rootModel.id))
+    .leftJoin(aliasTarget, aliasTargetOn(models))
+    .$dynamic()
+}
+
 /** GET /v1/models — the cross-provider, filterable catalog. */
 export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
   const conditions: Array<SQL> = []
@@ -322,21 +385,20 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
     if (textMatch) conditions.push(textMatch)
   }
 
-  const rows = await db
-    .select(catalogSelection)
-    .from(models)
-    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
-    .leftJoin(aliasTarget, aliasTargetOn(models))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(models.id)
+  const [rows, makers] = await Promise.all([
+    catalogRows(db)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(models.id),
+    loadMakerContext(db),
+  ])
   return {
     count: rows.length,
-    models: rows.map(({ row, upstream, aliasOf }) =>
+    models: rows.map(({ row, ...links }) =>
       toApiModel(row, {
         includeFactSources: filters.provenance !== false,
         pricing: filters.pricing === true ? 'full' : 'compact',
-        upstream,
-        aliasOf,
+        ...links,
+        makers,
       }),
     ),
     _links: {
@@ -361,21 +423,18 @@ export async function listProviderModels(
     where: eq(providers.id, providerId),
   })
   if (!provider) return null
-  const rows = await db
-    .select(catalogSelection)
-    .from(models)
-    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
-    .leftJoin(aliasTarget, aliasTargetOn(models))
-    .where(eq(models.providerId, providerId))
-    .orderBy(models.id)
+  const [rows, makers] = await Promise.all([
+    catalogRows(db).where(eq(models.providerId, providerId)).orderBy(models.id),
+    loadMakerContext(db),
+  ])
   return {
     provider: provider.id,
     count: rows.length,
-    models: rows.map(({ row, upstream, aliasOf }) =>
+    models: rows.map(({ row, ...links }) =>
       toApiModel(row, {
         pricing: 'compact',
-        upstream,
-        aliasOf,
+        ...links,
+        makers,
         includeFactSources: provenance,
       }),
     ),
@@ -409,30 +468,19 @@ export async function getModelDetail(
             sql`exists (select 1 from json_each(${models.aliases}) where json_each.value = ${modelId})`,
           ),
         )
-  const row = direct ?? resolveAlias(modelId, aliasHits)
-  if (!row) return null
-  const [upstream] = row.sameAsModelId
-    ? await db
-        .select({
-          provider: models.providerId,
-          rawId: models.rawId,
-          aliases: models.aliases,
-        })
-        .from(models)
-        .where(eq(models.id, row.sameAsModelId))
-    : []
-  const [target] = row.aliasOf
-    ? await db
-        .select({ rawId: aliasTarget.rawId })
-        .from(models)
-        .innerJoin(aliasTarget, aliasTargetOn(models))
-        .where(eq(models.id, row.id))
-    : []
+  const resolved = direct ?? resolveAlias(modelId, aliasHits)
+  if (!resolved) return null
+  const [[selected], makers] = await Promise.all([
+    catalogRows(db).where(eq(models.id, resolved.id)),
+    loadMakerContext(db),
+  ])
+  if (!selected) return null
+  const { row, ...links } = selected
   const body = toApiModel(row, {
     includeFactSources: true,
     pricing: 'full',
-    upstream,
-    aliasOf: target?.rawId ?? null,
+    ...links,
+    makers,
   })
   const joinIds = openRouterJoinIds(providerId, row.rawId)
   if (joinIds.length === 0) return { ...body, discrepancies: [] }

@@ -112,6 +112,7 @@ async function listModels(
 
 export const openaiProvider: ProviderConfig = {
   id: 'openai',
+  makesOwnModels: true,
   displayName: 'OpenAI',
   authEnvVar: 'OPENAI_API_KEY',
   defaultDerivation: 'upstream-spec',

@@ -104,6 +104,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
 
 export const provider: ProviderConfig = {
   id: 'bfl',
+  makesOwnModels: true,
   displayName: 'Black Forest Labs',
   authEnvVar: 'BFL_API_KEY',
   specSourceUrl: BFL_OPENAPI_URL,

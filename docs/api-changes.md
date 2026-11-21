@@ -4,6 +4,14 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
+**Added (0.1.x):** model rows gain `sameAsRoot` and `firstParty` (#719),
+and `factSources` gains `firstParty`. `sameAs` can now be name-inferred
+for a row whose provider states no upstream: `factSources.sameAs` is then
+`{ derivation: 'name-inferred', key, candidates }`, a new `derivation`
+value. A stated OpenRouter variant (`:batch`) links to its base model with
+`variant` in the evidence. Needs D1 migration `0021`: migrate first, then
+deploy.
+
 **Added (0.1.x):** model rows gain `maker` (#710), the model's maker as
 its provider names it, and `factSources` gains `maker`. Gemma rows on
 Gemini gain `openWeights` and `weightsUrl` from the Gemma 4 card. Needs D1

@@ -126,6 +126,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'minimax-cn',
+  makesOwnModels: true,
   displayName: 'MiniMax (China)',
   specSourceUrl: MINIMAX_CN.chatSpecUrl,
   modelsEndpoint: MINIMAX_CN_MODELS_URL,

@@ -30,6 +30,7 @@ import type {
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
+  UpstreamModelIdentity,
 } from './types.ts'
 
 const OPENROUTER_OPENAPI_URL = 'https://openrouter.ai/openapi.json'
@@ -250,6 +251,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 interface OpenRouterModelList {
   data?: Array<{
     id: string
+    canonical_slug?: string
     name?: string
     created?: number
     context_length?: number
@@ -266,6 +268,37 @@ interface OpenRouterModelList {
       supports_max_tokens?: boolean
     } | null
   }>
+}
+
+const LISTING_ID_SOURCE = {
+  derivation: 'listing' as const,
+  sourceUrl: OPENROUTER_MODELS_URL,
+  path: 'data[].id',
+}
+
+/**
+ * The upstream a variant id states (issue #719): `base:variant` is a
+ * variant of `base` only when the listing gives both the same
+ * `canonical_slug`. The suffix is recorded, never matched. Any other id
+ * states its upstream through `upstreamModelIdentity`.
+ */
+export function openRouterVariantUpstream(
+  data: ReadonlyArray<{ id: string; canonical_slug?: string }>,
+): Map<string, UpstreamModelIdentity> {
+  const slugs = new Map(data.map((m) => [m.id, m.canonical_slug]))
+  const out = new Map<string, UpstreamModelIdentity>()
+  for (const m of data) {
+    const variant = /^(.+):([a-z][a-z0-9-]*)$/.exec(m.id)
+    if (!variant?.[1] || !variant[2] || !m.canonical_slug) continue
+    if (slugs.get(variant[1]) !== m.canonical_slug) continue
+    const identity = namespacedUpstreamIdentity(variant[1], {
+      ...LISTING_ID_SOURCE,
+      path: 'data[].canonical_slug',
+      variant: variant[2],
+    })
+    if (identity) out.set(m.id, identity)
+  }
+  return out
 }
 
 /**
@@ -386,8 +419,10 @@ async function listModels(
       }
     return null
   }
+  const variants = openRouterVariantUpstream(body.data)
   return {
     models: body.data.map((m) => {
+      const upstream = variants.get(m.id)
       const activity = openrouterModelActivity(
         m.architecture?.output_modalities,
       )
@@ -471,6 +506,7 @@ async function listModels(
         capabilities: openrouterCapabilities(m),
         reasoning,
         requestMap,
+        ...(upstream ? { upstream } : {}),
         ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
       }
     }),
@@ -480,11 +516,7 @@ async function listModels(
 export const openrouterProvider: ProviderConfig = {
   id: 'openrouter',
   upstreamModelIdentity: (rawId) =>
-    namespacedUpstreamIdentity(rawId, {
-      derivation: 'listing',
-      sourceUrl: OPENROUTER_MODELS_URL,
-      path: 'data[].id',
-    }),
+    namespacedUpstreamIdentity(rawId, LISTING_ID_SOURCE),
   displayName: 'OpenRouter',
   defaultDerivation: 'upstream-spec',
   specGrain: 'provider',

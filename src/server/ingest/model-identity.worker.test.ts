@@ -199,7 +199,7 @@ describe('sameAs links', () => {
         gateway,
       ),
     )
-    // No stated upstream: a matching name alone is not evidence.
+    // No stated upstream: left to the name tier (issue #719).
     await pollProviderModels(
       d,
       stub('identity-unproven-host', [{ rawId: 'identity-a/model' }]),
@@ -238,9 +238,14 @@ describe('sameAs links', () => {
     expect(
       (await detail('identity-self', 'identity-self/m'))?.sameAs,
     ).toBeNull()
-    expect(
-      (await detail('identity-unproven-host', 'identity-a/model'))?.sameAs,
-    ).toBeNull()
+    // No stated upstream: the name tier links it through the stated row.
+    const inferred = await detail('identity-unproven-host', 'identity-a/model')
+    expect(inferred?.sameAs).toEqual({ provider: 'identity-a', rawId: 'model' })
+    expect(inferred?.factSources?.sameAs).toEqual({
+      derivation: 'name-inferred',
+      key: 'model',
+      candidates: [{ provider: host, rawId: 'identity-a/model' }],
+    })
 
     // Dropping the rival claim from config removes its row, so the namespace
     // resolves again.
@@ -400,9 +405,10 @@ describe('sameAs links', () => {
       expect(result?.sameAs).toEqual({ provider: upstream, rawId: nativeId })
       expect(result?.factSources?.sameAs?.derivation).toBe(derivation)
       // Only the dotted spelling needed normalizing.
-      expect(result?.factSources?.sameAs?.normalized).toBe(
-        rawId.endsWith('4.5') ? true : undefined,
-      )
+      expect(
+        (result?.factSources?.sameAs as { normalized?: true } | undefined)
+          ?.normalized,
+      ).toBe(rawId.endsWith('4.5') ? true : undefined)
     }
     const linked = await getModelDetail(
       d.db,
@@ -411,14 +417,325 @@ describe('sameAs links', () => {
     )
     expect(linked?.contextWindow).toBe(1234)
     expect(linked?.pricing).toBeNull()
+    // A stated id that matches nothing is never linked by name; a variant
+    // the listing does not state stays unlinked.
     for (const rawId of [
       'anthropic/claude-opus-4.5:batch',
-      'claude-opus-4-5',
       'openai/missing-native-model',
     ]) {
       const unlinked = await getModelDetail(d.db, 'openrouter', rawId)
       expect(unlinked?.sameAs).toBeNull()
       expect(unlinked?.factSources?.sameAs).toBeUndefined()
     }
+    // A bare id states nothing: the name tier links it to Anthropic's row.
+    const bare = await getModelDetail(d.db, 'openrouter', 'claude-opus-4-5')
+    expect(bare?.sameAs).toEqual({ provider: 'anthropic', rawId: opus })
+    expect(bare?.factSources?.sameAs).toEqual({
+      derivation: 'name-inferred',
+      key: 'claude-opus-4-5',
+      candidates: [
+        { provider: 'anthropic', rawId: opus },
+        { provider: 'vercel', rawId: 'anthropic/claude-opus-4.5' },
+      ],
+    })
+  })
+})
+
+describe('name-inferred links and chain roots (#719)', () => {
+  const pollFixture = (
+    d: SyncDeps,
+    p: ProviderConfig,
+    listed: Array<ModelInfo>,
+  ) =>
+    pollProviderModels(d, {
+      ...p,
+      listModels: async () => ({ models: listed }),
+    })
+  const maker = { makesOwnModels: true }
+  const row = (d: SyncDeps, provider: string, rawId: string) =>
+    d.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(provider, rawId)),
+    })
+
+  it("links Neon's bare Claude id to Anthropic's row, labelled name-inferred", async () => {
+    const d = deps()
+    await pollFixture(d, anthropicProvider, [{ rawId: 'claude-fable-5' }])
+    await pollFixture(d, openrouterProvider, [
+      { rawId: 'anthropic/claude-fable-5' },
+    ])
+    await pollProviderModels(d, stub('neon', [{ rawId: 'claude-fable-5' }]))
+    await pollProviderModels(
+      d,
+      stub('identity-opencode', [{ rawId: 'Claude-Fable-5' }]),
+    )
+    await reconcileSameAs(d.db, NOW)
+
+    const neon = await getModelDetail(d.db, 'neon', 'claude-fable-5')
+    expect(neon?.sameAs).toEqual({
+      provider: 'anthropic',
+      rawId: 'claude-fable-5',
+    })
+    expect(neon?.sameAsRoot).toEqual(neon?.sameAs)
+    expect(neon?.factSources?.sameAs).toEqual({
+      derivation: 'name-inferred',
+      key: 'claude-fable-5',
+      candidates: [
+        { provider: 'anthropic', rawId: 'claude-fable-5' },
+        { provider: 'openrouter', rawId: 'anthropic/claude-fable-5' },
+      ],
+    })
+    expect(neon?.firstParty).toBe(false)
+    // Lowercase applies in the name tier: another bare host links too, and
+    // never through Neon's inferred row.
+    expect(
+      (await getModelDetail(d.db, 'identity-opencode', 'Claude-Fable-5'))
+        ?.factSources?.sameAs,
+    ).toMatchObject({ derivation: 'name-inferred', key: 'claude-fable-5' })
+    // The maker's own row is never linked by name.
+    const own = await getModelDetail(d.db, 'anthropic', 'claude-fable-5')
+    expect(own?.sameAs).toBeNull()
+    expect(own?.firstParty).toBe(true)
+    expect(own?.factSources?.firstParty).toEqual({
+      decidedBy: 'linked-from',
+      count: 3,
+    })
+    const [event, ...extra] = await linkChanges(
+      d,
+      modelDbId('neon', 'claude-fable-5'),
+    )
+    expect(extra).toHaveLength(0)
+    expect(event?.payload).toMatchObject({
+      after: {
+        sameAsModelId: modelDbId('anthropic', 'claude-fable-5'),
+        rootModelId: null,
+      },
+    })
+    // A second run with nothing new writes nothing.
+    await reconcileSameAs(d.db, NOW)
+    expect(
+      await linkChanges(d, modelDbId('neon', 'claude-fable-5')),
+    ).toHaveLength(1)
+  })
+
+  it('never falls through to the name tier when stated evidence resolves to nothing', async () => {
+    const d = deps()
+    await pollProviderModels(
+      d,
+      stub('identity-ns-maker', [{ rawId: 'llama-9-70b' }], maker),
+    )
+    // Groq-like: states `meta-llama`, which no provider claims.
+    await pollProviderModels(
+      d,
+      stub('identity-ns-host', [{ rawId: 'meta-llama/llama-9-70b' }], gateway),
+    )
+    await reconcileSameAs(d.db, NOW)
+    const stated = await row(d, 'identity-ns-host', 'meta-llama/llama-9-70b')
+    expect(stated).toMatchObject({
+      upstreamProvider: 'meta-llama',
+      sameAsModelId: null,
+      sameAsInference: null,
+    })
+  })
+
+  it('writes no link when the candidates lead to two roots (regional twins)', async () => {
+    const d = deps()
+    for (const twin of ['identity-twin', 'identity-twin-cn'])
+      await pollProviderModels(d, stub(twin, [{ rawId: 'kimi-k9' }], maker))
+    await pollProviderModels(d, stub('identity-bare', [{ rawId: 'kimi-k9' }]))
+    await reconcileSameAs(d.db, NOW)
+    expect(await row(d, 'identity-bare', 'kimi-k9')).toMatchObject({
+      sameAsModelId: null,
+      sameAsInference: null,
+    })
+    // Neither twin links to the other: a declared maker is never a source.
+    expect((await row(d, 'identity-twin', 'kimi-k9'))?.sameAsModelId).toBeNull()
+  })
+
+  it('links to the root that every candidate leads to, and serves a three-hop root', async () => {
+    const d = deps()
+    await pollProviderModels(
+      d,
+      stub('identity-maker', [{ rawId: 'opus-9' }], maker),
+    )
+    // Azure-like: states the maker.
+    await pollProviderModels(
+      d,
+      stub('identity-cloud', [{ rawId: 'identity-maker/opus-9' }], gateway),
+    )
+    // LLM Gateway-like: states the cloud's id.
+    await pollProviderModels(
+      d,
+      stub(
+        'identity-router',
+        [{ rawId: 'identity-cloud/identity-maker/opus-9' }],
+        gateway,
+      ),
+    )
+    // A fourth host behind the router.
+    await pollProviderModels(
+      d,
+      stub(
+        'identity-edge',
+        [{ rawId: 'identity-router/identity-cloud/identity-maker/opus-9' }],
+        gateway,
+      ),
+    )
+    await pollProviderModels(d, stub('identity-bare', [{ rawId: 'OPUS.9' }]))
+    await reconcileSameAs(d.db, NOW)
+
+    const root = { provider: 'identity-maker', rawId: 'opus-9' }
+    const edge = await getModelDetail(
+      d.db,
+      'identity-edge',
+      'identity-router/identity-cloud/identity-maker/opus-9',
+    )
+    expect(edge?.sameAs).toEqual({
+      provider: 'identity-router',
+      rawId: 'identity-cloud/identity-maker/opus-9',
+    })
+    expect(edge?.sameAsRoot).toEqual(root)
+    const router = await getModelDetail(
+      d.db,
+      'identity-router',
+      'identity-cloud/identity-maker/opus-9',
+    )
+    expect(router?.sameAsRoot).toEqual(root)
+    // The bare id matches the maker's row and the cloud's row (key opus-9),
+    // and both lead to one root.
+    const bare = await getModelDetail(d.db, 'identity-bare', 'OPUS.9')
+    expect(bare?.sameAs).toEqual(root)
+    expect(bare?.factSources?.sameAs).toMatchObject({ key: 'opus-9' })
+    const maker9 = await getModelDetail(d.db, 'identity-maker', 'opus-9')
+    expect(maker9?.factSources?.firstParty).toEqual({
+      decidedBy: 'linked-from',
+      count: 4,
+    })
+  })
+
+  it('refuses a looping chain and a candidate that leads back to the row', async () => {
+    const d = deps()
+    // Two hosts that each state the other's row, and a third behind one of
+    // them: no chain has a root, so none of them links.
+    const states = (providerNamespace: string, rawId: string) => ({
+      providerNamespace,
+      rawId,
+      source: SOURCE,
+    })
+    await pollProviderModels(
+      d,
+      stub('identity-loop-a', [
+        { rawId: 'a1', upstream: states('identity-loop-b', 'b1') },
+      ]),
+    )
+    await pollProviderModels(
+      d,
+      stub('identity-loop-b', [
+        { rawId: 'b1', upstream: states('identity-loop-a', 'a1') },
+      ]),
+    )
+    await pollProviderModels(
+      d,
+      stub('identity-loop-c', [
+        { rawId: 'c1', upstream: states('identity-loop-a', 'a1') },
+      ]),
+    )
+    // A bare id matching the looping rows has no root either.
+    await pollProviderModels(d, stub('identity-loop-bare', [{ rawId: 'b1' }]))
+    // The only candidate for `back` is a stated row whose chain ends at
+    // `back` itself.
+    await pollProviderModels(d, stub('identity-back', [{ rawId: 'w' }]))
+    await pollProviderModels(
+      d,
+      stub('identity-front', [{ rawId: 'identity-back/w' }], gateway),
+    )
+    await reconcileSameAs(d.db, NOW)
+    for (const [provider, rawId] of [
+      ['identity-loop-a', 'a1'],
+      ['identity-loop-b', 'b1'],
+      ['identity-loop-c', 'c1'],
+      ['identity-loop-bare', 'b1'],
+    ] as const) {
+      expect(await row(d, provider, rawId)).toMatchObject({
+        sameAsModelId: null,
+        rootModelId: null,
+      })
+    }
+    expect(
+      (await row(d, 'identity-front', 'identity-back/w'))?.sameAsModelId,
+    ).toBe(modelDbId('identity-back', 'w'))
+    expect(await row(d, 'identity-back', 'w')).toMatchObject({
+      sameAsModelId: null,
+      sameAsInference: null,
+    })
+  })
+
+  it('strips a variant the listing states, records it, and a stated link beats an inferred one', async () => {
+    const d = deps()
+    await pollFixture(d, anthropicProvider, [{ rawId: 'claude-opus-5' }])
+    const variant = {
+      providerNamespace: 'anthropic',
+      rawId: 'claude-opus-5',
+      source: { ...SOURCE, path: 'data[].canonical_slug', variant: 'batch' },
+    }
+    await pollFixture(d, openrouterProvider, [
+      { rawId: 'anthropic/claude-opus-5' },
+      { rawId: 'anthropic/claude-opus-5:batch', upstream: variant },
+    ])
+    // A host that states an upstream for one id and nothing for another
+    // with the same name.
+    await pollProviderModels(
+      d,
+      stub('identity-mixed-host', [
+        { rawId: 'claude-opus-5' },
+        {
+          rawId: 'opus-house-blend',
+          upstream: { ...variant, source: SOURCE },
+        },
+      ]),
+    )
+    await reconcileSameAs(d.db, NOW)
+    const batch = await getModelDetail(
+      d.db,
+      'openrouter',
+      'anthropic/claude-opus-5:batch',
+    )
+    expect(batch?.sameAs).toEqual({
+      provider: 'anthropic',
+      rawId: 'claude-opus-5',
+    })
+    expect(batch?.factSources?.sameAs).toEqual(variant.source)
+    const stated = await getModelDetail(
+      d.db,
+      'identity-mixed-host',
+      'opus-house-blend',
+    )
+    expect(stated?.factSources?.sameAs).toEqual(SOURCE)
+    const named = await getModelDetail(
+      d.db,
+      'identity-mixed-host',
+      'claude-opus-5',
+    )
+    expect(named?.factSources?.sameAs?.derivation).toBe('name-inferred')
+
+    // The host starts stating the upstream for the bare id: the stated link
+    // replaces the inference.
+    await pollProviderModels(
+      d,
+      stub('identity-mixed-host', [
+        { rawId: 'claude-opus-5', upstream: { ...variant, source: SOURCE } },
+        {
+          rawId: 'opus-house-blend',
+          upstream: { ...variant, source: SOURCE },
+        },
+      ]),
+    )
+    await reconcileSameAs(d.db, NOW)
+    expect(await row(d, 'identity-mixed-host', 'claude-opus-5')).toMatchObject({
+      sameAsInference: null,
+    })
+    expect(
+      (await getModelDetail(d.db, 'identity-mixed-host', 'claude-opus-5'))
+        ?.factSources?.sameAs,
+    ).toEqual(SOURCE)
   })
 })

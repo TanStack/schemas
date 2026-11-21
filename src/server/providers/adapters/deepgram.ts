@@ -120,6 +120,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'deepgram',
+  makesOwnModels: true,
   displayName: 'Deepgram',
   authEnvVar: 'DEEPGRAM_API_KEY',
   specSourceUrl: DEEPGRAM_OPENAPI_URL,
