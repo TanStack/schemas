@@ -97,47 +97,78 @@ export function parseFireworksNativeReasoning(
   return reasoningStatement(data.description)
 }
 /**
- * One model's native metadata is a docs source like any other. A failed
- * load (Fireworks answers 403 for some listed ids) marks the row's
- * capabilities `unavailable`: the stored map is kept whole (null on a new
- * row) and the failure is counted in `run` instead of failing the poll.
+ * The Hugging Face repo a Fireworks model's metadata names
+ * (`huggingFaceUrl`), read as the upstream model: owner as namespace, repo
+ * as raw id. Empty on Fireworks' own models and on some hosted ones: that
+ * states nothing. Any other shape throws.
  */
-export async function fireworksHostedReasoning(
+export function parseFireworksHuggingFace(
+  value: unknown,
+): { providerNamespace: string; rawId: string } | null {
+  if (value === '') return null
+  const repo =
+    typeof value === 'string'
+      ? /^https:\/\/huggingface\.co\/([^/?#\s]+)\/([^/?#\s]+)$/.exec(value)
+      : null
+  if (!repo?.[1] || !repo[2])
+    throw new Error(
+      'fireworks: unreadable huggingFaceUrl ' + JSON.stringify(value),
+    )
+  return { providerNamespace: repo[1], rawId: repo[2] }
+}
+/**
+ * One model's native metadata (`/v1/<rawId>`) is a docs source like any
+ * other. It states the upstream model of every `accounts/<account>/models/<name>` row
+ * and, for a chat row with no stated reasoning, whether it reasons. A
+ * failed load (Fireworks answers 403 for some listed ids) marks those facts
+ * `unavailable`: the stored values are kept (null on a new row) and the
+ * failure is counted in `run` instead of failing the poll.
+ */
+export async function fireworksNativeFacts(
   model: ModelInfo,
   apiKey: string,
   run: DocsRun,
   kv?: KVNamespace,
 ): Promise<ModelInfo> {
-  if (
-    model.activity !== 'chat' ||
-    model.reasoning ||
-    !/^accounts\/[^/]+\/models\/[^/]+$/.test(model.rawId)
-  )
-    return model
+  if (!/^accounts\/[^/]+\/models\/[^/]+$/.test(model.rawId)) return model
+  const readsReasoning = model.activity === 'chat' && !model.reasoning
   const url = 'https://api.fireworks.ai/v1/' + model.rawId
   const doc = await tryDocs(run, url, (cached) =>
-    cached(kv, url, async () => {
+    // Its own key: the entry under `url` held `{ supported, hash }` alone.
+    cached(kv, url + '#native', async () => {
       const text = await fetchText(url, {
         headers: { Authorization: 'Bearer ' + apiKey },
         signal: AbortSignal.timeout(30_000),
       })
+      const body: unknown = JSON.parse(text)
       return {
-        supported: parseFireworksNativeReasoning(JSON.parse(text), model.rawId),
+        supported: parseFireworksNativeReasoning(body, model.rawId),
+        huggingFace: parseFireworksHuggingFace(
+          (body as Record<string, unknown>).huggingFaceUrl,
+        ),
         hash: await sha256Text(text),
       }
     }),
   )
-  if (!doc)
-    return {
-      ...model,
-      absent: { ...model.absent, ...unavailable('capabilities').absent },
-    }
-  return doc.supported
-    ? nativeReasoningCapability(model, {
+  if (!doc) {
+    const lost = readsReasoning
+      ? unavailable('upstream', 'capabilities')
+      : unavailable('upstream')
+    return { ...model, absent: { ...model.absent, ...lost.absent } }
+  }
+  const stated: ModelInfo = {
+    ...model,
+    upstream: doc.huggingFace && {
+      ...doc.huggingFace,
+      source: { derivation: 'listing', sourceUrl: url, path: 'huggingFaceUrl' },
+    },
+  }
+  return readsReasoning && doc.supported
+    ? nativeReasoningCapability(stated, {
         derivation: 'listing',
         sourceUrl: url,
         sourceHash: doc.hash,
         path: 'description',
       })
-    : model
+    : stated
 }

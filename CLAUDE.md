@@ -263,8 +263,10 @@ ones).
   with `ProviderConfig.upstreamModelIdentity` or per-row `ModelInfo.upstream`
   (llmgateway, vercel, openrouter, azure, perplexity, lovable,
   amazon-bedrock, replicate official rows, google-vertex-anthropic, groq,
-  together, novita, huggingface; not OpenCode, whose AI SDK package column
-  names the wire protocol, not the maker). OpenRouter states a `:variant`
+  together, novita, huggingface, fireworks from each model's native
+  `huggingFaceUrl`; not OpenCode, whose AI SDK package column names the
+  wire protocol, not the maker). `absent.upstream: 'unavailable'` (a
+  failed per-row load) keeps the stored evidence. OpenRouter states a `:variant`
   id's base when both share a `canonical_slug`; the suffix goes in the
   evidence as `variant`. A row with stated evidence that resolves to
   nothing is never linked by name. A row with no stated upstream at a
