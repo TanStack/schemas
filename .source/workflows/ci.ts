@@ -32,7 +32,7 @@ export default defineWorkflow('ci', {
     {
       name: 'Changeset check',
       if: (ctx) => ctx.event !== 'push',
-      run: 'git branch -a; git log --oneline -1 origin/main; pnpm exec changeset status --since=origin/main',
+      run: 'git remote -v; git rev-parse --is-shallow-repository; git fetch --no-tags origin main:refs/remotes/origin/main && git log --oneline -1 origin/main && pnpm exec changeset status --since=origin/main',
     },
     // The committed client must match the spec.
     { name: 'Client drift check', run: 'pnpm run check:client' },
