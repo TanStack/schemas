@@ -105,7 +105,7 @@ async function listModels(
       docs,
       listed.models.map((model) => model.rawId),
     ),
-    groqModelServerTools(kv),
+    groqModelServerTools(kv, docs),
   ])
   const deprecations = await loadDeprecations(
     docs,
