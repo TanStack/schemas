@@ -286,6 +286,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // true (#711). A v42 entry would keep GPT-6.2 reasoning null for six hours.
 // v44: a Mistral model page entry gained `releasedAt` from its markdown
 // twin (#708); a v43 entry has none.
+// v45: Gemini model pages read "Grounding with Google Search" as
+// `googleSearch` (#707), and OpenAI pages cache their Endpoints support.
+// A v44 entry would leave both out for six hours.
 // v46: the Gemma card entry gained `card` (maker, open weights), and the
 // Mistral overview and BytePlus model list gained maker entries (#710).
 const DOCS_CACHE_VERSION = 'v46'

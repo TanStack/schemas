@@ -23,7 +23,44 @@ import type {
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
+  UpstreamModelIdentity,
 } from '../types.ts'
+
+/** The geography a card's inference-profile id starts with (`us.`, `global.`). */
+const PROFILE_GEO = /^(?:us|us-gov|eu|apac|au|ca|jp|in|global)\./
+/**
+ * Bedrock's own version on a model id: `-v1:0`, `-v1`, `-1:0`, then any
+ * remaining `:N`. Only version 1 is read as Bedrock's: a maker's own
+ * `-v4` (`cohere.embed-v4:0`) or `-v2` (`luma.ray-v2:0`) stays in the id.
+ */
+const BEDROCK_VERSION = /(?:-v1(?::\d+)?|-1:\d+|:\d+)$/
+
+/**
+ * `us.anthropic.claude-opus-4-5-20251101-v1:0` → anthropic /
+ * `claude-opus-4-5-20251101`. The card's model id names the maker before
+ * the first dot; a profile id is that model id behind a geography. An
+ * `amazon.` id is Bedrock's own model (Nova, Titan): no other host to name.
+ */
+function bedrockUpstreamIdentity(rawId: string): UpstreamModelIdentity | null {
+  const match = rawId.replace(PROFILE_GEO, '').match(/^([a-z0-9-]+)\.(.+)$/)
+  if (!match?.[1] || !match[2] || match[1] === 'amazon') return null
+  // A model part that still opens with `maker.` means the first segment was a
+  // geography this rule does not know (`me.anthropic.…`): state nothing.
+  // Every dot inside a listed model name is followed by a digit (`grok-4.7`).
+  if (/^[a-z][a-z0-9-]*\.[a-z]/.test(match[2])) return null
+  const upstreamId = match[2].replace(BEDROCK_VERSION, '')
+  return upstreamId
+    ? {
+        providerNamespace: match[1],
+        rawId: upstreamId,
+        source: {
+          derivation: 'docs-derived',
+          sourceUrl: BEDROCK_CARDS_URL,
+          path: 'Programmatic Access: Model ID',
+        },
+      }
+    : null
+}
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const text = await fetchText(BEDROCK_SDK_MODEL_URL)
@@ -56,6 +93,7 @@ export const provider: ProviderConfig = {
   id: 'amazon-bedrock',
   // LLM Gateway route name (providers[].providerId).
   modelNamespaces: ['aws-bedrock'],
+  upstreamModelIdentity: bedrockUpstreamIdentity,
   displayName: 'Amazon Bedrock',
   specSourceUrl: BEDROCK_SDK_MODEL_URL,
   modelsEndpoint: BEDROCK_CARDS_URL,

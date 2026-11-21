@@ -56,7 +56,12 @@ export function parseGroqBuiltinTools(
   return out
 }
 
-/** Lookup from the built-in tools page. A fetch or empty parse throws so the poll keeps stored tools. */
+/**
+ * Lookup from the built-in tools page. A fetch or empty parse throws so the
+ * poll keeps stored tools. The page is not exhaustive (the browser search
+ * page names `openai/gpt-oss-safeguard-20b`, this one does not), so a model
+ * it does not name states nothing (#707).
+ */
 export async function groqModelServerTools(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => HostedFacts> {

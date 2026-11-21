@@ -650,9 +650,15 @@ async function listModels(
           ? {
               serverTools: merged,
               factSources: {
+                // Only a page that names tools gives a map; a silent one
+                // gives none to merge.
                 serverTools: {
-                  ...priced.factSources?.serverTools,
-                  ...hosted.factSources?.serverTools,
+                  ...(priced.serverTools?.length
+                    ? priced.factSources?.serverTools
+                    : {}),
+                  ...(hosted.serverTools?.length
+                    ? hosted.factSources?.serverTools
+                    : {}),
                 },
               },
             }
