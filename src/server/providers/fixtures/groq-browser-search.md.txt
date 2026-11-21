@@ -1,0 +1,60 @@
+---
+description: Access comprehensive real-time web content with automatic citations using the built-in browser search tool.
+title: Browser Search - GroqDocs
+image: https://console.groq.com/og_cloudv5.jpg
+---
+
+# Browser Search
+
+Some models on Groq have built-in support for interactive browser search, providing a more comprehensive approach to accessing real-time web content than traditional web search. Browser search mimics human browsing behavior by navigating websites interactively, providing detailed results.
+
+  
+The use of this tool with a supported model or system in GroqCloud is not a HIPAA Covered Cloud Service under Groq's Business Associate Addendum at this time. This tool is also not available currently for use with regional / sovereign endpoints.
+
+## [Supported Models](#supported-models)
+
+Built-in browser search is supported for the following models:
+
+| Model ID                     | Model                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| openai/gpt-oss-20b           | [OpenAI GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-oss-20b)                     |
+| openai/gpt-oss-120b          | [OpenAI GPT-OSS 120B](https://console.groq.com/docs/model/openai/gpt-oss-120b)                   |
+| openai/gpt-oss-safeguard-20b | [OpenAI GPT-OSS-Safeguard 20B](https://console.groq.com/docs/model/openai/gpt-oss-safeguard-20b) |
+
+  
+**Note:** Browser search is not compatible with [structured outputs](https://console.groq.com/docs/structured-outputs).
+
+## [Quick Start](#quick-start)
+
+To use browser search, change the `model` parameter to one of the supported models.
+
+Python
+
+```
+from groq import Groq
+
+client = Groq()
+
+chat_completion = client.chat.completions.create(
+    messages=[
+        {
+            "role": "user", 
+            "content": "What happened in AI last week? Give me a concise, one paragraph summary of the most important events."
+        }
+    ],
+    model="openai/gpt-oss-20b",
+    temperature=1,
+    max_completion_tokens=2048,
+    top_p=1,
+    stream=False,
+    stop=None,
+    tool_choice="required",
+    tools=[
+        {
+            "type": "browser_search"
+        }
+    ]
+)
+
+print(chat_completion.choices[0].message.content)
+```

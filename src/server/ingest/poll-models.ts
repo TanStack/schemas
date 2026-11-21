@@ -572,7 +572,8 @@ function enrichListed(
   }
 }
 
-type StoredFact = Exclude<ModelFact, 'pricing'>
+// Pricing has the card path; `upstream` is evidence the identity write keeps.
+type StoredFact = Exclude<ModelFact, 'pricing' | 'upstream'>
 
 /** A stored row's facts in listing shape. With no row, every fact is empty. */
 function storedFacts(
@@ -969,15 +970,20 @@ export async function pollProviderModels(
     if (rowDeprecation(deprecationIndex, id, existing?.deprecation)) {
       info.deprecated = true
     }
+    const upstreamAbsent = info.absent?.upstream
     const stated =
-      info.upstream !== undefined
-        ? info.upstream
-        : (provider.upstreamModelIdentity?.(info.rawId) ?? null)
+      upstreamAbsent === 'cleared'
+        ? null
+        : info.upstream !== undefined
+          ? info.upstream
+          : (provider.upstreamModelIdentity?.(info.rawId) ?? null)
     // `groq/compound` on Groq names the host, not an upstream.
     const identity =
       stated && ownNames.has(stated.providerNamespace) ? null : stated
     // Only changed evidence is written: most rows restate it every poll.
-    if (!sameEvidence(existing, identity)) identities.push({ id, identity })
+    // An unread source keeps what is stored.
+    if (upstreamAbsent !== 'unavailable' && !sameEvidence(existing, identity))
+      identities.push({ id, identity })
 
     if (!existing) {
       await db.insert(models).values({

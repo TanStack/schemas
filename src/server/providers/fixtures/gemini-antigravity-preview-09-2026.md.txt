@@ -1,0 +1,77 @@
+> ## AI Agent Context
+> - Full documentation index: https://aistudio.google.com/llms.txt
+> - Gemini Docs MCP server (consistent live info): https://gemini-api-docs-mcp.dev
+> - Coding agent skills & setup guide: https://aistudio.google.com/docs/coding-agents.md
+
+# Antigravity preview
+
+A powerful general-purpose managed agent designed for autonomous, multi-step
+workflows. This model plans, reasons, runs code, manages files, and searches the
+web inside a secure, isolated Linux sandbox hosted by Google.
+
+The September 2026 release (`antigravity-preview-09-2026`) upgrades the runtime
+harness with improved prompt caching, native code search tools, and efficient
+line-range file editing.
+
+## Documentation  {% id="documentation" %}
+
+Visit the [Antigravity Agent](/docs/antigravity-agent) page for full
+coverage of features, capabilities, and code samples.
+
+## antigravity-preview-09-2026  {% id="antigravity-preview-09-2026" %}
+
+{% table variant="model" %}
+  * Property
+  * Description
+
+  ---
+
+  *     {% icon name="id_card" /%}
+
+Agent code
+  * **Interactions API**
+    `antigravity-preview-09-2026`
+
+  ---
+
+  *     {% icon name="save" /%}
+
+Supported data types
+  * **Input**
+    Text, Image
+    **Output**
+    Text
+
+  ---
+
+  *     {% icon name="token_auto" /%}
+
+Token limits[[*]](/docs/tokens)
+  * **Input context window**
+    1,048,576 (compacted at ~135k)
+    **Output token limit**
+    65,536
+
+  ---
+
+  *     {% icon name="123" /%}
+
+Versions
+  * Read the [model version patterns](/docs/models#model-versions) for more details.
+    Preview: `antigravity-preview-09-2026`
+
+  ---
+
+  *     {% icon name="calendar_month" /%}
+
+Latest update
+  * September 2026
+
+  ---
+
+  *     {% icon name="paid" /%}
+
+Pricing
+  * [Pricing](/docs/pricing#pricing-for-agents)
+{% /table %}
+

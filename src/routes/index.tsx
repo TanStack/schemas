@@ -101,7 +101,7 @@ function completenessNote(c: Completeness): string {
 const UNSCORED_NOTE =
   'No current score: none computed yet, or the live models changed since the last poll scored them'
 
-/** `chat 82%` / `video —` / `origin 3/5`, each with its own tooltip. */
+/** `chat 82%` / `video —`, each with its own tooltip. */
 function ScoreLine({
   label,
   value,
@@ -137,7 +137,7 @@ function ScoreLine({
   )
 }
 
-/** The total, then one line per activity the provider serves, then origin links. */
+/** The total, one line per activity the provider serves, then the origin-link count. */
 function CompletenessCell({
   id,
   c,
@@ -167,7 +167,7 @@ function CompletenessCell({
         className="cursor-help font-semibold"
         title={
           c.score === null
-            ? 'Nothing scored: no activity of these models has a fact set and none needs an origin link'
+            ? 'Nothing scored: no activity of these models has a fact set'
             : completenessNote(c)
         }
         tabIndex={0}
@@ -192,12 +192,16 @@ function CompletenessCell({
             href={`/models?provider=${id}${name === UNCLASSIFIED ? '' : `&activity=${name}`}`}
           />
         ))}
-        {c.originLink.need > 0 && (
-          <ScoreLine
-            label="origin"
-            value={`${c.originLink.have}/${c.originLink.need}`}
-            title={`${c.originLink.have} of ${c.originLink.need} models another provider also lists link to their origin row`}
-          />
+        {c.originLinks > 0 && (
+          <li>
+            <span
+              className="cursor-help text-ink-faint"
+              title={`${c.originLinks} models link to their origin row at another provider (sameAs). A count, not part of the score.`}
+              tabIndex={0}
+            >
+              {c.originLinks} origin {c.originLinks === 1 ? 'link' : 'links'}
+            </span>
+          </li>
         )}
       </ul>
     </>
@@ -382,7 +386,7 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap; a row whose id another provider also lists needs an origin link. Facts the provider does not publish are left out. Below the total: one score per activity, then origin links filled of needed."
+                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap. Facts the provider does not publish are left out. Below the total: one score per activity, then how many models link to their origin row (a count, not scored)."
                   >
                     complete
                   </th>

@@ -1,3 +1,4 @@
+import { OPENAI_REALTIME_MCP_URL } from './openai-realtime-mcp.ts'
 import { requestUrl } from '#/lib/text.ts'
 import { afterEach, expect, it } from 'vitest'
 import docs from './fixtures/openai-gpt5-guides.json'
@@ -282,7 +283,10 @@ it('marks realtime reasoning unavailable when the realtime guide fails (#371)', 
   )
   expect(row.reasoning).toEqual({ mode: 'effort', mandatory: null })
   expect(row.absent?.reasoning).toBe('unavailable')
+  // The realtime MCP guide is not served either: tools stay stored (#707).
+  expect(row.absent?.serverTools).toBe('unavailable')
   expect(run.first.map((failure) => failure.source)).toEqual([
     OPENAI_REALTIME_EFFORT_URL,
+    OPENAI_REALTIME_MCP_URL,
   ])
 })

@@ -17,9 +17,11 @@ import {
   docsReport,
   docsRun,
   markdocTables,
+  markdownTableRows,
   parseDay,
   tryDocs,
 } from './model-facts.ts'
+import { GEMINI_TOOL_FIELDS } from './gemini-features.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type {
   DocsFailures,
@@ -38,6 +40,13 @@ export const GEMINI_CHANGELOG_URL =
 /** Served as HTML only: the `.md.txt` mirror is gone (issue #568). */
 export const GEMMA_MODEL_CARD_URL =
   'https://ai.google.dev/gemma/docs/core/model_card_4'
+
+/**
+ * "Run Gemma with the Gemini API": a Supported models table and one `h2`
+ * per feature, each with a REST example. HTML only (#707).
+ */
+export const GEMMA_GEMINI_API_GUIDE_URL =
+  'https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api'
 
 const CHANGELOG_MARK = 'This page documents updates to the Gemini API'
 
@@ -356,6 +365,90 @@ function cachedReleaseDates(doc: {
   return doc.released ?? {}
 }
 
+/** A `tools` entry key the guide's REST examples use that is no hosted tool. */
+const GEMMA_GUIDE_CLIENT_TOOLS = new Set(['functionDeclarations'])
+
+function htmlText(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+/**
+ * Every key of every element of the JSON `tools` array opening at `open`.
+ * An array that does not parse as JSON throws.
+ */
+function toolsArrayKeys(text: string, open: number): Array<string> {
+  let depth = 0
+  let quoted = false
+  for (let i = open; i < text.length; i++) {
+    const c = text[i]
+    if (quoted) {
+      if (c === '\\') i++
+      else if (c === '"') quoted = false
+    } else if (c === '"') quoted = true
+    else if (c === '[' || c === '{') depth++
+    else if ((c === ']' || c === '}') && --depth === 0) {
+      const parsed: unknown = JSON.parse(text.slice(open, i + 1))
+      if (!Array.isArray(parsed)) break
+      return parsed.flatMap((item: unknown) =>
+        typeof item === 'object' && item !== null ? Object.keys(item) : [],
+      )
+    }
+  }
+  throw new Error('gemma gemini api guide: unreadable tools array')
+}
+
+/**
+ * Hosted tools the Gemma guide's REST examples enable, bound to every id in
+ * its Supported models table: the page says every example follows the size
+ * selector, which offers exactly those ids. A missing table or selector
+ * sentence throws; a `tools` key outside the Gemini tool fields throws.
+ */
+export function parseGemmaGuideTools(html: string): Map<string, Array<string>> {
+  const article = /<article[\s\S]*?<\/article>/.exec(html)?.[0] ?? ''
+  const sections = article.split(/<h2 id="/).slice(1)
+  const models =
+    sections.find((section) => section.startsWith('supported-models"')) ?? ''
+  const rows = markdownTableRows(htmlTables(models))
+  const column = rows[0]?.findIndex((cell) => cell === 'Identifier') ?? -1
+  const ids = rows
+    .slice(1)
+    .map((row) => row[column] ?? '')
+    .filter((id) => /^gemma-[a-z0-9.-]+$/.test(id))
+  if (column < 0 || ids.length === 0) {
+    throw new Error('gemma gemini api guide: no Supported models identifiers')
+  }
+  if (
+    !/every example below follows it/.test(
+      htmlText(models).replace(/\s+/g, ' '),
+    )
+  ) {
+    throw new Error(
+      'gemma gemini api guide: examples no longer follow the size selector',
+    )
+  }
+  const tools: Array<string> = []
+  for (const section of sections) {
+    const text = htmlText(section)
+    for (const match of text.matchAll(/"tools":\s*\[/g)) {
+      for (const key of toolsArrayKeys(
+        text,
+        match.index + match[0].length - 1,
+      )) {
+        if (GEMMA_GUIDE_CLIENT_TOOLS.has(key)) continue
+        if (!GEMINI_TOOL_FIELDS.has(key)) {
+          throw new Error(`gemma gemini api guide: unknown tools key "${key}"`)
+        }
+        if (!tools.includes(key)) tools.push(key)
+      }
+    }
+  }
+  return new Map(ids.map((id) => [id, tools]))
+}
+
 export interface GeminiPublishedBindings {
   /** Null when the changelog could not be read. `{}` means it names none. */
   aliases: Record<string, string> | null
@@ -365,6 +458,9 @@ export interface GeminiPublishedBindings {
   /** Null when the model card could not be read. */
   gemmaCard: GemmaCardFacts | null
   gemmaSource: { url: string; hash: string }
+  /** Null when the Gemma Gemini API guide could not be read. */
+  gemmaTools: Record<string, Array<string>> | null
+  gemmaToolsSource: { url: string; hash: string }
   docsFailures: DocsFailures
 }
 
@@ -372,7 +468,7 @@ export async function geminiPublishedBindings(
   kv?: KVNamespace,
 ): Promise<GeminiPublishedBindings> {
   const run = docsRun()
-  const [changelog, gemma] = await Promise.all([
+  const [changelog, gemma, gemmaGuide] = await Promise.all([
     tryDocs(run, GEMINI_CHANGELOG_URL, (cached) =>
       cached(kv, GEMINI_CHANGELOG_URL, async () => {
         const markdown = await fetchText(GEMINI_CHANGELOG_URL)
@@ -397,6 +493,15 @@ export async function geminiPublishedBindings(
         }
       }),
     ),
+    tryDocs(run, GEMMA_GEMINI_API_GUIDE_URL, (cached) =>
+      cached(kv, GEMMA_GEMINI_API_GUIDE_URL, async () => {
+        const html = await fetchText(GEMMA_GEMINI_API_GUIDE_URL)
+        return {
+          tools: Object.fromEntries(parseGemmaGuideTools(html)),
+          hash: await sha256Text(html),
+        }
+      }),
+    ),
   ])
   return {
     aliases: changelog ? changelog.aliases : null,
@@ -407,6 +512,11 @@ export async function geminiPublishedBindings(
     gemma: gemma ? gemma.modalities : null,
     gemmaCard: gemma ? gemma.card : null,
     gemmaSource: { url: GEMMA_MODEL_CARD_URL, hash: gemma?.hash ?? '' },
+    gemmaTools: gemmaGuide ? gemmaGuide.tools : null,
+    gemmaToolsSource: {
+      url: GEMMA_GEMINI_API_GUIDE_URL,
+      hash: gemmaGuide?.hash ?? '',
+    },
     docsFailures: docsReport(run),
   }
 }
@@ -501,6 +611,38 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
             ...sourceHash(bindings.gemmaSource.hash),
             path: 'Supported Modalities',
           },
+        },
+      })
+    }
+  }
+
+  // Gemma rows have no model page, so the guide is their only tool source.
+  // It is not a complete list: a row it gives no tool states nothing.
+  for (const rawId of rawIds) {
+    const model = byId.get(rawId)
+    if (!model || model.serverTools != null || !rawId.startsWith('gemma-')) {
+      continue
+    }
+    const tools = bindings.gemmaTools?.[rawId]
+    if (bindings.gemmaTools === null) {
+      put({ ...model, absent: { ...model.absent, serverTools: 'unavailable' } })
+    } else if (tools && tools.length > 0) {
+      put({
+        ...model,
+        serverTools: tools,
+        factSources: {
+          ...model.factSources,
+          serverTools: Object.fromEntries(
+            tools.map((tool) => [
+              tool,
+              {
+                derivation: 'docs-derived' as const,
+                sourceUrl: bindings.gemmaToolsSource.url,
+                ...sourceHash(bindings.gemmaToolsSource.hash),
+                path: `Supported models; ${tool} example`,
+              },
+            ]),
+          ),
         },
       })
     }

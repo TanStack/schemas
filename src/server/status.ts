@@ -36,9 +36,9 @@ export interface ActivityCompleteness {
  */
 export interface Completeness {
   /**
-   * 0 to 1 over every scored activity and `originLink`. Null when nothing
-   * is scored (every row's activity has no fact set and no row needs a
-   * link), and when there is no current score: none computed yet, or the
+   * 0 to 1 over every scored activity. Null when nothing is scored (every
+   * row's activity has no fact set), and when there is no current score:
+   * none computed yet, or the
    * provider's live rows changed since the last poll scored them.
    */
   score: number | null
@@ -52,8 +52,8 @@ export interface Completeness {
   silent: Array<FactKey>
   /** By activity, plus `unclassified` for rows with a null activity. */
   activities: Record<string, ActivityCompleteness>
-  /** Rows that need an upstream link (`need`) and rows that have one. */
-  originLink: { have: number; need: number }
+  /** Live models with `sameAs` served. A count, not part of `score`. */
+  originLinks: number
 }
 
 export interface ProviderStatus {
@@ -124,12 +124,11 @@ const live = (where = sql`1`) =>
  * Bump the version when the scorer or the `Completeness` shape changes: the
  * old row then reads as no record, and scores are null until the next poll.
  */
-const COMPLETENESS_KEY = 'status:completeness:v3'
+const COMPLETENESS_KEY = 'status:completeness:v4'
 
 /**
  * Completeness of every provider with live rows: the rows `GET
  * /v1/models?pricing=1` serves, so this and the CLI score the same thing.
- * Origin links match across the whole catalog, so every row is read.
  */
 async function scoreCompleteness(
   db: Db,
@@ -158,10 +157,7 @@ async function scoreCompleteness(
           needed: need,
           silent: provider.silent,
           activities,
-          originLink: {
-            have: provider.originLink.have,
-            need: provider.originLink.need,
-          },
+          originLinks: provider.originLinks,
         },
       ]
     }),
@@ -181,7 +177,6 @@ const isScore = (value: unknown) => value === null || isCount(value)
 function isCompleteness(value: unknown): value is Completeness {
   if (typeof value !== 'object' || value === null) return false
   const entry = value as Partial<Record<keyof Completeness, unknown>>
-  const link = entry.originLink as Record<string, unknown> | null | undefined
   return (
     isScore(entry.score) &&
     isCount(entry.rows) &&
@@ -202,10 +197,8 @@ function isCompleteness(value: unknown): value is Completeness {
         isCount(act.needed)
       )
     }) &&
-    typeof link === 'object' &&
-    link !== null &&
-    isCount(link.have) &&
-    isCount(link.need)
+    // The previous `originLink: { have, need }` shape is no record.
+    isCount(entry.originLinks)
   )
 }
 
@@ -361,7 +354,7 @@ export async function getServiceStatus(
         sourceSilentLedger.get(providerId)?.has(key),
       ),
       activities: {},
-      originLink: { have: 0, need: 0 },
+      originLinks: 0,
     }
   }
 

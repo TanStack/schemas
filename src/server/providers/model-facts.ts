@@ -291,7 +291,15 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // A v44 entry would leave both out for six hours.
 // v46: the Gemma card entry gained `card` (maker, open weights), and the
 // Mistral overview and BytePlus model list gained maker entries (#710).
-const DOCS_CACHE_VERSION = 'v46'
+// v47: the BytePlus maker parse wrote `{ makers, named }` under the same key
+// as the Tool use parse's `{ mcp }`; it now has its own `#makers` key. A v46
+// entry may hold either shape, so none is trusted.
+// v48: OpenAI model pages gained `knowledgeCutoff` and read the GPT-6.2
+// pricing bullets; a v47 entry has neither for six hours.
+// v49: a Gemini model page entry gained `guide`, the guide its
+// Documentation section links (#707). A v48 entry has none, so agent rows
+// would read no guide tools for six hours.
+const DOCS_CACHE_VERSION = 'v49'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {
@@ -313,7 +321,10 @@ export async function cachedDocs<T>(
     const hit = await getJson<T>(kv, key)
     if (hit !== null) return hit
   }
-  const value = await load()
+  // A fresh load returns what a cache hit would: a Map, Set or Date that
+  // JSON does not keep then breaks the first poll and every test, not only
+  // the polls after it.
+  const value = JSON.parse(JSON.stringify(await load())) as T
   if (kv) {
     await putJson(kv, key, value, { expirationTtl: DOCS_TTL_SECONDS })
   }

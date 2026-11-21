@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { requestUrl } from '#/lib/text.ts'
@@ -8,12 +10,19 @@ import {
   OPENAI_MODEL_PAGE,
   openaiModelFacts,
 } from './openai-model-docs.ts'
+import { docsRun } from './model-facts.ts'
+import {
+  OPENAI_REALTIME_MCP_URL,
+  parseOpenAiRealtimeMcp,
+} from './openai-realtime-mcp.ts'
 import { openrouterServerTools } from './openrouter.ts'
 import {
   GROQ_BUILTIN_TOOLS_URL,
+  GROQ_TOOL_PAGE_URLS,
   groqModelServerTools,
   parseByteplusServerTools,
   parseGroqBuiltinTools,
+  parseGroqToolPage,
   parseMistralPageTools,
 } from './server-tools.ts'
 
@@ -37,6 +46,14 @@ const GROQ_TOOLS = `# Groq Built-In Tools
 
 Llama stays on the models page and is not listed here.
 `
+
+/** console.groq.com/docs/<page>.md, 2026-11-21, cut down. */
+function groqPage(name: string): string {
+  return readFileSync(
+    new URL(`./fixtures/groq-${name}.md.txt`, import.meta.url),
+    'utf8',
+  )
+}
 
 const MISTRAL_TOOLS = `<html><body>
 <h2>Supported tools</h2>
@@ -160,16 +177,93 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     vi.unstubAllGlobals()
   })
 
-  it('Groq: a model the built-in tools page does not name states nothing', async () => {
-    serve({ [GROQ_BUILTIN_TOOLS_URL]: GROQ_TOOLS })
-    const tools = await groqModelServerTools()
+  it('Groq: reads each tool page Supported Models table', () => {
+    expect(parseGroqToolPage(groqPage('browser-search'))).toEqual({
+      tool: 'browser_search',
+      models: [
+        'openai/gpt-oss-20b',
+        'openai/gpt-oss-120b',
+        'openai/gpt-oss-safeguard-20b',
+      ],
+    })
+    expect(parseGroqToolPage(groqPage('code-execution'))).toEqual({
+      tool: 'code_interpreter',
+      models: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'],
+    })
+    expect(parseGroqToolPage(groqPage('remote-mcp'))).toEqual({
+      tool: 'mcp',
+      models: [
+        'openai/gpt-oss-20b',
+        'openai/gpt-oss-120b',
+        'qwen/qwen3.8-27b',
+        'meta-models/muse-spark-open',
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant',
+      ],
+    })
+  })
+
+  it('Groq: a tool page with changed wording throws instead of naming no model', () => {
+    const page = groqPage('browser-search')
+    expect(() =>
+      parseGroqToolPage(page.replace('## [Supported Models]', '## [Models]')),
+    ).toThrow(/Supported Models/)
+    expect(() =>
+      parseGroqToolPage(page.replace('| Model ID ', '| Model    ')),
+    ).toThrow(/Supported Models/)
+    expect(() =>
+      parseGroqToolPage(page.replaceAll('browser_search', 'BrowserSearch')),
+    ).toThrow(/tools none/)
+    expect(() =>
+      parseGroqToolPage(
+        page.replace('| openai/gpt-oss-20b ', '| GPT OSS 20B (new) '),
+      ),
+    ).toThrow(/Model ID cell/)
+  })
+
+  const groqPages = () => ({
+    [GROQ_BUILTIN_TOOLS_URL]: GROQ_TOOLS,
+    [GROQ_TOOL_PAGE_URLS[0]]: groqPage('browser-search'),
+    [GROQ_TOOL_PAGE_URLS[1]]: groqPage('code-execution'),
+    [GROQ_TOOL_PAGE_URLS[2]]: groqPage('remote-mcp'),
+  })
+
+  it('Groq: tools from every page that names the model; nothing when none does', async () => {
+    serve(groqPages())
+    const docs = docsRun()
+    const tools = await groqModelServerTools(undefined, docs)
     expect(tools('openai/gpt-oss-20b').serverTools).toEqual([
       'browser_search',
       'code_interpreter',
+      'mcp',
     ])
-    // The page is not exhaustive (browser search names more models), so a
-    // model it does not name gets no entry.
+    const safeguard = tools('openai/gpt-oss-safeguard-20b')
+    expect(safeguard.serverTools).toEqual(['browser_search'])
+    expect(safeguard.factSources?.serverTools).toMatchObject({
+      browser_search: {
+        derivation: 'docs-derived',
+        sourceUrl: GROQ_TOOL_PAGE_URLS[0],
+      },
+    })
+    expect(tools('qwen/qwen3.8-27b').serverTools).toEqual(['mcp'])
+    // The tables are not complete (the MCP table omits a model the tool-use
+    // overview says takes tools), so a model none names states nothing.
     expect(tools('allam-2-7b')).toEqual({})
+    expect(docs.failed).toBe(0)
+  })
+
+  it('Groq: one tool page failing marks every row unavailable, never silent', async () => {
+    const { [GROQ_TOOL_PAGE_URLS[2]]: _mcp, ...rest } = groqPages()
+    serve(rest)
+    const docs = docsRun()
+    const tools = await groqModelServerTools(undefined, docs)
+    expect(tools('allam-2-7b')).toEqual({
+      absent: { serverTools: 'unavailable' },
+    })
+    expect(tools('openai/gpt-oss-20b')).toEqual({
+      absent: { serverTools: 'unavailable' },
+    })
+    expect(docs.failed).toBe(1)
   })
 
   it('OpenAI: silent only when no Responses, Realtime or Live route is supported', async () => {
@@ -262,6 +356,105 @@ describe('a read page that names no tool is source-silent (#707)', () => {
     expect(facts('gpt-4o').serverTools).toEqual(['web_search'])
     // No model page read: nothing is stated (the ledger covers it).
     expect(facts('gpt-5-search-api').factSources?.serverTools).toBeUndefined()
+  })
+
+  it('OpenAI: realtime ids the MCP guide samples name take hosted mcp', async () => {
+    // developers.openai.com/api/docs/guides/realtime-mcp.md, 2026-11-21:
+    // "Choose a tool type" and the "Configure an MCP tool" and "Legacy
+    // connectors" sections with every sample language.
+    const guide = readFileSync(
+      new URL('./fixtures/openai-realtime-mcp.md.txt', import.meta.url),
+      'utf8',
+    )
+    // Only the TypeScript and Python samples are read.
+    expect(parseOpenAiRealtimeMcp(guide)).toEqual([
+      {
+        model: 'gpt-realtime-2.1',
+        heading: 'Configure an MCP tool',
+        lang: 'typescript',
+      },
+      {
+        model: 'gpt-realtime-2.1',
+        heading: 'Configure an MCP tool',
+        lang: 'python',
+      },
+      {
+        model: 'gpt-realtime-1.5',
+        heading: 'Legacy connectors',
+        lang: 'typescript',
+      },
+      {
+        model: 'gpt-realtime-1.5',
+        heading: 'Legacy connectors',
+        lang: 'python',
+      },
+    ])
+    expect(() =>
+      parseOpenAiRealtimeMcp(guide.replaceAll('"mcp"', '"remote_mcp"')),
+    ).toThrow(/no sample/)
+    // A second model in one mcp sample (a transcription model) is not bound.
+    expect(() =>
+      parseOpenAiRealtimeMcp(
+        guide.replace(
+          'output_modalities: ["text"],',
+          'output_modalities: ["text"],\n    transcription: { model: "gpt-realtime-whisper" },',
+        ),
+      ),
+    ).toThrow(/gpt-realtime-2.1, gpt-realtime-whisper/)
+    const page = (id: string) =>
+      [
+        `Model ID: \`${id}\``,
+        '',
+        ...endpoints('Not supported', 'Not supported', 'Supported'),
+      ].join('\n')
+    const ids = ['gpt-realtime-2.1', 'gpt-realtime-1.5', 'gpt-realtime-2']
+    const pages = {
+      [OPENAI_MODELS_INDEX_URL]: ids
+        .map((slug) => `[${slug}](/api/docs/models/${slug}.md)`)
+        .join('\n'),
+      ...Object.fromEntries(ids.map((id) => [OPENAI_MODEL_PAGE(id), page(id)])),
+    }
+    serve({ ...pages, [OPENAI_REALTIME_MCP_URL]: guide })
+    const facts = await openaiModelFacts(ids)
+    expect(facts('gpt-realtime-2.1')).toMatchObject({
+      serverTools: ['mcp'],
+      factSources: {
+        serverTools: {
+          mcp: {
+            derivation: 'docs-derived',
+            sourceUrl: OPENAI_REALTIME_MCP_URL,
+            path: 'Configure an MCP tool (sample)',
+          },
+        },
+      },
+    })
+    expect(facts('gpt-realtime-1.5').serverTools).toEqual(['mcp'])
+    expect(facts('gpt-realtime-1.5').factSources?.serverTools).toMatchObject({
+      mcp: { path: 'Legacy connectors (sample)' },
+    })
+    // The guide is not a complete list: an id its samples skip gets no
+    // entry and keeps whatever is stored.
+    expect(facts('gpt-realtime-2').serverTools).toBeNull()
+    expect(facts('gpt-realtime-2').factSources?.serverTools).toBeUndefined()
+    expect(facts('gpt-realtime-2').absent?.serverTools).toBe('unavailable')
+
+    // Samples follow the newest model: the id they stop naming keeps its
+    // stored ["mcp"] instead of being written null.
+    serve({
+      ...pages,
+      [OPENAI_REALTIME_MCP_URL]: guide.replaceAll(
+        'gpt-realtime-2.1',
+        'gpt-realtime-3',
+      ),
+    })
+    const rotated = await openaiModelFacts(ids)
+    expect(rotated('gpt-realtime-2.1').absent?.serverTools).toBe('unavailable')
+
+    serve(pages)
+    const failed = await openaiModelFacts(ids)
+    expect(failed('gpt-realtime-2.1').absent).toMatchObject({
+      serverTools: 'unavailable',
+    })
   })
 
   it('Grok: a model the "e.g." files list does not name stays unstated', async () => {
