@@ -1,6 +1,13 @@
-import { cachedDocs } from './model-facts.ts'
+import { cachedDocs, docsReport, docsRun, tryDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { ProviderConfig } from './types.ts'
+import type { ModelInfo, ProviderConfig } from './types.ts'
+import { dashscopeCompatCovers } from './dashscope-compat.ts'
+import {
+  DASHSCOPE_CN_COMPAT,
+  parseDashscopeCnCompat,
+} from './dashscope-cn-compat.ts'
+import type { DashscopeCnCompat } from './dashscope-cn-compat.ts'
+import { classifyOpenCodeRoute, routeOnlyChatSpec } from './opencode-routes.ts'
 import {
   applyCnCardFacts,
   applyCnCatalog,
@@ -55,6 +62,40 @@ async function load(kv?: KVNamespace) {
     return { docs, models }
   })
 }
+async function loadCompat(): Promise<DashscopeCnCompat & { hash: string }> {
+  const text = await fetchText(DASHSCOPE_CN_COMPAT, {
+    signal: AbortSignal.timeout(30_000),
+  })
+  return { ...parseDashscopeCnCompat(text), hash: await sha256Text(text) }
+}
+
+/** Binds a chat row the compat page's supported-models line names. */
+function withCompatRoute(
+  model: ModelInfo,
+  compat: (DashscopeCnCompat & { hash: string }) | null,
+): ModelInfo {
+  if (model.activity !== 'chat') return model
+  if (!compat)
+    return {
+      ...model,
+      absent: { ...model.absent, schemaEndpointId: 'unavailable' },
+    }
+  if (!dashscopeCompatCovers(model.rawId, compat.scope)) return model
+  return {
+    ...model,
+    schemaEndpointId: compat.route,
+    factSources: {
+      ...model.factSources,
+      schemaEndpointId: {
+        derivation: 'docs-derived',
+        sourceUrl: DASHSCOPE_CN_COMPAT,
+        sourceHash: compat.hash,
+        path: '完整访问endpoint 北京; 支持的模型',
+      },
+    },
+  }
+}
+
 export const provider: ProviderConfig = {
   id: 'dashscope-cn',
   displayName: 'Alibaba Cloud Model Studio (China)',
@@ -62,18 +103,32 @@ export const provider: ProviderConfig = {
   modelsEndpoint: DASHSCOPE_CN_MODELS,
   specSourceUrl: DASHSCOPE_CN_MODELS,
   bindSyncedRoutesOnly: true,
+  // The compat page states the chat route, not its body schema (#716).
+  bindStoredRoutesWithoutSchemas: true,
   async listModels(_env, kv) {
-    return { models: (await load(kv)).models }
+    const { models } = await load(kv)
+    const run = docsRun()
+    const compat = await tryDocs(run, DASHSCOPE_CN_COMPAT, (cached) =>
+      cached(kv, `${DASHSCOPE_CN_COMPAT}#route`, loadCompat),
+    )
+    return {
+      models: models.map((model) => withCompatRoute(model, compat)),
+      docsFailures: docsReport(run),
+    }
   },
   async fetchSpec() {
     const { docs } = await load()
+    const compat = await loadCompat()
     return {
-      specs: [],
-      sources: docs.map(({ url, hash }) => ({ url, hash })),
-      outputStrategy: 'post-200',
-      skipped:
-        'dashscope-cn: native Beijing docs publish public model facts and RMB prices, but no sourced complete API body schema has been extracted — skipped',
+      ...routeOnlyChatSpec([compat.route], {
+        url: DASHSCOPE_CN_COMPAT,
+        hash: compat.hash,
+      }),
+      sources: [
+        ...docs.map(({ url, hash }) => ({ url, hash })),
+        { url: DASHSCOPE_CN_COMPAT, hash: compat.hash },
+      ],
     }
   },
-  classify: () => null,
+  classify: classifyOpenCodeRoute,
 }

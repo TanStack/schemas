@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { KIMI_CODE_MODELS_URL, parseKimiCodeModels } from './kimi-code-docs.ts'
+import {
+  KIMI_CODE_MODELS_URL,
+  kimiCodeChatRoute,
+  parseKimiCodeModels,
+} from './kimi-code-docs.ts'
 
 const html = readFileSync(
   new URL('./fixtures/kimi-code-models.html.txt', import.meta.url),
@@ -100,5 +104,32 @@ describe('native Kimi Coding model documentation', () => {
     expect(() =>
       parseKimiCodeModels(html.replace('Image, video', 'Image, radar'), source),
     ).toThrow(/modalities/)
+  })
+})
+
+describe('Kimi Code Base URLs table (issue #716)', () => {
+  const current = readFileSync(
+    new URL('./fixtures/kimi-code-models-2026-11-21.html.txt', import.meta.url),
+    'utf8',
+  )
+  it('reads the Chat Completions base path for each region', () => {
+    expect(kimiCodeChatRoute(current, 'China')).toBe(
+      'coding/v1/chat/completions',
+    )
+    expect(kimiCodeChatRoute(current, 'Overseas')).toBe(
+      'coding/v1/chat/completions',
+    )
+  })
+  it('states no chat route when the protocol row does not name Chat Completions', () => {
+    // The earlier page said only "OpenAI compatible".
+    expect(() => kimiCodeChatRoute(html, 'China')).toThrow(/Chat Completions/)
+  })
+  it('throws when the region has no URL', () => {
+    expect(() =>
+      kimiCodeChatRoute(
+        current.replaceAll('Overseas <code', 'Abroad <code'),
+        'Overseas',
+      ),
+    ).toThrow(/Overseas/)
   })
 })

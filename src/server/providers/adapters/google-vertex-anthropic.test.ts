@@ -6,7 +6,10 @@ import {
   VERTEX_CLAUDE_REQUEST_URL,
 } from '../vertex-claude.ts'
 
-import { SKIP_REASON, provider } from './google-vertex-anthropic.ts'
+import { provider } from './google-vertex-anthropic.ts'
+
+const ROUTE =
+  'v1/projects/{projectsId}/locations/{locationsId}/publishers/anthropic/models/{modelsId}:rawPredict'
 
 const originalFetch = globalThis.fetch
 
@@ -39,7 +42,7 @@ function memoryKv(): { kv: KVNamespace; dropFreshDocs: () => void } {
 }
 
 describe('google-vertex-anthropic', () => {
-  it('fetches Google cards and pricing while preserving unknown body schemas', async () => {
+  it('fetches Google cards and pricing, and binds the stated route without a body schema', async () => {
     const urls: Array<string> = []
     const path =
       '/gemini-enterprise-agent-platform/models/partner-models/claude/sonnet-4-6'
@@ -53,8 +56,7 @@ describe('google-vertex-anthropic', () => {
       [`https://docs.cloud.google.com${path}`]: fixture('sonnet-4-6'),
       'https://cloud.google.com/model-garden/partner-models/pricing':
         fixture('global-pricing'),
-      [VERTEX_CLAUDE_REQUEST_URL]:
-        'Google request examples: :rawPredict with anthropic_version',
+      [VERTEX_CLAUDE_REQUEST_URL]: fixture('use-claude'),
     }
     globalThis.fetch = ((url: string) => {
       urls.push(String(url))
@@ -73,8 +75,13 @@ describe('google-vertex-anthropic', () => {
     expect(listed.models[0]).toMatchObject({
       rawId: 'claude-sonnet-4-6',
       contextWindow: 1_000_000,
-      schemaEndpointId: null,
+      schemaEndpointId: ROUTE,
       serverTools: null,
+    })
+    expect(listed.models[0]?.factSources?.schemaEndpointId).toMatchObject({
+      derivation: 'docs-derived',
+      sourceUrl: VERTEX_CLAUDE_REQUEST_URL,
+      path: 'HTTP method and URL',
     })
     expect(listed.models[0]?.pricing).not.toBeNull()
     expect(listed.models[0]?.pricing).toMatchObject({
@@ -85,11 +92,16 @@ describe('google-vertex-anthropic', () => {
     expect(listed.models[0]?.factSources?.pricing?.sourceUrl).toBe(
       'https://cloud.google.com/model-garden/partner-models/pricing',
     )
-    expect(spec.skipped).toBe(SKIP_REASON)
-    expect(spec.specs).toEqual([])
+    expect(spec.skipped).toBeUndefined()
+    expect(Object.keys(spec.specs[0]?.paths ?? {})).toEqual([`/${ROUTE}`])
+    expect(spec.specs[0]?.paths?.[`/${ROUTE}`]?.post).toMatchObject({
+      'x-modelschemas-route-only': true,
+      responses: {},
+    })
     expect(spec.sources[0]?.url).toBe(VERTEX_CLAUDE_REQUEST_URL)
     expect(spec.sources[0]?.hash).toMatch(/^[a-f0-9]{64}$/)
-    expect(urls).toEqual(Object.keys(pages))
+    // The listing and the spec each read the request page once.
+    expect(urls).toEqual([...Object.keys(pages), VERTEX_CLAUDE_REQUEST_URL])
     expect(provider.modelsEndpoint).toBe(VERTEX_CLAUDE_URL)
   })
   it('keeps the last catalog when docs.cloud.google.com answers 429', async () => {
@@ -105,6 +117,7 @@ describe('google-vertex-anthropic', () => {
       [`https://docs.cloud.google.com${path}`]: fixture('sonnet-4-6'),
       'https://cloud.google.com/model-garden/partner-models/pricing':
         fixture('global-pricing'),
+      [VERTEX_CLAUDE_REQUEST_URL]: fixture('use-claude'),
     }
     globalThis.fetch = ((url: string) => {
       const text = pages[String(url)]
@@ -139,7 +152,9 @@ describe('google-vertex-anthropic', () => {
     expect(
       calls.filter((url) => url.includes('docs.cloud.google.com')),
     ).toEqual([VERTEX_CLAUDE_URL])
-    expect(again.docsFailures).toMatchObject({ failed: 1, skipped: 1 })
+    // The cards index failed; a card page and the route page were cooling skips.
+    expect(again.docsFailures).toMatchObject({ failed: 1, skipped: 2 })
+    expect(again.models[0]?.schemaEndpointId).toBe(ROUTE)
     expect(again.docsFailures?.first.map((item) => item.source)).toEqual([
       `${VERTEX_CLAUDE_URL}#paths`,
     ])

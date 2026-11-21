@@ -1,7 +1,16 @@
 /**
  * Google-hosted Claude: dynamically read Google's linked model cards and prices.
+ * The request page states the `:rawPredict` route for any Claude model id
+ * but publishes examples, not a body schema, so that route is stored
+ * route-only (issue #716).
  */
-import { beginGoogleDocsPoll, googleDocsFailures } from '../google-docs.ts'
+import {
+  beginGoogleDocsPoll,
+  cachedGoogleDocs,
+  googleDocsFailures,
+} from '../google-docs.ts'
+import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
+import { classifyOpenCodeRoute, routeOnlyChatSpec } from '../opencode-routes.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -13,21 +22,57 @@ import {
   VERTEX_CLAUDE_URL,
   VERTEX_CLAUDE_REQUEST_URL,
   vertexClaudeModels,
+  vertexClaudeRoute,
 } from '../vertex-claude.ts'
 
-export const SKIP_REASON =
-  'google-vertex-anthropic: Google publishes request examples, not a machine-readable Claude body schema — skipped'
+async function loadRoute(): Promise<{ route: string; hash: string }> {
+  const html = await fetchText(VERTEX_CLAUDE_REQUEST_URL)
+  return { route: vertexClaudeRoute(html), hash: await sha256Text(html) }
+}
 
-async function skippedSpec(): Promise<SpecFetchResult> {
-  const text = await fetchText(VERTEX_CLAUDE_REQUEST_URL)
-  if (!text.includes(':rawPredict') || !text.includes('anthropic_version')) {
-    throw new Error('vertex claude: request documentation changed')
-  }
+async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const { route, hash } = await loadRoute()
+  return routeOnlyChatSpec([route], { url: VERTEX_CLAUDE_REQUEST_URL, hash })
+}
+
+async function listModels(
+  _env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  beginGoogleDocsPoll()
+  const models = await vertexClaudeModels(kv)
+  const run = docsRun()
+  const stated = await tryDocs(run, VERTEX_CLAUDE_REQUEST_URL, () =>
+    cachedGoogleDocs(kv, `${VERTEX_CLAUDE_REQUEST_URL}#route`, loadRoute),
+  )
+  const google = googleDocsFailures()
+  const own = docsReport(run)
   return {
-    specs: [],
-    sources: [{ url: VERTEX_CLAUDE_REQUEST_URL, hash: await sha256Text(text) }],
-    outputStrategy: 'post-200',
-    skipped: SKIP_REASON,
+    models: models.map((model) =>
+      stated
+        ? {
+            ...model,
+            schemaEndpointId: stated.route,
+            factSources: {
+              ...model.factSources,
+              schemaEndpointId: {
+                derivation: 'docs-derived',
+                sourceUrl: VERTEX_CLAUDE_REQUEST_URL,
+                sourceHash: stated.hash,
+                path: 'HTTP method and URL',
+              },
+            },
+          }
+        : {
+            ...model,
+            absent: { ...model.absent, schemaEndpointId: 'unavailable' },
+          },
+    ),
+    docsFailures: {
+      failed: google.failed + own.failed,
+      skipped: google.skipped + own.skipped,
+      first: [...google.first, ...own.first],
+    },
   }
 }
 
@@ -39,17 +84,9 @@ export const provider: ProviderConfig = {
   specSourceUrl: VERTEX_CLAUDE_REQUEST_URL,
   modelsEndpoint: VERTEX_CLAUDE_URL,
   defaultDerivation: 'docs-derived',
-  fetchSpec: (_env: ProviderSecrets) => skippedSpec(),
-  listModels: async (
-    _env: ProviderSecrets,
-    kv?: KVNamespace,
-  ): Promise<ListModelsResult> => {
-    beginGoogleDocsPoll()
-    return {
-      models: await vertexClaudeModels(kv),
-      docsFailures: googleDocsFailures(),
-    }
-  },
+  fetchSpec,
+  listModels,
   bindSyncedRoutesOnly: true,
-  classify: () => null,
+  bindStoredRoutesWithoutSchemas: true,
+  classify: classifyOpenCodeRoute,
 }
