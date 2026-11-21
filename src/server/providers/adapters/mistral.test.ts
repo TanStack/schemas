@@ -345,58 +345,40 @@ describe('mistral alias links (#709)', () => {
     listing.data.map((row) => [row.id, mistralAliasFacts(row)]),
   )
 
-  it('points a -latest row at the id its listing name states', () => {
+  it('lists the stated group and never reads name as a target', () => {
+    // The listing's name is `mistral-large-4` on every member: not a target.
     const large = facts.get('mistral-large-latest')
-    expect(large?.aliasOf).toBe('mistral-large-4')
+    expect(large?.aliasOf).toBeNull()
     expect(large?.aliases).toEqual(['mistral-large-4', 'mistral-large-4-0'])
-    expect(large?.factSources?.aliasOf).toEqual({
-      derivation: 'listing',
-      sourceUrl: 'https://api.mistral.ai/v1/models',
-      path: 'name',
+    expect(large?.factSources).toEqual({
+      aliases: {
+        derivation: 'listing',
+        sourceUrl: 'https://api.mistral.ai/v1/models',
+        path: 'aliases',
+      },
+      aliasOf: {
+        derivation: 'listing',
+        sourceUrl: 'https://api.mistral.ai/v1/models',
+        path: 'unstated',
+      },
     })
-    // The named row is the target: it lists its aliases, points nowhere.
-    const target = facts.get('mistral-large-4')
-    expect(target?.aliasOf).toBeNull()
-    expect(target?.aliases).toEqual([
-      'mistral-large-4-0',
-      'mistral-large-latest',
-    ])
-    expect(target?.factSources?.aliasOf).toBeUndefined()
-  })
-
-  it('states no target when the group name is not one of its ids', () => {
-    const voxtral = facts.get('voxtral-small-latest')
-    expect(voxtral?.aliasOf).toBeNull()
-    expect(voxtral?.aliases).toEqual(['voxtral-small-2507'])
-    expect(voxtral?.factSources?.aliasOf?.path).toBe('unstated')
+    // A dated snapshot does not resolve to a moving alias.
+    const dated = facts.get('mistral-medium-2604')
+    expect(dated?.aliasOf).toBeNull()
+    expect(dated?.aliases).toContain('mistral-medium-latest')
   })
 
   it('leaves a row with no aliases bare', () => {
     expect(facts.get('mistral-large-2512')).toEqual({})
   })
 
-  it('links or explains every -latest row', () => {
+  it('links every -latest row through its group, target unstated', () => {
     const latest = [...facts].filter(([id]) => id.endsWith('-latest'))
     expect(latest).toHaveLength(18)
-    const linked = latest.filter(([, row]) => row.aliasOf != null)
-    const named = latest.filter(
-      ([, row]) => row.aliasOf == null && row.factSources?.aliasOf == null,
-    )
-    const unstated = latest.filter(
-      ([, row]) => row.factSources?.aliasOf?.path === 'unstated',
-    )
-    expect(linked).toHaveLength(12)
-    // mistral-medium-latest is its group's named id: the others resolve to it.
-    expect(named.map(([id]) => id)).toEqual(['mistral-medium-latest'])
-    expect(unstated.map(([id]) => id).sort()).toEqual([
-      'mistral-ocr-latest',
-      'voxtral-mini-latest',
-      'voxtral-mini-realtime-latest',
-      'voxtral-mini-tts-latest',
-      'voxtral-small-latest',
-    ])
     for (const [, row] of latest) {
       expect(row.aliases?.length).toBeGreaterThan(0)
+      expect(row.aliasOf).toBeNull()
+      expect(row.factSources?.aliasOf?.path).toBe('unstated')
     }
   })
 })

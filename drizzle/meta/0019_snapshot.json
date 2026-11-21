@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e0e24ef6-ec4b-45c5-8844-6ea12ebb4f9d",
+  "id": "1946ef68-1154-4f4f-877b-3f67a2ed53fe",
   "prevId": "08a8fa19-4440-49c1-9f40-2c43e371fda6",
   "tables": {
     "account": {
@@ -1374,6 +1374,11 @@
         "models_providerId_idx": {
           "name": "models_providerId_idx",
           "columns": ["provider_id"],
+          "isUnique": false
+        },
+        "models_providerId_rawId_idx": {
+          "name": "models_providerId_rawId_idx",
+          "columns": ["provider_id", "raw_id"],
           "isUnique": false
         },
         "models_activity_idx": {

@@ -73,9 +73,9 @@ function isStringArray(value: unknown): value is Array<string> {
 
 /** True when no key holds a source: every value is absent or an empty map. */
 export function emptySources(sources: ModelFactSources): boolean {
-  return Object.values(sources as Record<string, object | undefined>).every(
-    (source) => source === undefined || Object.keys(source).length === 0,
-  )
+  return Object.values(
+    sources as Record<string, object | null | undefined>,
+  ).every((source) => source == null || Object.keys(source).length === 0)
 }
 
 function listingSource(): FactSource {

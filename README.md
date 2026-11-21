@@ -120,16 +120,17 @@ only: the row's price, limits, and other facts stay its own provider's.
 An alias id and the model it resolves to are linked both ways when the
 provider states it (#709): the alias row's `aliasOf` is the target's
 `rawId`, and the target's `aliases` lists the alias. The statement comes
-from Mistral's `GET /v1/models` (`name` names the group's id; every member
-lists the others in `aliases`), an OpenAI model page's `Default snapshot`,
-or a Gemini changelog line. It is never read from an id's shape.
+from an OpenAI model page's `Default snapshot` or a Gemini changelog line.
+Mistral's `GET /v1/models` states alias groups only: every member lists
+the others in `aliases`, and none names which id the others resolve to.
+It is never read from an id's shape.
 
 - `aliasOf` is `null` when the provider names no target, or the named
   target has no live row (the evidence is kept and links again when the
   row returns).
 - `factSources.aliasOf` is its source. `path: "unstated"` means the
-  provider lists the id as an alias but names no target (five Mistral
-  Voxtral and OCR groups, Gemini `-latest` ids no changelog line names).
+  source was read and names no target for this id (every grouped Mistral
+  row, Gemini `-latest` ids no changelog line names).
 - With `aliases: null`, `factSources.aliases` with `path: "Snapshots"`
   means the OpenAI page lists the snapshot and no alias resolves to it;
   `path: "unstated"` means no docs page names the id.
