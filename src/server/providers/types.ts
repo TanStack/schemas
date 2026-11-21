@@ -185,6 +185,14 @@ export interface FactSource {
   verifiedAt?: string
 }
 
+/** A null fact the provider publishes no value for (#273). */
+export interface SourceSilentEvidence {
+  derivation: 'source-silent'
+  sourceUrl?: string
+  /** The date recorded by the ledger author, never a request timestamp. */
+  checkedAt?: string
+}
+
 /** Per-field (and per-flag) provenance for a catalog row. */
 export interface ModelFactSources {
   schemaEndpointId?: FactSource
@@ -226,8 +234,13 @@ export interface ModelFactSources {
    * of zero.
    */
   cacheRead?: FactSource
-  /** One source per tool type id in `serverTools`. */
-  serverTools?: Record<string, FactSource>
+  /**
+   * One source per tool type id in `serverTools`. With `serverTools` null,
+   * a source-silent object: the model's own tool statement was read and
+   * names no built-in tool for it (#707). A page that failed to load is
+   * `absent: unavailable`, never this.
+   */
+  serverTools?: Record<string, FactSource> | SourceSilentEvidence
   /**
    * Where `aliasOf` was read. `path: 'unstated'`: the source was read and
    * names no target for this id.

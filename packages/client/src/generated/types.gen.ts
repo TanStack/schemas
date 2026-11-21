@@ -112,17 +112,17 @@ export type ServiceStatus = {
       priced: number
     }
     /**
-     * The gap-report score over the live chat models of the provider: the share filled of the eleven chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint, replayReasoningContent). Summed per model, each fact counted only where it applies. requestMap applies on chat/completions, completions, and responses routes. replayReasoningContent applies on chat/completions routes whose rows reason. A stated cached-input absence (factSources.cacheRead path not-offered) fills cacheRead. Provider-wide and exact-model source-silent exceptions are excluded. Computed at the models poll (completenessComputedAt), not per request.
+     * The gap-report score over the live models of the provider (src/lib/completeness.ts). Each activity has its own fact set. chat: contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint, replayReasoningContent. image, video and audio: priced (any stored rate card that is not a models.dev price), endpoint, modalities (input) and outputModalities. A row with a null activity is in unclassified and counts as one missing fact (activity). Rows of an activity with no fact set (embeddings, moderation, decision, world, search) are listed with score null and do not change the score. originLink is scored on every row: a row needs an upstream link when its raw id or an alias, also with dots read as hyphens, matches a row at another provider and no row links to it; a row with sameAs set needs one and has it. Summed per model, each fact counted only where it applies. requestMap applies on chat/completions, completions, and responses routes. replayReasoningContent applies on chat/completions routes whose rows reason. A stated cached-input absence (factSources.cacheRead path not-offered) fills cacheRead. Provider-wide and exact-model source-silent exceptions are excluded. Computed at the models poll (completenessComputedAt), not per request.
      */
     completeness?: {
       /**
-       * filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models (nothing to score, not a score of zero), when no score is stored yet, and when the chat models changed since the stored score.
+       * filled / needed, 0 to 1, over every scored activity and originLink. 1 when every fact that applies is in silent. null when nothing is scored (every live model is of an activity with no fact set and none needs an origin link), when no score is stored yet, and when the live models changed since the stored score.
        */
       score: number | null
       /**
-       * Live chat models scored.
+       * Live models scored.
        */
-      chat: number
+      rows: number
       /**
        * Facts carried, summed over those models; silent facts left out.
        */
@@ -135,6 +135,27 @@ export type ServiceStatus = {
        * Facts the provider does not publish, left out of the score.
        */
       silent: Array<string>
+      /**
+       * The score per activity of the live models, keyed by activity, plus unclassified for models with a null activity. Empty when no score is served.
+       */
+      activities: {
+        [key: string]: {
+          rows: number
+          /**
+           * filled / needed. null when the activity has no fact set: its models are not scored.
+           */
+          score: number | null
+          filled: number
+          needed: number
+        }
+      }
+      /**
+       * Models that need an upstream link (need) and models that have one (have, sameAs set). Silent and exact-model exceptions are not subtracted here.
+       */
+      originLink: {
+        have: number
+        need: number
+      }
     }
     /**
      * Model tallies count live models only: what GET /v1/models lists by default. Deprecated models are in deprecated and nowhere else.
@@ -813,7 +834,7 @@ export type Model = {
    */
   reasoning: ModelReasoning | null
   /**
-   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
+   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id, or, on a null, a source-silent object when the provider states the model takes no built-in tool. A page that only leaves the model out states nothing, so that null has no entry.
    */
   serverTools: Array<string> | null
   /**
@@ -840,7 +861,7 @@ export type Model = {
    */
   aliasOf: string | null
   /**
-   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. A null serverTools also carries a source-silent object, with sourceUrl, when a provider page the poll read states that the model takes no built-in tool (a per-model no, or a complete per-model list). Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Other nulls gain no entry.
    */
   factSources?: ModelFactSources
   /**
@@ -942,7 +963,7 @@ export type ExportModel = {
    */
   reasoning: ModelReasoning | null
   /**
-   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
+   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id, or, on a null, a source-silent object when the provider states the model takes no built-in tool. A page that only leaves the model out states nothing, so that null has no entry.
    */
   serverTools: Array<string> | null
   /**
@@ -969,7 +990,7 @@ export type ExportModel = {
    */
   aliasOf: string | null
   /**
-   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. A null serverTools also carries a source-silent object, with sourceUrl, when a provider page the poll read states that the model takes no built-in tool (a per-model no, or a complete per-model list). Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Other nulls gain no entry.
    */
   factSources?: ModelFactSources
   /**

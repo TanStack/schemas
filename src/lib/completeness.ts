@@ -1,8 +1,13 @@
 /**
- * Completeness: the share of the chat facts `@tanstack/ai-models` needs that
- * a provider's rows carry. The one definition behind `pnpm run gap:report`
+ * Completeness: the share of the facts `@tanstack/ai-models` needs that a
+ * provider's rows carry. The one definition behind `pnpm run gap:report`
  * (`scripts/gap-report.ts`) and `completeness` on `GET /v1/status`, so the
  * CLI and the site cannot disagree. No Node or Workers dependencies.
+ *
+ * Each activity has its own fact set (`ACTIVITY_FACTS`). A row whose
+ * activity is null is a gap (`unclassified`); a row whose activity has no
+ * fact set is listed with `facts: null` and never scored. `originLink` is
+ * scored on every row, whatever its activity.
  *
  * `docs/source-silent/<provider>.md` lists facts a provider does not publish;
  * those are left out of that provider's score and listed under `silent`.
@@ -22,9 +27,52 @@ export const FACT_KEYS = [
   'requestMap',
   'endpoint',
   'replayReasoningContent',
+  'outputModalities',
+  'activity',
+  'originLink',
 ] as const
 
 export type FactKey = (typeof FACT_KEYS)[number]
+
+const MEDIA_FACTS = [
+  'priced',
+  'endpoint',
+  'modalities',
+  'outputModalities',
+] as const satisfies ReadonlyArray<FactKey>
+
+/** The bucket a row with a null activity is counted in. */
+export const UNCLASSIFIED = 'unclassified'
+
+/**
+ * The facts scored per activity. An activity not listed here has no fact
+ * set: its rows show as `facts: null` and do not change the score. A row
+ * with no activity is in `unclassified`, whose one fact it always lacks.
+ */
+export const ACTIVITY_FACTS = {
+  chat: [
+    'contextWindow',
+    'maxOutput',
+    'modalities',
+    'priced',
+    'cacheRead',
+    'capabilities',
+    'reasoning',
+    'efforts',
+    'requestMap',
+    'endpoint',
+    'replayReasoningContent',
+  ],
+  image: MEDIA_FACTS,
+  video: MEDIA_FACTS,
+  audio: MEDIA_FACTS,
+  [UNCLASSIFIED]: ['activity'],
+} as const satisfies Record<string, ReadonlyArray<FactKey>>
+
+export type ScoredActivity = keyof typeof ACTIVITY_FACTS
+
+/** The chat facts, in table order. */
+export const CHAT_FACT_KEYS: ReadonlyArray<FactKey> = ACTIVITY_FACTS.chat
 
 /**
  * Row shapes `@tanstack/ai-models` cannot read correctly, counted apart from
@@ -45,6 +93,9 @@ export type ModelRow = {
   provider: string
   /** Exact native model id, never the slugged catalog id. */
   rawId?: string
+  aliases?: Array<string> | null
+  /** The upstream row this one is linked to, as `/v1/models` serves it. */
+  sameAs?: { provider: string; rawId: string } | null
   activity?: string | null
   contextWindow?: number | null
   maxOutput?: number | null
@@ -71,20 +122,38 @@ export type ModelRow = {
   } | null
 }
 
+export type FactTally = { have: number; need: number }
+
+export type ActivityReport = {
+  rows: number
+  /** Null when the activity has no fact set: its rows are not scored. */
+  facts: Partial<Record<FactKey, FactTally>> | null
+  /** Applicable missing rows excluded by exact model-scoped evidence. */
+  modelSilent: Partial<Record<FactKey, number>>
+  /** Facts filled and needed, ledgered ones left out. */
+  filled: number
+  needed: number
+  /** 0 to 1; null when `facts` is null. 1 when every needed fact is ledgered. */
+  score: number | null
+}
+
 export type ProviderReport = {
   provider: string
   rows: number
-  chat: number
+  /** Rows with a null activity, counted in `activities.unclassified`. */
   noActivity: number
   fromModelsDev: number
-  facts: Record<FactKey, { have: number; need: number }>
-  silent: Array<FactKey>
-  /** Applicable missing rows excluded by exact model-scoped evidence. */
-  modelSilent?: Partial<Record<FactKey, number>>
+  /** By activity, plus `unclassified` for rows with none. */
+  activities: Partial<Record<string, ActivityReport>>
   /**
-   * 0 to 1. Null when the provider does not serve chat: every row has a
-   * non-chat activity. 0 when it serves chat but classification produced
-   * no chat rows (an activity is null).
+   * Rows whose id matches a row at another provider and that no row links
+   * to, plus every row with `sameAs` set. `have` counts `sameAs` set.
+   */
+  originLink: FactTally & { modelSilent: number }
+  silent: Array<FactKey>
+  /**
+   * 0 to 1 over every scored activity and `originLink`. Null when nothing
+   * is scored: every row's activity has no fact set and no row needs a link.
    */
   score: number | null
   /** Raw ids of the chat rows each flag matches. */
@@ -96,11 +165,25 @@ export type GapReport = {
   providers: Array<ProviderReport>
 }
 
-/** Provider id or provider/exact-raw-id → facts its sources do not publish. */
-export type Ledger = Map<string, Set<FactKey>>
+/**
+ * Ledger facts served as `factSources` evidence and never scored: the gap
+ * report does not count them, so an entry changes no score.
+ */
+export const EVIDENCE_KEYS = ['serverTools'] as const
 
-function isFactKey(value: string): value is FactKey {
-  return (FACT_KEYS as ReadonlyArray<string>).includes(value)
+export type LedgerKey = FactKey | (typeof EVIDENCE_KEYS)[number]
+
+/** Provider id or provider/exact-raw-id → facts its sources do not publish. */
+export type Ledger = Map<string, Set<LedgerKey>>
+
+function isLedgerKey(value: string): value is LedgerKey {
+  return ([...FACT_KEYS, ...EVIDENCE_KEYS] as ReadonlyArray<string>).includes(
+    value,
+  )
+}
+
+function isScoredActivity(value: string): value is ScoredActivity {
+  return Object.hasOwn(ACTIVITY_FACTS, value)
 }
 
 /** Ledger entries are list lines: `- <provider>: <fact> — <why>`. */
@@ -110,16 +193,77 @@ export function parseLedger(markdown: string): Ledger {
     const entry = parseLedgerEntry(line)
     if (!entry) continue
     const { scope, fact } = entry
-    if (!isFactKey(fact)) {
+    if (!isLedgerKey(fact)) {
       throw new Error(
         `source-silent ledger: unknown fact "${fact}" in: ${line}`,
       )
     }
-    const facts = ledger.get(scope) ?? new Set<FactKey>()
+    // Activity is our classification, not something a provider publishes.
+    if (fact === 'activity') {
+      throw new Error(
+        `source-silent ledger: classify the row, do not ledger it: ${line}`,
+      )
+    }
+    const facts = ledger.get(scope) ?? new Set<LedgerKey>()
     facts.add(fact)
     ledger.set(scope, facts)
   }
   return ledger
+}
+
+/**
+ * The ids a row matches another provider's row by: its raw id and aliases,
+ * each also with dots read as hyphens. The same tiers `reconcileSameAs`
+ * (`src/server/ingest/model-identity.ts`) links by.
+ */
+export function originIdKeys(row: Pick<ModelRow, 'rawId' | 'aliases'>) {
+  const ids = row.rawId === undefined ? [] : [row.rawId]
+  ids.push(...(row.aliases ?? []))
+  return new Set(ids.flatMap((id) => [id, id.replaceAll('.', '-')]))
+}
+
+/** Which rows need an origin link; built once over the whole catalog. */
+export type OriginIndex = {
+  providersById: Map<string, Set<string>>
+  /** `provider/rawId` of every row some other row links to. */
+  targets: Set<string>
+}
+
+const NO_ORIGINS: OriginIndex = { providersById: new Map(), targets: new Set() }
+
+export function originIndex(rows: Array<ModelRow>): OriginIndex {
+  const providersById = new Map<string, Set<string>>()
+  const targets = new Set<string>()
+  for (const row of rows) {
+    for (const key of originIdKeys(row)) {
+      const set = providersById.get(key) ?? new Set<string>()
+      set.add(row.provider)
+      providersById.set(key, set)
+    }
+    if (row.sameAs)
+      targets.add(modelLedgerScope(row.sameAs.provider, row.sameAs.rawId))
+  }
+  return { providersById, targets }
+}
+
+/**
+ * A row with `sameAs` set needs a link and has one. Otherwise it needs one
+ * when an id key matches a row at another provider, unless a row links to
+ * it: a link target is the origin, not the copy.
+ */
+function needsOriginLink(row: ModelRow, origins: OriginIndex): boolean {
+  if (row.sameAs) return true
+  if (
+    row.rawId !== undefined &&
+    origins.targets.has(modelLedgerScope(row.provider, row.rawId))
+  ) {
+    return false
+  }
+  return [...originIdKeys(row)].some((key) =>
+    [...(origins.providersById.get(key) ?? [])].some(
+      (provider) => provider !== row.provider,
+    ),
+  )
 }
 
 /**
@@ -157,11 +301,6 @@ function reasons(row: ModelRow): boolean {
   )
 }
 
-/** A null activity is an unclassified chat candidate, not a speech or image API. */
-function servesChat(group: Array<ModelRow>): boolean {
-  return group.some((row) => row.activity === 'chat' || row.activity == null)
-}
-
 function isModelsDev(row: ModelRow): boolean {
   const url = row.pricing?.source?.url
   if (!url) return false
@@ -197,23 +336,32 @@ function hasRate(row: ModelRow, ...keys: Array<string>): boolean {
   )
 }
 
-/** `need`: the fact applies to this row. `have`: the row carries it. */
+const nonEmpty = (value: unknown) => Array.isArray(value) && value.length > 0
+
+/**
+ * `need`: the fact applies to this row. `have`: the row carries it. Only
+ * the facts of the row's activity are asked (`ACTIVITY_FACTS`), and
+ * `originLink` of every row.
+ */
 const FACTS: Record<
   FactKey,
-  { need?: (row: ModelRow) => boolean; have: (row: ModelRow) => boolean }
+  {
+    need?: (row: ModelRow, origins: OriginIndex) => boolean
+    have: (row: ModelRow) => boolean
+  }
 > = {
   contextWindow: { have: (row) => row.contextWindow != null },
   maxOutput: { have: (row) => row.maxOutput != null },
-  modalities: {
-    have: (row) => {
-      const input = row.modalities?.input
-      return Array.isArray(input) && input.length > 0
-    },
-  },
+  modalities: { have: (row) => nonEmpty(row.modalities?.input) },
+  outputModalities: { have: (row) => nonEmpty(row.modalities?.output) },
+  // Chat needs token rates; an image, video or audio card bills other
+  // units, so any stored card that is not a models.dev price fills it.
   priced: {
     have: (row) =>
-      hasRate(row, 'input_tokens', 'prompt') &&
-      hasRate(row, 'output_tokens', 'completion'),
+      row.activity === 'chat'
+        ? hasRate(row, 'input_tokens', 'prompt') &&
+          hasRate(row, 'output_tokens', 'completion')
+        : row.pricing != null && !isModelsDev(row),
   },
   cacheRead: {
     have: (row) =>
@@ -251,6 +399,8 @@ const FACTS: Record<
       typeof (row.requestMap as Record<string, unknown>)
         .replayReasoningContent === 'boolean',
   },
+  activity: { have: (row) => row.activity != null },
+  originLink: { need: needsOriginLink, have: (row) => row.sameAs != null },
 }
 
 /**
@@ -271,7 +421,8 @@ const FLAGS: Record<
   reasoningUnknown: {
     silencedBy: 'reasoning',
     match: (row) =>
-      FACTS.reasoning.need?.(row) === true && !FACTS.reasoning.have(row),
+      FACTS.reasoning.need?.(row, NO_ORIGINS) === true &&
+      !FACTS.reasoning.have(row),
   },
   // The catalog reads `[]` as unknown; an unknown list is stored as null.
   outputModalitiesEmpty: {
@@ -288,28 +439,91 @@ const FLAGS: Record<
   },
 }
 
-/** Facts filled and facts needed across a provider, ledgered ones left out. */
-export function scoredFacts(
-  report: Pick<ProviderReport, 'facts' | 'silent' | 'modelSilent'>,
-): {
-  have: number
-  need: number
+/** One applicable fact of one row. */
+export type RowFact = {
+  fact: FactKey
+  have: boolean
+  /** Provider-wide ledgered, or missing and ledgered for this exact model. */
+  silent: boolean
+}
+
+/** The row's bucket in `ProviderReport.activities`. */
+export function activityBucket(row: Pick<ModelRow, 'activity'>): string {
+  return row.activity ?? UNCLASSIFIED
+}
+
+/**
+ * The facts that apply to one row and whether it carries each: its
+ * activity's set, then `originLink`. Empty for an activity with no fact
+ * set when no link applies. Without `origins` the link is asked only of a
+ * row with `sameAs` set, which has it.
+ */
+export function scoreRow(
+  row: ModelRow,
+  ledger: Ledger = new Map(),
+  origins: OriginIndex = NO_ORIGINS,
+): Array<RowFact> {
+  const bucket = activityBucket(row)
+  const keys: Array<FactKey> = [
+    ...(isScoredActivity(bucket) ? ACTIVITY_FACTS[bucket] : []),
+    'originLink',
+  ]
+  const providerSilent = ledger.get(row.provider)
+  const modelSilent =
+    row.rawId === undefined
+      ? undefined
+      : ledger.get(modelLedgerScope(row.provider, row.rawId))
+  return keys.flatMap((fact): Array<RowFact> => {
+    const { need, have } = FACTS[fact]
+    if (need && !need(row, origins)) return []
+    const has = have(row)
+    const silent =
+      providerSilent?.has(fact) === true ||
+      (!has && modelSilent?.has(fact) === true)
+    return [{ fact, have: has, silent }]
+  })
+}
+
+/** Filled of needed for one row, and the names of the facts it lacks. */
+export function rowCompleteness(facts: Array<RowFact>): {
+  filled: number
+  needed: number
+  missing: Array<FactKey>
 } {
+  const counted = facts.filter((f) => !f.silent)
+  return {
+    filled: counted.filter((f) => f.have).length,
+    needed: counted.length,
+    missing: counted.filter((f) => !f.have).map((f) => f.fact),
+  }
+}
+
+/** Facts filled and needed across a provider, ledgered ones left out. */
+export function scoredFacts(
+  report: Pick<ProviderReport, 'activities' | 'originLink' | 'silent'>,
+): FactTally {
   let have = 0
   let need = 0
-  for (const key of FACT_KEYS) {
-    if (report.silent.includes(key)) continue
-    have += report.facts[key].have
-    need += report.facts[key].need - (report.modelSilent?.[key] ?? 0)
+  for (const activity of Object.values(report.activities)) {
+    have += activity?.filled ?? 0
+    need += activity?.needed ?? 0
+  }
+  if (!report.silent.includes('originLink')) {
+    have += report.originLink.have
+    need += report.originLink.need - report.originLink.modelSilent
   }
   return { have, need }
 }
+
+const ratio = ({ have, need }: FactTally, rows: number): number | null =>
+  need > 0 ? have / need : rows > 0 ? 1 : null
 
 export function buildReport(
   rows: Array<ModelRow>,
   ledger: Ledger = new Map(),
   now: Date = new Date(),
 ): GapReport {
+  const origins = originIndex(rows)
   const byProvider = new Map<string, Array<ModelRow>>()
   for (const row of rows) {
     const group = byProvider.get(row.provider)
@@ -318,24 +532,58 @@ export function buildReport(
   }
 
   const providers = [...byProvider].map(([provider, group]): ProviderReport => {
-    const chat = group.filter((row) => row.activity === 'chat')
     const silent = FACT_KEYS.filter((key) => ledger.get(provider)?.has(key))
-    const modelSilent: Partial<Record<FactKey, number>> = {}
+    const activities: Record<string, ActivityReport> = {}
+    const originLink = { have: 0, need: 0, modelSilent: 0 }
+    for (const row of group) {
+      const bucket = activityBucket(row)
+      const report = (activities[bucket] ??= {
+        rows: 0,
+        facts: isScoredActivity(bucket)
+          ? Object.fromEntries(
+              ACTIVITY_FACTS[bucket].map((key) => [key, { have: 0, need: 0 }]),
+            )
+          : null,
+        modelSilent: {},
+        filled: 0,
+        needed: 0,
+        score: null,
+      })
+      report.rows += 1
+      for (const { fact, have, silent: rowSilent } of scoreRow(
+        row,
+        ledger,
+        origins,
+      )) {
+        const providerSilent = silent.includes(fact)
+        const modelSilent = rowSilent && !providerSilent
+        if (fact === 'originLink') {
+          originLink.need += 1
+          if (have) originLink.have += 1
+          if (modelSilent) originLink.modelSilent += 1
+          continue
+        }
+        const tally = report.facts?.[fact]
+        if (!tally) continue
+        tally.need += 1
+        if (have) tally.have += 1
+        if (modelSilent) {
+          report.modelSilent[fact] = (report.modelSilent[fact] ?? 0) + 1
+        }
+        if (providerSilent || modelSilent) continue
+        report.needed += 1
+        if (have) report.filled += 1
+      }
+    }
+    for (const report of Object.values(activities)) {
+      report.score = report.facts
+        ? ratio({ have: report.filled, need: report.needed }, report.rows)
+        : null
+    }
+    const chat = group.filter((row) => row.activity === 'chat')
     const modelLedgered = (row: ModelRow, key: FactKey) =>
       row.rawId !== undefined &&
       ledger.get(modelLedgerScope(provider, row.rawId))?.has(key)
-    const facts = Object.fromEntries(
-      FACT_KEYS.map((key) => {
-        const { need, have } = FACTS[key]
-        const needed = need ? chat.filter(need) : chat
-        const scoped = silent.includes(key)
-          ? 0
-          : needed.filter((row) => !have(row) && modelLedgered(row, key)).length
-        if (scoped > 0) modelSilent[key] = scoped
-        return [key, { have: needed.filter(have).length, need: needed.length }]
-      }),
-    ) as ProviderReport['facts']
-    const { have, need } = scoredFacts({ facts, silent, modelSilent })
     const flags = Object.fromEntries(
       FLAG_KEYS.map((key) => {
         const { silencedBy, match } = FLAGS[key]
@@ -351,26 +599,19 @@ export function buildReport(
       }),
     ) as ProviderReport['flags']
 
+    const total = scoredFacts({ activities, originLink, silent })
+    const scoredRows = Object.values(activities)
+      .filter((a) => a.facts !== null)
+      .reduce((sum, a) => sum + a.rows, originLink.need)
     return {
       provider,
       rows: group.length,
-      chat: chat.length,
-      noActivity: group.filter((row) => row.activity == null).length,
+      noActivity: activities[UNCLASSIFIED]?.rows ?? 0,
       fromModelsDev: group.filter(isModelsDev).length,
-      facts,
+      activities,
+      originLink,
       silent,
-      modelSilent,
-      // No classified chat rows on a provider that serves chat is a gap.
-      // A provider whose every row is image, audio, or video has nothing
-      // to score. Chat rows with every needed fact on the ledger score 1.
-      score:
-        need === 0
-          ? chat.length > 0
-            ? 1
-            : servesChat(group)
-              ? 0
-              : null
-          : have / need,
+      score: ratio(total, scoredRows),
       flags,
     }
   })

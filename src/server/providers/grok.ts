@@ -131,7 +131,8 @@ function listingMaxOutput(m: GrokExtrasModel): number | null {
  * tool, and its "Agentic models only" bullet names the models that can.
  * xAI's other server-side tools (web_search, x_search, code_execution, …)
  * are documented per provider, with no per-model list, so they are not
- * assigned (#409).
+ * assigned (#409). The bullet is "e.g.", so a model it does not name
+ * stays null with no source (#707).
  */
 export const GROK_FILES_DOC_URL = 'https://docs.x.ai/developers/files.md'
 

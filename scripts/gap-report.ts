@@ -1,6 +1,7 @@
 /**
  * Gap report: which facts `@tanstack/ai-models` needs are still missing,
- * per provider, over chat rows. One HTTP request; no per-model detail calls.
+ * per provider and activity, with origin-link coverage. One HTTP request;
+ * no per-model detail calls.
  *
  *   pnpm run gap:report                       # JSON
  *   pnpm run gap:report -- --table            # readable, worst score first
@@ -16,12 +17,20 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import {
-  FACT_KEYS,
+  ACTIVITY_FACTS,
+  CHAT_FACT_KEYS,
   FLAG_KEYS,
+  UNCLASSIFIED,
   buildReport,
   parseLedger,
 } from '../src/lib/completeness.ts'
-import type { GapReport, Ledger, ModelRow } from '../src/lib/completeness.ts'
+import type {
+  FactKey,
+  GapReport,
+  Ledger,
+  ModelRow,
+  ProviderReport,
+} from '../src/lib/completeness.ts'
 
 // The scoring itself is shared with `GET /v1/status`.
 export * from '../src/lib/completeness.ts'
@@ -39,7 +48,7 @@ export function readLedger(dir = LEDGER_DIR): Ledger | undefined {
   )
 }
 
-/** Providers below `target`. With no `names`, every provider with chat rows. */
+/** Providers below `target`. With no `names`, every scored provider. */
 export function failing(
   report: GapReport,
   target: number,
@@ -47,12 +56,12 @@ export function failing(
 ): Array<string> {
   if (!names) {
     return report.providers
-      .filter((p) => p.chat > 0 && p.score != null && p.score < target)
+      .filter((p) => p.score != null && p.score < target)
       .map((p) => p.provider)
   }
   const scores = new Map(report.providers.map((p) => [p.provider, p.score]))
   // A named provider with no rows at all fails. A provider that does not
-  // serve chat scores null and is not below target.
+  // has nothing scored scores null and is not below target.
   return names.filter((name) => {
     const score = scores.get(name)
     if (score === undefined) return true
@@ -61,29 +70,68 @@ export function failing(
   })
 }
 
+const MEDIA = ['image', 'video', 'audio'] as const
+const MEDIA_FACT_KEYS: ReadonlyArray<FactKey> = ACTIVITY_FACTS.image
+const pct = (score: number | null | undefined) =>
+  score == null ? 'n/a' : score.toFixed(2)
+
+/** `have/need` summed over `activities`, or `silent`. */
+function factCell(
+  p: ProviderReport,
+  key: FactKey,
+  activities: ReadonlyArray<string>,
+): string {
+  if (p.silent.includes(key)) return 'silent'
+  let have = 0
+  let need = 0
+  let modelSilent = 0
+  for (const name of activities) {
+    const a = p.activities[name]
+    have += a?.facts?.[key]?.have ?? 0
+    need += a?.facts?.[key]?.need ?? 0
+    modelSilent += a?.modelSilent[key] ?? 0
+  }
+  return `${have}/${need}${modelSilent ? ` (${modelSilent} model-silent)` : ''}`
+}
+
+/** Rows in activities with no fact set, which are listed but not scored. */
+const unscoredRows = (p: ProviderReport) =>
+  Object.values(p.activities).reduce(
+    (sum, a) => sum + (a && a.facts === null ? a.rows : 0),
+    0,
+  )
+
 export function formatTable(report: GapReport): string {
   const header = [
     'provider',
     'score',
     'rows',
     'chat',
+    ...MEDIA,
     'noAct',
+    'unscored',
+    'originLink',
     'm.dev',
-    ...FACT_KEYS,
+    ...CHAT_FACT_KEYS,
+    ...MEDIA_FACT_KEYS.map((key) => `media.${key}`),
     ...FLAG_KEYS,
   ]
   const body = report.providers.map((p) => [
     p.provider,
-    p.score == null ? 'n/a' : p.score.toFixed(2),
+    pct(p.score),
     String(p.rows),
-    String(p.chat),
-    String(p.noActivity),
+    ...(['chat', ...MEDIA] as const).map((name) => {
+      const a = p.activities[name]
+      return a ? `${pct(a.score)} (${a.rows})` : '-'
+    }),
+    String(p.activities[UNCLASSIFIED]?.rows ?? 0),
+    String(unscoredRows(p)),
+    p.silent.includes('originLink')
+      ? 'silent'
+      : `${p.originLink.have}/${p.originLink.need}`,
     String(p.fromModelsDev),
-    ...FACT_KEYS.map((key) =>
-      p.silent.includes(key)
-        ? 'silent'
-        : `${p.facts[key].have}/${p.facts[key].need}${p.modelSilent?.[key] ? ` (${p.modelSilent[key]} model-silent)` : ''}`,
-    ),
+    ...CHAT_FACT_KEYS.map((key) => factCell(p, key, ['chat'])),
+    ...MEDIA_FACT_KEYS.map((key) => factCell(p, key, MEDIA)),
     ...FLAG_KEYS.map((key) => String(p.flags[key].length)),
   ])
   const width = (i: number) =>
@@ -103,7 +151,8 @@ export async function main(
   argv: Array<string> = process.argv.slice(2),
 ): Promise<number> {
   const { values } = parseArgs({
-    args: argv,
+    // pnpm 11 passes `pnpm run gap:report -- --table` through with the `--`.
+    args: argv[0] === '--' ? argv.slice(1) : argv,
     options: {
       base: { type: 'string', default: 'https://modelschemas.com' },
       table: { type: 'boolean', default: false },
