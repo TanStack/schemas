@@ -377,6 +377,7 @@ interface FactRow {
   rawId: string
   modalities?: unknown
   aliases?: Array<string> | null
+  aliasOf?: string | null
   pricing?: unknown
   factSources?: ModelFactSources
   absent?: Partial<Record<ModelFact, FactAbsence>>
@@ -423,7 +424,42 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
   }
 
   if (bindings.aliases) {
+    const changelogSource = (path: string) => ({
+      derivation: 'docs-derived' as const,
+      sourceUrl: bindings.changelog.url,
+      ...sourceHash(bindings.changelog.hash),
+      path,
+    })
+    // A `-latest` row the changelog names no target for (issue #709). The
+    // link itself comes only from a changelog sentence, never the id.
+    for (const rawId of rawIds) {
+      const model = byId.get(rawId)
+      if (!model || !rawId.includes('latest') || rawId in bindings.aliases) {
+        continue
+      }
+      put({
+        ...model,
+        aliasOf: null,
+        factSources: {
+          ...model.factSources,
+          aliasOf: changelogSource('unstated'),
+        },
+      })
+    }
     for (const [alias, targetId] of Object.entries(bindings.aliases)) {
+      const stated = byId.get(alias)
+      // The stated target is kept even while it is not listed; the catalog
+      // serves the link only while that row is live.
+      if (stated) {
+        put({
+          ...stated,
+          aliasOf: targetId,
+          factSources: {
+            ...stated.factSources,
+            aliasOf: changelogSource('latest alias'),
+          },
+        })
+      }
       const aliasRow = byId.get(alias)
       const target = byId.get(targetId)
       if (!aliasRow || !target) continue
@@ -448,6 +484,10 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
       put({
         ...current,
         aliases: [...new Set([...(current.aliases ?? []), alias])].sort(),
+        factSources: {
+          ...current.factSources,
+          aliases: changelogSource('latest alias'),
+        },
       })
       const priced = byId.get(targetId)
       const aliasNow = byId.get(alias)
@@ -486,13 +526,17 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
   } else {
     for (const rawId of rawIds) {
       const model = byId.get(rawId)
-      if (!model || !rawId.includes('latest') || model.modalities != null) {
-        continue
+      if (!model) continue
+      // Every alias link comes from the changelog: keep the stored ones.
+      const absent: Partial<Record<ModelFact, FactAbsence>> = {
+        ...model.absent,
+        aliases: 'unavailable',
       }
-      put({
-        ...model,
-        absent: { ...model.absent, modalities: 'unavailable' },
-      })
+      if (rawId.includes('latest')) {
+        absent.aliasOf = 'unavailable'
+        if (model.modalities == null) absent.modalities = 'unavailable'
+      }
+      put({ ...model, absent })
     }
   }
 

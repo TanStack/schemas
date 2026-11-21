@@ -771,6 +771,21 @@ describe('replicate listModels chat rows', () => {
       expect(errored?.maxOutput).toBe(64000)
       // Hardware-billed community model: no page fetch, no price.
       expect(byId.get('prunaai/gpt-oss-120b-fast')?.pricing).toBeUndefined()
+      // An official model's owner names the maker; a community owner does not.
+      expect(errored?.upstream).toEqual({
+        providerNamespace: 'anthropic',
+        rawId: 'claude-sonnet-5',
+        source: {
+          derivation: 'listing',
+          sourceUrl: 'https://api.replicate.com/v1/models',
+          path: 'results[].owner (is_official)',
+        },
+      })
+      expect(byId.get('google/gemini-3-flash')?.upstream).toMatchObject({
+        providerNamespace: 'google',
+        rawId: 'gemini-3-flash',
+      })
+      expect(byId.get('prunaai/gpt-oss-120b-fast')?.upstream).toBeNull()
     } finally {
       globalThis.fetch = original
     }

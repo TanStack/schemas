@@ -70,6 +70,15 @@ it('reads actual OpenAI multiline, Codex and GPT-OSS effort lists without negati
     parseReasoningEffort('```\nReasoning.effort supports: high.\n```'),
   ).toBeNull()
 })
+it('reads the GPT-6.2 "rejects none" sentence as mandatory effort with no list', () => {
+  for (const id of ['gpt-6.2-astra', 'gpt-6.2-sol']) {
+    expect(
+      parseReasoningEffort(
+        docs[`https://developers.openai.com/api/docs/models/${id}.md`] ?? '',
+      ),
+    ).toEqual({ mode: 'effort', mandatory: true })
+  }
+})
 it('reads Mistral normative scoped control values and the model-specific override', () => {
   const facts = parseMistralReasoning(
     docs['https://docs.mistral.ai/studio/conversations/reasoning.md'] ?? '',
