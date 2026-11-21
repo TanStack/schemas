@@ -183,7 +183,44 @@ export interface FactSource {
    * `GET /v1/status` counts it on `staleProbes`.
    */
   verifiedAt?: string
+  /**
+   * sameAs only: the variant suffix the host's own listing states for this
+   * id (OpenRouter's `:batch`, read from a shared `canonical_slug`),
+   * stripped before matching (issue #719).
+   */
+  variant?: string
 }
+
+/** A catalog row named in sameAs evidence. */
+export interface ModelRef {
+  provider: string
+  rawId: string
+}
+
+/**
+ * Evidence for a name-inferred sameAs (issue #719): the normalised id key
+ * and every row it matched, each of which leads to the one linked root.
+ */
+export interface SameAsInference {
+  key: string
+  candidates: Array<ModelRef>
+}
+
+/** factSources.sameAs on a link no provider stated (issue #719). */
+export interface NameInferredSource extends SameAsInference {
+  derivation: 'name-inferred'
+}
+
+/**
+ * What decided `firstParty` (issue #719): the provider's maker
+ * declaration, the rows whose sameAs chain ends here (`count`), the row's
+ * `maker` (`source` is factSources.maker), or the row's own sameAs.
+ */
+export type FirstPartySource =
+  | { decidedBy: 'provider-declared' }
+  | { decidedBy: 'linked-from'; count: number }
+  | { decidedBy: 'maker'; source: FactSource }
+  | { decidedBy: 'same-as' }
 
 /** A null fact the provider publishes no value for (#273). */
 export interface SourceSilentEvidence {
@@ -196,8 +233,13 @@ export interface SourceSilentEvidence {
 /** Per-field (and per-flag) provenance for a catalog row. */
 export interface ModelFactSources {
   schemaEndpointId?: FactSource
-  /** `normalized`: the id matched only after dots were read as hyphens. */
-  sameAs?: FactSource & { normalized?: true }
+  /**
+   * A stated link's source (`normalized`: the id matched only after dots
+   * were read as hyphens), or a name-inferred link's evidence.
+   */
+  sameAs?: (FactSource & { normalized?: true }) | NameInferredSource
+  /** Served at read time, never stored (issue #719). */
+  firstParty?: FirstPartySource
   contextWindow?: FactSource
   maxOutput?: FactSource
   modalities?: FactSource
@@ -789,6 +831,15 @@ export interface ProviderConfig {
    * gemini). Stored in `provider_model_namespaces`; used only for sameAs.
    */
   modelNamespaces?: Array<string>
+  /**
+   * The provider makes the models it lists (issue #719). One statement per
+   * provider, mirrored to `providers.makes_own_models`: set on makers,
+   * unset on hosts and gateways. Its rows are name-tier roots, and
+   * `firstParty` reads it. On a maker that also hosts other makers' models
+   * (a row whose `maker` names someone else), a row counts as its own only
+   * when its maker source was read.
+   */
+  makesOwnModels?: boolean
   /**
    * Upstream identity read from a raw id, using an id format this provider
    * itself publishes; null when the id does not follow it. Never guess.

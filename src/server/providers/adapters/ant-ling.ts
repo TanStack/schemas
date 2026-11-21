@@ -119,6 +119,7 @@ async function load(url: string, env: ProviderEnvironment, kv?: KVNamespace) {
 }
 export const provider: ProviderConfig = {
   id: 'ant-ling',
+  makesOwnModels: true,
   // Ant's Hugging Face org (`inclusionAI/Ling-3.1-flash`).
   modelNamespaces: ['inclusionAI'],
   displayName: 'Ant Ling',

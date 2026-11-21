@@ -75,6 +75,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
 
 export const provider: ProviderConfig = {
   id: 'assemblyai',
+  makesOwnModels: true,
   displayName: 'AssemblyAI',
   authEnvVar: 'ASSEMBLYAI_API_KEY',
   specSourceUrl: ASSEMBLYAI_OPENAPI_URL,

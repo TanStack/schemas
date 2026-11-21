@@ -192,6 +192,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'cohere',
+  makesOwnModels: true,
   // Cohere's Hugging Face org (`CohereLabs/command-a-vision-07-2025`).
   modelNamespaces: ['CohereLabs'],
   displayName: 'Cohere',

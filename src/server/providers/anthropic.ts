@@ -201,6 +201,7 @@ function toolsOnly(rawId: string) {
 
 export const anthropicProvider: ProviderConfig = {
   id: 'anthropic',
+  makesOwnModels: true,
   displayName: 'Anthropic',
   authEnvVar: 'ANTHROPIC_API_KEY',
   defaultDerivation: 'upstream-spec',

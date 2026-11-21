@@ -655,6 +655,7 @@ async function listModels(
 
 export const grokProvider: ProviderConfig = {
   id: 'grok',
+  makesOwnModels: true,
   modelNamespaces: ['xai', 'x-ai'],
   displayName: 'xAI Grok',
   authEnvVar: 'XAI_API_KEY',

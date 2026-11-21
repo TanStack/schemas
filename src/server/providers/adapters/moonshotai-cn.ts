@@ -456,6 +456,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'moonshotai-cn',
+  makesOwnModels: true,
   displayName: 'Moonshot AI (China)',
   specSourceUrl: MOONSHOT_CN_OPENAPI_URL,
   modelsEndpoint: MOONSHOT_CN_PRICING_URL,

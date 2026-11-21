@@ -222,6 +222,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
 
 export const provider: ProviderConfig = {
   id: 'fish-audio',
+  makesOwnModels: true,
   displayName: 'Fish Audio',
   authEnvVar: 'FISH_AUDIO_API_KEY',
   specSourceUrl: FISH_AUDIO_OPENAPI_URL,

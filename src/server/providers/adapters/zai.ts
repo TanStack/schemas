@@ -878,6 +878,7 @@ export function classifyZaiPath(path: string): Activity | null {
 
 export const provider: ProviderConfig = {
   id: 'zai',
+  makesOwnModels: true,
   // Hosts' `maker/model` ids (Novita `zai-org/glm-5.3`).
   modelNamespaces: ['zai-org'],
   displayName: 'Z.AI',

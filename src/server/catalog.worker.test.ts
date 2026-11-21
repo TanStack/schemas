@@ -499,7 +499,10 @@ describe('stored sameAs relationships', () => {
         derivation: 'docs-derived',
         sourceUrl: 'https://example.com/reseller/model',
       },
+      firstParty: { decidedBy: 'same-as' },
     })
+    expect(linked?.firstParty).toBe(false)
+    expect(linked?.sameAsRoot).toEqual(linked?.sameAs)
     expect(linked?.contextWindow).toBe(1234)
     expect(linked?.pricing).toBeNull()
     for (const rawId of ['cat-maker/native-1', 'unresolved', 'stale']) {
@@ -529,7 +532,8 @@ describe('stored sameAs relationships', () => {
     expect(
       provider?.models.find((row) => row.id === 'sameas-linked')?.sameAs,
     ).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
-    expect(provider?.models[0]?.factSources?.sameAs?.sourceUrl).toBe(
+    expect(provider?.models[0]?.factSources?.sameAs).toHaveProperty(
+      'sourceUrl',
       'https://example.com/reseller/model',
     )
     const compact = await listProviderModels(db, 'cat-reseller', false)

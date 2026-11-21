@@ -701,6 +701,10 @@ async function listModels(
 
 export const byteplusProvider: ProviderConfig = {
   id: 'byteplus',
+  makesOwnModels: true,
+  // Gateways write ByteDance's Seed models as `bytedance/…`, and the model
+  // list's Provider column names ByteDance on BytePlus's own rows.
+  modelNamespaces: ['bytedance'],
   displayName: 'BytePlus',
   // Optional, not required: it upgrades the model catalog from embedded to
   // live. fetchSpec never needs it. Without it listModels still serves the

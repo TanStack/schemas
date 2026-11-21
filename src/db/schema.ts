@@ -11,7 +11,10 @@ import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 import type { CapabilityMap } from '#/lib/capabilities.ts'
 import type { PricingRange } from '#/server/rate-card.ts'
-import type { ModelDeprecation } from '#/server/providers/types.ts'
+import type {
+  ModelDeprecation,
+  SameAsInference,
+} from '#/server/providers/types.ts'
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -383,6 +386,12 @@ export const providers = sqliteTable('providers', {
   })
     .notNull()
     .default('active'),
+  // Mirrors ProviderConfig.makesOwnModels (issue #719): the provider makes
+  // the models it lists. Read by the name tier of reconcileSameAs and by
+  // the catalog's firstParty.
+  makesOwnModels: integer('makes_own_models', { mode: 'boolean' })
+    .notNull()
+    .default(false),
 })
 
 /** Names other providers' model ids use for a provider (`google` → gemini). */
@@ -454,6 +463,18 @@ export const models = sqliteTable(
       (): AnySQLiteColumn => models.id,
       { onDelete: 'set null' },
     ),
+    // The end of the sameAs chain when it is more than one hop away
+    // (issue #719); null when sameAs is itself the root. Written only by
+    // reconcileSameAs.
+    rootModelId: text('root_model_id').references(
+      (): AnySQLiteColumn => models.id,
+      { onDelete: 'set null' },
+    ),
+    // Evidence for a name-inferred sameAs (issue #719): the normalised key
+    // and the rows it matched. Null on a stated link and on no link.
+    sameAsInference: text('same_as_inference', {
+      mode: 'json',
+    }).$type<SameAsInference | null>(),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see
@@ -493,12 +514,16 @@ export const models = sqliteTable(
     index('models_providerId_rawId_idx').on(table.providerId, table.rawId),
     index('models_activity_idx').on(table.activity),
     index('models_sameAsModelId_idx').on(table.sameAsModelId),
+    index('models_rootModelId_idx').on(table.rootModelId),
+    // firstParty reads which providers' rows name a maker (issue #719).
+    index('models_maker_providerId_idx').on(table.maker, table.providerId),
     check(
       'models_upstream_identity_pair',
       sql`(${table.upstreamProvider} IS NULL) = (${table.upstreamRawId} IS NULL)
         AND (${table.upstreamProvider} IS NULL) = (${table.upstreamSource} IS NULL)`,
     ),
     check('models_sameAs_not_self', sql`${table.sameAsModelId} != ${table.id}`),
+    check('models_root_not_self', sql`${table.rootModelId} != ${table.id}`),
   ],
 )
 

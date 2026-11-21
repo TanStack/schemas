@@ -120,6 +120,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'moonshot',
+  makesOwnModels: true,
   // Hosts' `maker/model` ids (Novita `moonshotai/kimi-k3`).
   modelNamespaces: ['moonshotai'],
   displayName: 'Moonshot',

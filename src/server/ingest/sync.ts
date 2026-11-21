@@ -345,6 +345,7 @@ async function applyAsyncApiCatalogFlags(
  * Upsert the provider's row from its registry config: refreshes the seeded
  * config columns, preserves runtime state (lastPolledAt/lastSyncedAt/status).
  * Same provider row as `scripts/seed.ts`, plus the provider's namespaces
+ * and maker declaration
  * (which only this writes), run automatically so a newly
  * registered provider self-heals into the DB on its first sync/poll instead
  * of waiting on a manual seed against prod.
@@ -353,8 +354,9 @@ export async function ensureProviderRow(
   db: Db,
   provider: ProviderConfig,
 ): Promise<void> {
-  const seed = seedForProvider(provider)
-  if (seed === null) return
+  const listed = seedForProvider(provider)
+  if (listed === null) return
+  const seed = { ...listed, makesOwnModels: provider.makesOwnModels === true }
   const namespaces = provider.modelNamespaces ?? []
   // One batch: the namespace table mirrors config (a dropped name stops
   // resolving) without a second round trip on every poll.
@@ -369,6 +371,7 @@ export async function ensureProviderRow(
           specSourceUrl: seed.specSourceUrl,
           modelsEndpoint: seed.modelsEndpoint ?? null,
           authEnvVar: seed.authEnvVar ?? null,
+          makesOwnModels: seed.makesOwnModels,
         },
       }),
     db

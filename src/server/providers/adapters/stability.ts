@@ -86,6 +86,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'stability',
+  makesOwnModels: true,
   displayName: 'Stability AI',
   authEnvVar: 'STABILITY_API_KEY',
   specSourceUrl: STABILITY_OPENAPI_URL,

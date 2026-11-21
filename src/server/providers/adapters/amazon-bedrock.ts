@@ -17,6 +17,7 @@ import type { BedrockServiceModel } from '../bedrock-sdk-spec.ts'
 import { loadBedrockConverseWireMaps } from '../bedrock-converse-facts.ts'
 import { loadBedrockThinkingGuides } from '../bedrock-thinking-guides.ts'
 import { docsRun, docsReport } from '../model-facts.ts'
+import { BEDROCK_VERSION } from '#/lib/origin-key.ts'
 import { fetchText, sha256Text } from '../types.ts'
 import type {
   ListModelsResult,
@@ -28,12 +29,6 @@ import type {
 
 /** The geography a card's inference-profile id starts with (`us.`, `global.`). */
 const PROFILE_GEO = /^(?:us|us-gov|eu|apac|au|ca|jp|in|global)\./
-/**
- * Bedrock's own version on a model id: `-v1:0`, `-v1`, `-1:0`, then any
- * remaining `:N`. Only version 1 is read as Bedrock's: a maker's own
- * `-v4` (`cohere.embed-v4:0`) or `-v2` (`luma.ray-v2:0`) stays in the id.
- */
-const BEDROCK_VERSION = /(?:-v1(?::\d+)?|-1:\d+|:\d+)$/
 
 /**
  * `us.anthropic.claude-opus-4-5-20251101-v1:0` → anthropic /

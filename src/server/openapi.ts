@@ -94,7 +94,7 @@ const modelFields = {
   rawId: { type: 'string' },
   sameAs: {
     description:
-      "The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.",
+      "The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root, and that root is a declared maker's own row; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.",
     oneOf: [
       {
         type: 'object',
@@ -106,6 +106,26 @@ const modelFields = {
       },
       { type: 'null' },
     ],
+  },
+  sameAsRoot: {
+    description:
+      'The row the sameAs chain ends at (LLM Gateway to Azure to Anthropic serves the Anthropic row). Equal to sameAs on a one-hop link; null when sameAs is null. Resolved when links are reconciled, after each models poll.',
+    oneOf: [
+      {
+        type: 'object',
+        required: ['provider', 'rawId'],
+        properties: {
+          provider: { type: 'string' },
+          rawId: { type: 'string' },
+        },
+      },
+      { type: 'null' },
+    ],
+  },
+  firstParty: {
+    description:
+      "Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true only on a declared maker's own row: the provider is declared a maker and, where it also hosts other makers' models (a row whose maker names someone else), the maker source was read for this row; factSources.firstParty is linked-from when other rows' sameAs chains end here. null otherwise, including a host's row that other rows link to. Derived on read; factSources.firstParty says what decided it.",
+    type: ['boolean', 'null'],
   },
   activity: { type: ['string', 'null'], enum: [...activityEnum, null] },
   displayName: { type: ['string', 'null'] },
@@ -273,6 +293,8 @@ const modelRequired = [
   'provider',
   'rawId',
   'sameAs',
+  'sameAsRoot',
+  'firstParty',
   'activity',
   'displayName',
   'schemaEndpointId',
@@ -1351,9 +1373,10 @@ export const openApiDocument = {
               'probe-verified',
               'docs-derived',
               'source-silent',
+              'name-inferred',
             ],
             description:
-              'How the fact was arrived at. source-silent: the provider publishes no value for it (docs/source-silent ledger).',
+              'How the fact was arrived at. source-silent: the provider publishes no value for it (docs/source-silent ledger). name-inferred: sameAs only, a link no provider stated, drawn from a matching id (see key and candidates).',
           },
           sourceUrl: { type: 'string' },
           sourceHash: { type: 'string' },
@@ -1382,6 +1405,29 @@ export const openApiDocument = {
             enum: [true],
             description:
               'sameAs only: the id matched after dots were read as hyphens.',
+          },
+          variant: {
+            type: 'string',
+            description:
+              "sameAs only: the variant suffix the host's listing states for this id (OpenRouter's batch, free), taken off before matching.",
+          },
+          key: {
+            type: 'string',
+            description:
+              'name-inferred sameAs only: the normalised id every candidate matched.',
+          },
+          candidates: {
+            type: 'array',
+            description:
+              'name-inferred sameAs only: every row at another provider the key matched. Each leads to the linked row.',
+            items: {
+              type: 'object',
+              required: ['provider', 'rawId'],
+              properties: {
+                provider: { type: 'string' },
+                rawId: { type: 'string' },
+              },
+            },
           },
         },
       },
@@ -1433,6 +1479,24 @@ export const openApiDocument = {
           aliases: { $ref: '#/components/schemas/FactSource' },
           aliasOf: { $ref: '#/components/schemas/FactSource' },
           maker: { $ref: '#/components/schemas/FactSource' },
+          firstParty: { $ref: '#/components/schemas/FirstPartySource' },
+        },
+      },
+      FirstPartySource: {
+        description:
+          "What decided firstParty: provider-declared (the provider's maker declaration), linked-from (count rows' sameAs chains end here), maker (the row's maker and its source), or same-as (the row links to another provider's row).",
+        type: 'object',
+        required: ['decidedBy'],
+        properties: {
+          decidedBy: {
+            type: 'string',
+            enum: ['provider-declared', 'linked-from', 'maker', 'same-as'],
+          },
+          count: { type: 'integer', description: 'linked-from only.' },
+          source: {
+            description: 'maker only: factSources.maker.',
+            $ref: '#/components/schemas/FactSource',
+          },
         },
       },
       FactDiscrepancy: {

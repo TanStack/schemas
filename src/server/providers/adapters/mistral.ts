@@ -169,6 +169,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'mistral',
+  makesOwnModels: true,
   displayName: 'Mistral',
   authEnvVar: 'MISTRAL_API_KEY',
   specSourceUrl: MISTRAL_OPENAPI_URL,

@@ -53,6 +53,7 @@ export type {
   FactDiscrepancy,
   FactSource,
   FactSourceMap,
+  FirstPartySource,
   GetActivitySchemasData,
   GetActivitySchemasError,
   GetActivitySchemasErrors,

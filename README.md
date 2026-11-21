@@ -100,20 +100,47 @@ every derivation is recorded and reproducible:
 
 ### Same model at another provider
 
-A model row carries `sameAs: { provider, rawId }` when its own provider names
-the upstream model — a gateway id such as `anthropic/claude-opus-4.5`, or
-Azure's OpenAI model ids — and that model has a catalog row. It is a link
-only: the row's price, limits, and other facts stay its own provider's.
+A model row carries `sameAs: { provider, rawId }` when it is the same model
+as a row at another provider. It is a link only: the row's price, limits,
+and other facts stay its own provider's.
 
-- Within the named provider an exact id wins, then a documented alias, then
-  the same with dots read as hyphens (`claude-opus-4.5` → `claude-opus-4-5`).
-- `sameAs` is `null` when no upstream is stated, or the stated one matches no
-  row or more than one. Priced variants such as `:batch` stay unlinked.
-- `factSources.sameAs` records the source when the link is set, with
-  `normalized: true` for a dots-as-hyphens match. Detail responses include
-  it; model lists include it by default (`?provenance=0` explicitly omits it).
-- Links refresh on each model poll (every 15 minutes) and a change emits
-  `model.updated`.
+- **Stated.** The row's own provider names the upstream model (a gateway id
+  such as `anthropic/claude-opus-4.5`, Bedrock's `anthropic.` model ids,
+  Azure's OpenAI model ids). Within the named provider an exact id wins,
+  then a documented alias, then the same with dots read as hyphens
+  (`claude-opus-4.5` → `claude-opus-4-5`). More than one match, or none,
+  is no link. A variant the listing states (OpenRouter's `:batch` or
+  `:free`, whose `canonical_slug` equals the base id's) links to the base
+  model's row, with `variant` in the evidence; an unstated variant stays
+  unlinked.
+- **Name-inferred** (#719). A row whose provider states no upstream (Neon,
+  OpenCode) and is not a declared maker is matched by a normalised id:
+  lowercase, a provider id or claimed namespace prefix dropped, Bedrock's
+  `-v1:0` dropped, dots read as hyphens. The candidates are rows at other
+  providers with that key that stand for an origin: a row with a resolved
+  stated link, or a declared maker's own row. It links only when every
+  candidate leads to one root row and that root is a declared maker's own
+  row (a chain that ends at a host's row gives no link); regional twins (`moonshot` and
+  `moonshotai-cn`) are two roots and give no link. A stated link always
+  wins, and a stated upstream that matches nothing is never linked by
+  name, so Llama on Groq and Together stays unlinked.
+- `sameAsRoot` is the row the chain of links ends at (LLM Gateway → Azure →
+  Anthropic serves Anthropic's row); it equals `sameAs` on a one-hop link.
+- `factSources.sameAs` records the source: the stated evidence, with
+  `normalized: true` for a dots-as-hyphens match, or
+  `{ derivation: 'name-inferred', key, candidates }`. Detail responses
+  include it; model lists include it by default (`?provenance=0`
+  explicitly omits it).
+- Links refresh on each model poll (every 15 minutes) and a change to
+  `sameAs` or its root emits `model.updated`.
+
+`firstParty` says whether the row's provider is the model's maker. It is
+`false` when the row links to another provider's row or its `maker` names
+someone else; `true` only on a declared maker's own row
+(`ProviderConfig.makesOwnModels`): on a declared maker that also hosts
+other makers' models (Mistral, BytePlus) a row is `true` only when the
+maker source was read for it. Otherwise `null`, including a host's row
+that other rows link to. `factSources.firstParty.decidedBy` names what decided it.
 
 ### Aliases at the same provider
 

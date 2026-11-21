@@ -39,6 +39,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'jina',
+  makesOwnModels: true,
   displayName: 'Jina AI',
   authEnvVar: 'JINA_API_KEY',
   specSourceUrl: JINA_OPENAPI_URL,

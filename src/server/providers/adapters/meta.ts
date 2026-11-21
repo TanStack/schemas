@@ -38,6 +38,7 @@ async function load(url: string, kv?: KVNamespace) {
 }
 export const provider: ProviderConfig = {
   id: 'meta',
+  makesOwnModels: true,
   displayName: 'Meta',
   specSourceUrl: META_REFERENCE,
   modelsEndpoint: META_MODELS,

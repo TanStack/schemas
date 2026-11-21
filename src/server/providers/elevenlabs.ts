@@ -178,6 +178,7 @@ async function listModels(
 
 export const elevenlabsProvider: ProviderConfig = {
   id: 'elevenlabs',
+  makesOwnModels: true,
   displayName: 'ElevenLabs',
   authEnvVar: 'ELEVENLABS_API_KEY',
   defaultDerivation: 'upstream-spec',

@@ -107,6 +107,7 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'voyage',
+  makesOwnModels: true,
   displayName: 'Voyage AI',
   authEnvVar: 'VOYAGE_API_KEY',
   specSourceUrl: VOYAGE_OPENAPI_URL,
