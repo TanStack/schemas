@@ -99,12 +99,12 @@ function clearUnpriced(
 
 /**
  * Alias links a listing row states (issue #709). Every member of an alias
- * group lists the others in `aliases` and carries the group's `name`. When
- * that name is one of the group's ids, it is the id the others resolve to.
- * A name that is no id ("Voxtral Small Transcribe") states no target.
+ * group lists the others in `aliases`: membership is stated. Which id the
+ * others resolve to is not (the listing's `name` is an undescribed display
+ * string), so every grouped row says its target is unstated.
  */
 export function mistralAliasFacts(
-  row: Pick<OpenAiCompatModelRow, 'id' | 'aliases' | 'name'>,
+  row: Pick<OpenAiCompatModelRow, 'id' | 'aliases'>,
 ): Partial<ModelInfo> {
   const aliases = (row.aliases ?? []).filter(
     (id) => typeof id === 'string' && id.length > 0 && id !== row.id,
@@ -115,18 +115,10 @@ export function mistralAliasFacts(
     sourceUrl: MISTRAL_MODELS_URL,
     path,
   })
-  const aliasOf =
-    row.name !== undefined && aliases.includes(row.name) ? row.name : null
   return {
     aliases,
-    aliasOf,
-    factSources: {
-      aliases: source('aliases'),
-      // The named row itself is the target, not an alias of anything.
-      ...(row.name === row.id
-        ? {}
-        : { aliasOf: source(aliasOf === null ? 'unstated' : 'name') }),
-    },
+    aliasOf: null,
+    factSources: { aliases: source('aliases'), aliasOf: source('unstated') },
   }
 }
 
@@ -187,7 +179,9 @@ export const provider: ProviderConfig = {
           (id) => typeof id === 'string' && id.length > 0,
         )
         if (names && names.length > 0) aliases.set(row.id, names)
-        return Promise.resolve(mistralAliasFacts(row))
+        // `created` is the request time on every row, not a release date
+        // (#708). The date comes from the model page's markdown twin.
+        return Promise.resolve({ releasedAt: null, ...mistralAliasFacts(row) })
       },
     })
     if (listed.models.length === 0) return listed

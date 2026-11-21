@@ -203,6 +203,7 @@ export interface ModelFactSources {
    */
   capabilities?: Record<string, FactSource>
   knowledgeCutoff?: FactSource
+  releasedAt?: FactSource
   /** Covers `openWeights` and `weightsUrl`. */
   openWeights?: FactSource
   reasoning?: FactSource
@@ -223,8 +224,8 @@ export interface ModelFactSources {
   /** One source per tool type id in `serverTools`. */
   serverTools?: Record<string, FactSource>
   /**
-   * Where `aliasOf` was read. `path: 'unstated'`: the source lists this id
-   * as an alias but names no id it resolves to.
+   * Where `aliasOf` was read. `path: 'unstated'`: the source was read and
+   * names no target for this id.
    */
   aliasOf?: FactSource
   /**
@@ -534,8 +535,8 @@ export interface ModelInfo {
   aliases?: Array<string> | null
   /**
    * The raw id, at this same provider, that this alias id resolves to, as
-   * the provider states it (Mistral's listing `name`, an OpenAI page's
-   * default snapshot, a Gemini changelog line). Never read from the id's
+   * the provider states it (an OpenAI page's default snapshot, a Gemini
+   * changelog line). Never read from the id's
    * shape. Null when the provider states none.
    */
   aliasOf?: string | null

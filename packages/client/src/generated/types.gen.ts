@@ -833,7 +833,7 @@ export type Model = {
    */
   aliases: Array<string> | null
   /**
-   * For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (Mistral's listing name, an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source lists this id as an alias but names no target.
+   * For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source was read and names no target for this id (every grouped Mistral row: its listing states the group, not which id the others resolve to).
    */
   aliasOf: string | null
   /**
@@ -966,7 +966,7 @@ export type ExportModel = {
    */
   aliases: Array<string> | null
   /**
-   * For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (Mistral's listing name, an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source lists this id as an alias but names no target.
+   * For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source was read and names no target for this id (every grouped Mistral row: its listing states the group, not which id the others resolve to).
    */
   aliasOf: string | null
   /**

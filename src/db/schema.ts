@@ -489,6 +489,8 @@ export const models = sqliteTable(
   },
   (table) => [
     index('models_providerId_idx').on(table.providerId),
+    // The catalog's alias-target join (issue #709) looks up by both.
+    index('models_providerId_rawId_idx').on(table.providerId, table.rawId),
     index('models_activity_idx').on(table.activity),
     index('models_sameAsModelId_idx').on(table.sameAsModelId),
     check(
