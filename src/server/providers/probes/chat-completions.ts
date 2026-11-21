@@ -1,10 +1,10 @@
-import { probeAgeDays } from './types.ts'
-import type { ProbedFact, ProbedFactRecord } from './types.ts'
+import type { ProbedFact } from './types.ts'
 
 /**
  * The generic probe for the OpenAI-style `chat/completions` wire (issue
- * #717). A provider opts in with one `ChatCompletionsProbe` and an empty
- * records file; `pnpm run probe -- <provider> --write` fills the records.
+ * #717). A provider opts in with one `ChatCompletionsProbe` in
+ * `probes/index.ts`; the Worker's probe cron (`ingest/probe-facts.ts`)
+ * picks the models and records each response in `probe_observations`.
  *
  * A value is recorded only from a response that states it: a 400 or 422
  * whose message gives the limit as a number, or names the field it
@@ -17,10 +17,14 @@ export interface ChatCompletionsProbe {
   url: string
   /** The endpoint id a catalog row binds (`schemaEndpointId`). */
   route: string
-  /** Env name of the bearer key. The key itself is never in a file. */
+  /** Secret name of the bearer key. The key itself is never in a file. */
   keyEnv: string
-  /** Catalog raw ids to probe. Each costs `probeChecks(probe).length` requests. */
-  models: Array<string>
+  /**
+   * A gateway or reseller. An error it forwards from an upstream states
+   * nothing about its own row, so the cron never probes one. Clear it only
+   * after real captured responses show the wording is the gateway's own.
+   */
+  gateway?: true
   /**
    * Opt in to the `off` check: whose refusal of `reasoning_effort: "none"`
    * is read, and only in that provider's own wording. Set it only when
@@ -42,14 +46,18 @@ export function probeChecks(probe: ChatCompletionsProbe): Array<ProbeCheck> {
     : ['limits', 'replay']
 }
 
-/** Hard per-provider cap. A run that plans more requests aborts before the first. */
-export const MAX_PROBE_REQUESTS = 30
+/** The fact each check can state. */
+export const CHECK_FACT: Record<ProbeCheck, ProbedFact> = {
+  limits: 'maxOutput',
+  replay: 'replayReasoningContent',
+  off: 'reasoning.mandatory',
+}
 
 /** Far over any model's output cap, so a provider that checks it says so. */
 const OVERSIZED_MAX_TOKENS = 10_000_000
 
 /**
- * Every body streams and the script cancels a 2xx unread. Cancelling does
+ * Every body streams and the prober cancels a 2xx unread. Cancelling does
  * not guarantee the provider stops billing; the real bound is the one-word
  * prompt (and `max_tokens: 1` on every check but `limits`).
  */
@@ -235,42 +243,44 @@ export function classifyProbeResponse(
   return { fact: 'reasoning.mandatory', value: true, message }
 }
 
-/** Under the 90 stale days, so a weekly run re-dates a record in time. */
-export const REDATE_AFTER_DAYS = 60
+const PROBE_TIMEOUT_MS = 20_000
 
-/**
- * One provider's records after a run. A decided check replaces its stored
- * record, or keeps it unchanged when the value is the same and the record
- * is at most `REDATE_AFTER_DAYS` old. A stored record the run did not
- * decide is kept and listed in `unconfirmed`. Another provider's records
- * are never read.
- */
-export function mergeProbedRecords(
-  provider: string,
-  stored: Array<ProbedFactRecord>,
-  found: Array<ProbedFactRecord>,
-  now: Date,
-): {
-  records: Array<ProbedFactRecord>
-  unconfirmed: Array<ProbedFactRecord>
-} {
-  const mine = new Map(
-    stored
-      .filter((record) => record.provider === provider)
-      .map((record) => [record.id, record] as const),
-  )
-  const decided = found.map((record) => {
-    const prior = mine.get(record.id)
-    return prior &&
-      prior.value === record.value &&
-      probeAgeDays(prior.verifiedAt, now) <= REDATE_AFTER_DAYS
-      ? prior
-      : record
-  })
-  const ids = new Set(decided.map((record) => record.id))
-  const unconfirmed = [...mine.values()].filter((record) => !ids.has(record.id))
-  const records = [...unconfirmed, ...decided].sort((a, b) =>
-    a.id.localeCompare(b.id),
-  )
-  return { records, unconfirmed }
+/** Removes the key, and its leading and trailing fragments, from a message. */
+export function redactKey(text: string, key: string): string {
+  let out = text.replaceAll(key, '[key]')
+  if (key.length >= 16) {
+    out = out
+      .replaceAll(key.slice(0, 8), '[key]')
+      .replaceAll(key.slice(-6), '[key]')
+  }
+  return out
+}
+
+/** A 2xx body is cancelled unread: it states nothing, and it bills. */
+export async function sendProbe(
+  url: string,
+  body: Record<string, unknown>,
+  key: string,
+  fetcher: typeof fetch = fetch,
+): Promise<{ status: number; text: string }> {
+  try {
+    const response = await fetcher(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+        'user-agent': 'modelschemas-probe/1',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    })
+    if (response.ok) {
+      await response.body?.cancel()
+      return { status: response.status, text: '' }
+    }
+    return { status: response.status, text: await response.text() }
+  } catch {
+    // The error can quote the request; report only that it failed.
+    return { status: 0, text: '' }
+  }
 }

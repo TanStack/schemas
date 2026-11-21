@@ -68,6 +68,7 @@ describe('agent-auth provider surface', () => {
         'syncProvider',
         'extractFalPricing',
         'exportCatalog',
+        'listProbeObservations',
       ]),
     )
     for (const op of adminOps) expect(names).not.toContain(op)

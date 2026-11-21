@@ -83,7 +83,7 @@ export type ServiceStatus = {
       live: number
     }
     /**
-     * Present only when this provider has probe records older than 90 days. The probed facts stay served. Does not change status. Re-run with `pnpm run probe -- <provider> --write`.
+     * Present only when this provider has probed facts last verified more than 90 days ago. The probed facts stay served. Does not change status. The Worker re-verifies probed facts weekly.
      */
     staleProbes?: number
     /**
@@ -1567,7 +1567,7 @@ export type GetSchemaError = GetSchemaErrors[keyof GetSchemaErrors]
 
 export type GetSchemaResponses = {
   /**
-   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. `provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call recorded in `src/server/providers/probes/<provider>.ts` on `provenance.verifiedAt` (`YYYY-MM-DD`). Re-run it with `pnpm run probe -- <provider> [--write]`. A record older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.
+   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. `provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call dated `provenance.verifiedAt` (`YYYY-MM-DD`): a route record in `src/server/providers/probes/<provider>.ts`, or, for a model fact, two agreeing observations the Worker recorded from its own requests. A probe older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.
    */
   200: {
     [key: string]: unknown
@@ -1780,6 +1780,46 @@ export type SyncProviderResponses = {
 
 export type SyncProviderResponse =
   SyncProviderResponses[keyof SyncProviderResponses]
+
+export type ListProbeObservationsData = {
+  body?: never
+  path: {
+    /**
+     * Provider slug (see GET /v1/providers).
+     */
+    provider: string
+  }
+  query?: {
+    model?: string
+  }
+  url: '/v1/admin/probes/{provider}'
+}
+
+export type ListProbeObservationsErrors = {
+  /**
+   * Error
+   */
+  401: Error
+  /**
+   * Error
+   */
+  404: Error
+}
+
+export type ListProbeObservationsError =
+  ListProbeObservationsErrors[keyof ListProbeObservationsErrors]
+
+export type ListProbeObservationsResponses = {
+  /**
+   * Observations.
+   */
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type ListProbeObservationsResponse =
+  ListProbeObservationsResponses[keyof ListProbeObservationsResponses]
 
 export type ExtractFalPricingData = {
   body?: never

@@ -240,23 +240,31 @@ ones).
   entry. A stored row's first `releasedAt`, `providerMetadata` or `maker`
   is written with no `model.updated`. Migration `0014` is a drizzle custom
   migration that converted the stored lists. A fact the provider's docs do not state can
-  still come from a live API check: one file per provider under
-  `src/server/providers/probes/`, derivation `probe-verified`, dated
-  `verifiedAt`. The adapter binds that fact only for the exact model and
-  route the record names. A record older than 90 days stays served;
-  `GET /v1/status` counts it on `staleProbes`. Re-run with
-  `pnpm run probe -- <provider> [--write]` (not the 15-minute
-  poll). The script reads the provider key from the environment or Doppler
-  and never prints it. The generic `chat/completions` probe
-  (`probes/chat-completions.ts`, #717) states `maxOutput`,
+  still come from a live API check, derivation `probe-verified`, dated
+  `verifiedAt`, bound only to the exact model and route observed. Probed
+  facts live in D1, never in source (#717): the Worker's own probe cron
+  (`PROBE_CRON`, hourly at :07, `src/server/ingest/probe-facts.ts`)
+  appends one `probe_observations` row per request it sent (value null
+  when the response stated nothing). It probes a chat row of an enabled
+  provider (`chatProbes` in `probes/index.ts`) once when a probeable fact
+  is empty and unobserved, re-probes an unconfirmed value next run, and
+  re-verifies anything `REVERIFY_AFTER_DAYS` (7) old, under
+  `PROBE_REQUEST_BUDGET` (12) and `PROBE_PROVIDER_BUDGET` (4) per
+  invocation. A value is served only when the two newest decided
+  observations, from separate runs, agree; the poll fills only empty facts
+  from them (`loadServedProbeFacts` → `withProbedFacts`). A missing key is
+  a logged skip; a `gateway` entry is never probed. Audit with
+  `GET /v1/admin/probes/{provider}[?model=]`. A served fact older than 90
+  days stays served; `GET /v1/status` counts it on `staleProbes`.
+  `pnpm run probe -- <provider> <rawId…>` is a read-only local dry run.
+  The classifier (`probes/chat-completions.ts`) states `maxOutput`,
   `replayReasoningContent` and `reasoning.mandatory` only from a 400/422
   whose message a rule reads (fixtures of real bodies); a 2xx, auth, 429,
   5xx or unread message records nothing. `reasoning.mandatory` needs the
   provider's `mandatoryRule` opt-in (per-model level list, no other
-  reasoning control). No rule writes `contextWindow` yet. `--write` writes
-  `probes/records/<provider>.ts` (never by hand); the poller fills only
-  empty facts from it (`withProbedFacts`). `.source/workflows/probe.ts`
-  runs it weekly and opens a PR on `probe/weekly` when a record changed.
+  reasoning control). No rule writes `contextWindow` yet. LEGACY: the
+  hand-written OpenCode Go route records (`probes/opencode-go.ts`) still
+  bind two routes; nothing re-dates them.
 - **sameAs links** (issues #199, #719, `src/server/ingest/model-identity.ts`):
   a row links to the row at another provider it is the same model as;
   never a copied fact. A stated link wins: adapters state the upstream

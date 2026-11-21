@@ -39,8 +39,11 @@
     // FAL spec-sync shard's subrequest/CPU budget. Vercel per-model
     // /endpoints prices are one daily firing (VERCEL_PRICING_EXTRACT_CRON)
     // for the same reason: ~60 subrequests must not share the poll budget.
+    // Live fact probes are hourly at :07 (PROBE_CRON in
+    // src/server/ingest/probe-facts.ts), capped by PROBE_REQUEST_BUDGET.
     "crons": [
       "*/15 * * * *",
+      "7 * * * *",
       "0 4 * * *",
       "0 5 * * *",
       "10 5 * * *",

@@ -50,6 +50,7 @@ import { Route as V1SubscriptionsIdRouteImport } from './routes/v1/subscriptions
 import { Route as ModelsProviderModelIdPricingRouteImport } from './routes/models/$provider.$modelId_.pricing'
 import { Route as SchemasProviderActivitySplatRouteImport } from './routes/schemas/$provider.$activity.$'
 import { Route as V1AdminExtractFalRouteImport } from './routes/v1/admin/extract.fal'
+import { Route as V1AdminProbesProviderRouteImport } from './routes/v1/admin/probes.$provider'
 import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
 import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/$provider.$modelId'
 import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
@@ -269,6 +270,11 @@ const V1AdminExtractFalRoute = V1AdminExtractFalRouteImport.update({
   path: '/v1/admin/extract/fal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1AdminProbesProviderRoute = V1AdminProbesProviderRouteImport.update({
+  id: '/v1/admin/probes/$provider',
+  path: '/v1/admin/probes/$provider',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const V1AdminSyncProviderRoute = V1AdminSyncProviderRouteImport.update({
   id: '/v1/admin/sync/$provider',
   path: '/v1/admin/sync/$provider',
@@ -345,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/models/$provider/$modelId/pricing': typeof ModelsProviderModelIdPricingRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/extract/fal': typeof V1AdminExtractFalRoute
+  '/v1/admin/probes/$provider': typeof V1AdminProbesProviderRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
@@ -394,6 +401,7 @@ export interface FileRoutesByTo {
   '/models/$provider/$modelId/pricing': typeof ModelsProviderModelIdPricingRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/extract/fal': typeof V1AdminExtractFalRoute
+  '/v1/admin/probes/$provider': typeof V1AdminProbesProviderRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
@@ -444,6 +452,7 @@ export interface FileRoutesById {
   '/models/$provider/$modelId_/pricing': typeof ModelsProviderModelIdPricingRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/extract/fal': typeof V1AdminExtractFalRoute
+  '/v1/admin/probes/$provider': typeof V1AdminProbesProviderRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
@@ -495,6 +504,7 @@ export interface FileRouteTypes {
     | '/models/$provider/$modelId/pricing'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/extract/fal'
+    | '/v1/admin/probes/$provider'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
     | '/v1/providers/$provider/models'
@@ -544,6 +554,7 @@ export interface FileRouteTypes {
     | '/models/$provider/$modelId/pricing'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/extract/fal'
+    | '/v1/admin/probes/$provider'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
     | '/v1/providers/$provider/models'
@@ -593,6 +604,7 @@ export interface FileRouteTypes {
     | '/models/$provider/$modelId_/pricing'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/extract/fal'
+    | '/v1/admin/probes/$provider'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
     | '/v1/providers/$provider/models'
@@ -643,6 +655,7 @@ export interface RootRouteChildren {
   ModelsProviderModelIdPricingRoute: typeof ModelsProviderModelIdPricingRoute
   SchemasProviderActivitySplatRoute: typeof SchemasProviderActivitySplatRoute
   V1AdminExtractFalRoute: typeof V1AdminExtractFalRoute
+  V1AdminProbesProviderRoute: typeof V1AdminProbesProviderRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
   V1ModelsProviderModelIdRoute: typeof V1ModelsProviderModelIdRoute
   V1SchemasProviderIndexRoute: typeof V1SchemasProviderIndexRoute
@@ -939,6 +952,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1AdminExtractFalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/admin/probes/$provider': {
+      id: '/v1/admin/probes/$provider'
+      path: '/v1/admin/probes/$provider'
+      fullPath: '/v1/admin/probes/$provider'
+      preLoaderRoute: typeof V1AdminProbesProviderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/v1/admin/sync/$provider': {
       id: '/v1/admin/sync/$provider'
       path: '/v1/admin/sync/$provider'
@@ -1040,6 +1060,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelsProviderModelIdPricingRoute: ModelsProviderModelIdPricingRoute,
   SchemasProviderActivitySplatRoute: SchemasProviderActivitySplatRoute,
   V1AdminExtractFalRoute: V1AdminExtractFalRoute,
+  V1AdminProbesProviderRoute: V1AdminProbesProviderRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,
   V1ModelsProviderModelIdRoute: V1ModelsProviderModelIdRoute,
   V1SchemasProviderIndexRoute: V1SchemasProviderIndexRoute,
