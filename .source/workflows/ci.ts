@@ -31,8 +31,8 @@ export default defineWorkflow('ci', {
     // `pnpm exec changeset --empty`).
     {
       name: 'Changeset check',
-      if: (ctx) => ctx.event === 'pull_request',
-      run: 'pnpm exec changeset status --since=origin/main',
+      if: (ctx) => ctx.event !== 'push',
+      run: 'git branch -a; git log --oneline -1 origin/main; pnpm exec changeset status --since=origin/main',
     },
     // The committed client must match the spec.
     { name: 'Client drift check', run: 'pnpm run check:client' },
