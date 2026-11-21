@@ -1,0 +1,164 @@
+[
+  {
+    "name": "baseten-limits-decision-models_baseten-joey-2b-latest",
+    "check": "limits",
+    "status": 404,
+    "body": "{\n\t\"error\": \"\"\n}\n"
+  },
+  {
+    "name": "cerebras-limits-gpt-oss-120b",
+    "check": "limits",
+    "status": 402,
+    "body": "{\"message\":\"Payment required to access this resource. Visit your billing tab.\",\"type\":\"payment_required_error\",\"param\":\"quota\",\"code\":\"payment_required\"}"
+  },
+  {
+    "name": "deepseek-limits-deepseek-chat",
+    "check": "limits",
+    "status": 402,
+    "body": "{\"error\":{\"message\":\"Insufficient Balance (request_id: 6c7fc7b7-e08e-4895-b98a-c2dc4453b350)\",\"type\":\"insufficient_balance_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+  },
+  {
+    "name": "fireworks-limits-accounts_fireworks_models_deepseek-v4p1-flash",
+    "check": "limits",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"Validation: Max tokens must not exceed 1048576, got 10000000\",\"type\":\"invalid_request_error\",\"code\":400}}"
+  },
+  {
+    "name": "fireworks-limits-accounts_fireworks_models_gpt-oss-120b",
+    "check": "limits",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "gemini-limits-gemini-2.5-flash",
+    "check": "limits",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "groq-limits-openai_gpt-oss-20b",
+    "check": "limits",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"`max_tokens` must be less than or equal to `65536`, the maximum value for `max_tokens` is less than the `context_window` for this model\",\"type\":\"invalid_request_error\",\"param\":\"max_tokens\"}}\n"
+  },
+  {
+    "name": "groq-off-openai_gpt-oss-safeguard-20b",
+    "check": "off",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"`reasoning_effort` must be one of `low`, `medium`, or `high`\",\"type\":\"invalid_request_error\"}}\n"
+  },
+  {
+    "name": "groq-off-qwen_qwen3.8-27b",
+    "check": "off",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "groq-replay-openai_gpt-oss-20b",
+    "check": "replay",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"'messages.1' : for 'role:assistant' the following must be satisfied[('messages.1' : property 'reasoning_content' is unsupported)]\",\"type\":\"invalid_request_error\"}}\n"
+  },
+  {
+    "name": "hyperbolic-limits-deepseek-ai_DeepSeek-R1-0528",
+    "check": "limits",
+    "status": 404,
+    "body": "{\"object\":\"error\",\"message\":\"This inference endpoint has been decommissioned and is no longer available.\",\"type\":\"\",\"param\":null,\"code\":40401,\"error\":{\"code\":40401,\"message\":\"This inference endpoint has been decommissioned and is no longer available.\",\"type\":\"\",\"param\":null}}"
+  },
+  {
+    "name": "hyperbolic-limits-deepseek-ai_DeepSeek-V3-0324",
+    "check": "limits",
+    "status": 404,
+    "body": "{\"object\":\"error\",\"message\":\"This inference endpoint has been decommissioned and is no longer available.\",\"type\":\"\",\"param\":null,\"code\":40401,\"error\":{\"code\":40401,\"message\":\"This inference endpoint has been decommissioned and is no longer available.\",\"type\":\"\",\"param\":null}}"
+  },
+  {
+    "name": "mistral-limits-codestral-2508",
+    "check": "limits",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "mistral-replay-codestral-2508",
+    "check": "replay",
+    "status": 422,
+    "body": "{\"detail\":[{\"type\":\"extra_forbidden\",\"loc\":[\"body\",\"messages\",1,\"assistant\",\"reasoning_content\"],\"msg\":\"Extra inputs are not permitted\",\"input\":\"x\"}]}"
+  },
+  {
+    "name": "moonshot-limits-kimi-k2.6",
+    "check": "limits",
+    "status": 429,
+    "body": "{\"error\":{\"message\":\"Your account org-[redacted] \\u003cak-[redacted]\\u003e is suspended due to insufficient balance, please recharge your account or check your plan and billing details\",\"type\":\"exceeded_current_quota_error\"}}"
+  },
+  {
+    "name": "novita-limits-deepseek_deepseek-r1-turbo",
+    "check": "limits",
+    "status": 403,
+    "body": "{\"code\":403, \"reason\":\"NOT_ENOUGH_BALANCE\", \"message\":\"not enough balance\", \"metadata\":{}}"
+  },
+  {
+    "name": "openai-limits-gpt-4o-mini",
+    "check": "limits",
+    "status": 400,
+    "body": "{\n  \"error\": {\n    \"message\": \"max_tokens is too large: 10000000. This model supports at most 16384 completion tokens, whereas you provided 10000000.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"max_tokens\",\n    \"code\": \"invalid_value\"\n  }\n}"
+  },
+  {
+    "name": "openai-off-gpt-5-mini",
+    "check": "off",
+    "status": 400,
+    "body": "{\n  \"error\": {\n    \"message\": \"Unsupported value: 'reasoning_effort' does not support 'none' with this model. Supported values are: 'minimal', 'low', 'medium', and 'high'.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"reasoning_effort\",\n    \"code\": \"unsupported_value\"\n  }\n}"
+  },
+  {
+    "name": "openai-replay-gpt-4o-mini",
+    "check": "replay",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "sambanova-limits-Meta-Llama-3.3-70B-Instruct",
+    "check": "limits",
+    "status": 401,
+    "body": "{\"error\":{\"message\":\"Incorrect API key provided: [masked].\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_api_key\"},\"request_id\":\"dc0ghk9gldmnbggl60u0\"}\n"
+  },
+  {
+    "name": "together-limits-arcee-ai_trinity-mini",
+    "check": "limits",
+    "status": 400,
+    "body": "{\n  \"id\": \"pA9KLJi-2kFHot-a5dc6dd5da0d4b5e\",\n  \"error\": {\n    \"message\": \"Unable to access non-serverless model arcee-ai/trinity-mini. Please visit https://api.together.ai/models/arcee-ai/trinity-mini to create and start a new dedicated endpoint for the model.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": null,\n    \"code\": \"model_not_available\"\n  }\n}"
+  },
+  {
+    "name": "together-limits-meta-llama_Llama-3.3-70B-Instruct-Turbo",
+    "check": "limits",
+    "status": 400,
+    "body": "{\n  \"id\": \"pA9Key3-2kFHot-a5dc6f6239091874\",\n  \"error\": {\n    \"message\": \"Unable to access non-serverless model meta-llama/Llama-3.3-70B-Instruct-Turbo. Please visit https://api.together.ai/models/meta-llama/Llama-3.3-70B-Instruct-Turbo to create and start a new dedicated endpoint for the model.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": null,\n    \"code\": \"model_not_available\"\n  }\n}"
+  },
+  {
+    "name": "together-limits-openai_gpt-oss-120b",
+    "check": "limits",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "together-off-openai_gpt-oss-120b",
+    "check": "off",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "name": "together-off-openai_gpt-oss-20b",
+    "check": "off",
+    "status": 400,
+    "body": "{\n  \"id\": \"pA9KLiv-2kFHot-a5dc6de27fc94b5e\",\n  \"error\": {\n    \"message\": \"Unable to access non-serverless model openai/gpt-oss-20b. Please visit https://api.together.ai/models/openai/gpt-oss-20b to create and start a new dedicated endpoint for the model.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": null,\n    \"code\": \"model_not_available\"\n  }\n}"
+  },
+  {
+    "name": "together-replay-arcee-ai_trinity-mini",
+    "check": "replay",
+    "status": 400,
+    "body": "{\n  \"id\": \"pA9KLax-2kFHot-a5dc6ddcf9c0f49d\",\n  \"error\": {\n    \"message\": \"Unable to access non-serverless model arcee-ai/trinity-mini. Please visit https://api.together.ai/models/arcee-ai/trinity-mini to create and start a new dedicated endpoint for the model.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": null,\n    \"code\": \"model_not_available\"\n  }\n}"
+  },
+  {
+    "name": "xai-limits-grok-3-mini",
+    "check": "limits",
+    "status": 200,
+    "body": ""
+  }
+]

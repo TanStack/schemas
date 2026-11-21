@@ -1407,6 +1407,11 @@ export const openApiDocument = {
             $ref: '#/components/schemas/FactSource',
           },
           reasoning: { $ref: '#/components/schemas/FactSource' },
+          reasoningMandatory: {
+            description:
+              'reasoning.mandatory when a probe-verified record filled it; otherwise reasoning covers the whole object.',
+            $ref: '#/components/schemas/FactSource',
+          },
           requestMap: { $ref: '#/components/schemas/FactSource' },
           requiredRequestHeaders: { $ref: '#/components/schemas/FactSource' },
           trainsOnRequestData: { $ref: '#/components/schemas/FactSource' },

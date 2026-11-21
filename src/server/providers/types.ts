@@ -207,6 +207,11 @@ export interface ModelFactSources {
   /** Covers `openWeights` and `weightsUrl`. */
   openWeights?: FactSource
   reasoning?: FactSource
+  /**
+   * `reasoning.mandatory` when a probe filled it (issue #717); else
+   * `reasoning` covers the whole object.
+   */
+  reasoningMandatory?: FactSource
   /** Chat wire map read from this model's own request schema. */
   requestMap?: FactSource
   /** Required request headers that are not constant values. */
@@ -275,8 +280,10 @@ export interface UpstreamModelIdentity {
  *   from it, and do not claim thinking is forced. A schema SHARED by many
  *   models states nothing about one model, with or without an off value,
  *   so it is `null`. A gateway can drop the off value, so a gateway list
- *   stays `null` until that model's own source speaks. A probe (off
- *   returns 400) is not a source.
+ *   stays `null` until that model's own source speaks. A bare 400 on
+ *   an off value is not a source. A probe record is, when that 400 listed
+ *   the model's own accepted levels with no off value, and that field is
+ *   the model's only reasoning control (issue #717, `mandatoryRule`).
  * - A model's OWN exhaustive effort list, with no off value, and no other
  *   reasoning control, means `mandatory: true`. The list is the only
  *   control, and it has no way to turn thinking off.
