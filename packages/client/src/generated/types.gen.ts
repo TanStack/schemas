@@ -721,6 +721,10 @@ export type ModelFactSources = {
    */
   openWeights?: FactSource
   reasoning?: FactSource
+  /**
+   * reasoning.mandatory when a probe-verified record filled it; otherwise reasoning covers the whole object.
+   */
+  reasoningMandatory?: FactSource
   requestMap?: FactSource
   requiredRequestHeaders?: FactSource
   trainsOnRequestData?: FactSource
