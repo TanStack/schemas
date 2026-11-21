@@ -35,6 +35,18 @@ export const provider: ProviderConfig = {
   id: 'google-vertex-anthropic',
   // LLM Gateway route name (providers[].providerId).
   modelNamespaces: ['vertex-anthropic'],
+  // The catalog is "Anthropic's Claude on Google Cloud models", and each
+  // card's Model ID is Anthropic's id; an id with no Anthropic row stays
+  // unlinked.
+  upstreamModelIdentity: (rawId) => ({
+    providerNamespace: 'anthropic',
+    rawId,
+    source: {
+      derivation: 'docs-derived',
+      sourceUrl: VERTEX_CLAUDE_URL,
+      path: 'Model ID',
+    },
+  }),
   displayName: 'Vertex (Anthropic)',
   specSourceUrl: VERTEX_CLAUDE_REQUEST_URL,
   modelsEndpoint: VERTEX_CLAUDE_URL,

@@ -25,6 +25,7 @@ import { groqModelServerTools } from '../server-tools.ts'
 import { groqGenerationEndpointId, groqModelActivity } from '../model-meta.ts'
 import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import { bearerConnect } from '../connect.ts'
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -129,6 +130,14 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'groq',
+  // `openai/gpt-oss-120b`: the listing names the maker in the id. Groq's own
+  // and older ids (`allam-2-7b`, `whisper-large-v3`) carry no namespace.
+  upstreamModelIdentity: (rawId) =>
+    namespacedUpstreamIdentity(rawId, {
+      derivation: 'listing',
+      sourceUrl: GROQ_MODELS_URL,
+      path: 'data[].id',
+    }),
   displayName: 'Groq',
   authEnvVar: 'GROQ_API_KEY',
   specSourceUrl: GROQ_MOCK_URL,

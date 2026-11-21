@@ -29,31 +29,26 @@ describe('groq listModels', () => {
   })
 })
 
-describe('groq maker', () => {
-  const byId = new Map(listing.data.map((row) => [row.id, row]))
-
-  it('reads owned_by as written (live listing, 2026-11-21)', () => {
-    const facts = (id: string) => groqMakerFacts(byId.get(id) ?? {})
-    expect(facts('openai/gpt-oss-120b').maker).toBe('OpenAI')
-    expect(facts('qwen/qwen3.8-27b').maker).toBe('Alibaba Cloud')
-    expect(facts('allam-2-7b').maker).toBe('SDAIA')
-    expect(facts('meta-llama/llama-prompt-guard-2-86m')).toEqual({
-      maker: 'Meta',
-      factSources: {
-        maker: {
-          derivation: 'listing',
-          sourceUrl: 'https://api.groq.com/openai/v1/models',
-          path: 'owned_by',
-        },
+describe('groq upstream identity', () => {
+  it('states the maker an id names, and nothing for a bare id', () => {
+    // Ids from the live listing, 2026-11-21.
+    expect(provider.upstreamModelIdentity?.('openai/gpt-oss-120b')).toEqual({
+      providerNamespace: 'openai',
+      rawId: 'gpt-oss-120b',
+      source: {
+        derivation: 'listing',
+        sourceUrl: 'https://api.groq.com/openai/v1/models',
+        path: 'data[].id',
       },
     })
-  })
-
-  it('says a row with no owned_by names no maker', () => {
-    expect(groqMakerFacts({ owned_by: ' ' })).toMatchObject({
-      maker: null,
-      factSources: { maker: { path: 'unstated' } },
+    expect(
+      provider.upstreamModelIdentity?.('meta-llama/llama-prompt-guard-2-86m'),
+    ).toMatchObject({
+      providerNamespace: 'meta-llama',
+      rawId: 'llama-prompt-guard-2-86m',
     })
+    expect(provider.upstreamModelIdentity?.('whisper-large-v3')).toBeNull()
+    expect(provider.upstreamModelIdentity?.('allam-2-7b')).toBeNull()
   })
 })
 
@@ -116,5 +111,33 @@ describe('groq fetchSpec', () => {
     await expect(
       withScript(mockScript(btoa('plain text')), () => provider.fetchSpec({})),
     ).rejects.toThrow(/not gzipped JSON/)
+  })
+})
+
+describe('groq maker (#710)', () => {
+  const byId = new Map(listing.data.map((row) => [row.id, row]))
+
+  it('reads owned_by as written (live listing, 2026-11-21)', () => {
+    const facts = (id: string) => groqMakerFacts(byId.get(id) ?? {})
+    expect(facts('openai/gpt-oss-120b').maker).toBe('OpenAI')
+    expect(facts('qwen/qwen3.8-27b').maker).toBe('Alibaba Cloud')
+    expect(facts('allam-2-7b').maker).toBe('SDAIA')
+    expect(facts('meta-llama/llama-prompt-guard-2-86m')).toEqual({
+      maker: 'Meta',
+      factSources: {
+        maker: {
+          derivation: 'listing',
+          sourceUrl: 'https://api.groq.com/openai/v1/models',
+          path: 'owned_by',
+        },
+      },
+    })
+  })
+
+  it('says a row with no owned_by names no maker', () => {
+    expect(groqMakerFacts({ owned_by: ' ' })).toMatchObject({
+      maker: null,
+      factSources: { maker: { path: 'unstated' } },
+    })
   })
 })

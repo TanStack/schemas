@@ -514,7 +514,7 @@ describe('byteplus maker (#710)', () => {
   const doc = modelListProviders as ByteplusDoc
 
   it('reads the merged Provider cells of the model list (2026-11-21)', () => {
-    const makers = parseByteplusMakers(doc)
+    const { makers, named } = parseByteplusMakers(doc)
     expect(makers.get('seed-2-0-lite-260428')).toBe('ByteDance')
     expect(makers.get('deepseek-v4-pro-ga-260813')).toBe('DeepSeek')
     expect(makers.get('deepseek-v4-pro-260425')).toBe('DeepSeek')
@@ -522,6 +522,11 @@ describe('byteplus maker (#710)', () => {
     expect(makers.get('glm-5-2-260617')).toBe('Z.ai')
     expect(makers.get('hitem3d-2-0-251223')).toBe('Hitem3D')
     expect(makers.has('gpt-oss-120b-250805')).toBe(false)
+    // A Model ID column with no Provider names the id and no maker.
+    expect(makers.has('seedance-1-0-pro-250528')).toBe(false)
+    expect(named.has('seedance-1-0-pro-250528')).toBe(true)
+    // Absent from every table: the page says nothing about it.
+    expect(named.has('gpt-oss-120b-250805')).toBe(false)
   })
 
   it('throws on a list with no Provider table', () => {
@@ -530,12 +535,16 @@ describe('byteplus maker (#710)', () => {
     )
   })
 
-  it('names the maker, says when the list is silent, keeps it when down', async () => {
+  it('names the maker, says when a listed id has none, keeps it when down', async () => {
     const pick = (models: Array<{ rawId: string; maker?: unknown }>) =>
       Object.fromEntries(
         models
           .filter((m) =>
-            ['glm-5-2-260617', 'gpt-oss-120b-250805'].includes(m.rawId),
+            [
+              'glm-5-2-260617',
+              'gpt-oss-120b-250805',
+              'seedance-1-0-pro-250528',
+            ].includes(m.rawId),
           )
           .map((m) => [m.rawId, m]),
       )
@@ -552,10 +561,16 @@ describe('byteplus maker (#710)', () => {
         maker: { sourceUrl: BYTEPLUS_MODEL_LIST_URL, path: 'Provider' },
       },
     })
-    expect(read['gpt-oss-120b-250805']).toMatchObject({
+    expect(read['seedance-1-0-pro-250528']).toMatchObject({
       maker: null,
       factSources: { maker: { path: 'unstated' } },
     })
+    // The list never names gpt-oss: no maker and no source either way.
+    expect(read['gpt-oss-120b-250805']?.maker).toBeUndefined()
+    expect(
+      (read['gpt-oss-120b-250805'] as { factSources?: { maker?: unknown } })
+        .factSources?.maker,
+    ).toBeUndefined()
     const down = await listWith({ [BYTEPLUS_MODEL_LIST_URL]: null })
     expect(
       down.models.find((m) => m.rawId === 'glm-5-2-260617')?.absent,

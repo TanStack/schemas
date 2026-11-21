@@ -234,9 +234,10 @@ ones).
   `openWeights` + `weightsUrl` are null unless the provider states them.
   `models.maker` (#710) is the maker's name as the host's own source
   writes it, never an id prefix; `factSources.maker.path: 'unstated'` is
-  a read source that names none. A stored row's first `releasedAt`,
-  `providerMetadata` or `maker` is written with no `model.updated`. Migration `0014` is a drizzle custom migration that
-  converted the stored lists. A fact the provider's docs do not state can
+  a source that lists the id and names none; an unlisted id gets no
+  entry. A stored row's first `releasedAt`, `providerMetadata` or `maker`
+  is written with no `model.updated`. Migration `0014` is a drizzle custom
+  migration that converted the stored lists. A fact the provider's docs do not state can
   still come from a live API check: one file per provider under
   `src/server/providers/probes/`, derivation `probe-verified`, dated
   `verifiedAt`. The adapter binds that fact only for the exact model and

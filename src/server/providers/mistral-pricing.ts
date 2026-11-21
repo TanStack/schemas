@@ -1042,25 +1042,54 @@ export function parseMistralApiSlugs(markdown: string): Map<string, string> {
 }
 
 /**
- * API name → maker, from an overview Summary that says "A third-party ...
- * model from Z.ai" (issue #710). The name is copied as written. Mistral's
- * own models carry no such sentence and are absent. Throws when the
- * overview names no API ids: the table moved.
+ * The maker a Summary names, or null when it makes no third-party claim.
+ * Only a Summary that opens "A third-party ... model from <Name>" names
+ * one; the name ends at the sentence (a full stop then a space or the
+ * end), a comma or semicolon, or the first word with no capital or digit,
+ * so `Z.ai`, `01.AI` and `xAI` stay whole. Any other wording that says
+ * "third-party" throws: a new phrasing must fail loudly, never read as
+ * one of Mistral's own models.
  */
-export function parseMistralMakers(markdown: string): Map<string, string> {
+export function mistralSummaryMaker(summary: string): string | null {
+  const text = summary.trim()
+  if (!/third-party/i.test(text)) return null
+  const rest = /^An? third-party\b[^.,;]*?\bmodel from (.+)$/i.exec(text)?.[1]
+  const sentence = rest?.split(/\.(?=\s|$)|[,;]/)[0] ?? ''
+  const name =
+    /^[\w.&'-]*[A-Z0-9][\w.&'-]*(?: [\w.&'-]*[A-Z0-9][\w.&'-]*)*/.exec(
+      sentence,
+    )?.[0]
+  if (!name) {
+    throw new Error(
+      `mistral models overview: unreadable third-party summary ${JSON.stringify(text)}`,
+    )
+  }
+  return name
+}
+
+/**
+ * The overview's third-party makers (issue #710): API name → maker as
+ * written (`mistralSummaryMaker`). `named` is every id in an API name
+ * column, current or deprecated: only those can be said to name no maker.
+ * Throws when the overview names no API ids: the table moved.
+ */
+export function parseMistralMakers(markdown: string): {
+  makers: Map<string, string>
+  named: Set<string>
+} {
   parseMistralApiSlugs(markdown)
-  const out = new Map<string, string>()
+  const makers = new Map<string, string>()
+  const named = new Set<string>()
   for (const match of markdown.matchAll(
     /^\|\s*\[[^\]]*\]\([^)]*\)\s*\|\s*`([^`]+)`\s*\|[^|]*\|[^|]*\|\s*([^|]*)\|/gm,
   )) {
     const id = match[1]
-    const maker =
-      /\bthird-party\b[^|]*?\bmodel from ([A-Z][\w.&-]*(?: [A-Z][\w.&-]*)*)/.exec(
-        match[2] ?? '',
-      )?.[1]
-    if (id && maker) out.set(id, maker.replace(/\.$/, ''))
+    if (!id) continue
+    named.add(id)
+    const maker = mistralSummaryMaker(match[2] ?? '')
+    if (maker) makers.set(id, maker)
   }
-  return out
+  return { makers, named }
 }
 
 export interface MistralModelPage {

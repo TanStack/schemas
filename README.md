@@ -164,23 +164,23 @@ It is never read from an id's shape.
   only when the provider itself states the weights can be downloaded, with
   its link; false only when it states they cannot. Never inferred from a
   model name.
-- `maker` (`string | null`): who made the model, exactly as the row's own
-  provider names it (#710). Groq: `owned_by` on `GET /openai/v1/models`.
-  BytePlus: the Provider column of the
-  [model list](https://docs.byteplus.com/en/docs/ModelArk/1330310).
-  Mistral: an overview Summary that says "A third-party ... model from
+- `maker` (`string | null`): the maker as the host names it (#710).
+  `null` with a `factSources.maker` of `path: "unstated"` when the host's
+  page lists the model and names no maker; `null` with no
+  `factSources.maker` when the page does not list the model (or no maker
+  source is read for that provider). Sources: Groq `owned_by` on
+  `GET /openai/v1/models`; BytePlus the Provider column of the
+  [model list](https://docs.byteplus.com/en/docs/ModelArk/1330310);
+  Mistral an overview Summary that opens "A third-party ... model from
   Z.ai" ([models.md](https://docs.mistral.ai/models.md)), copied onto the
-  listing's alias group. Gemini: the Authors line of the
+  listing's alias group; Gemini the Authors line of the
   [Gemma 4 card](https://ai.google.dev/gemma/docs/core/model_card_4), which
   also fills `openWeights` and `weightsUrl` for the sizes it binds. Never
   read from an id prefix and never copied from another provider; resolving
   the maker to a catalog row is `sameAs`. The name can be the host's own
-  company (`ByteDance` on BytePlus Seed rows, `Google DeepMind` on Gemma),
-  so "the host's own models" is `maker === null` on Mistral, and
-  `maker === 'ByteDance'` on BytePlus. `factSources.maker` with
-  `path: "unstated"` means the source was read and names no maker for the
-  id (Mistral's own models, BytePlus gpt-oss and Kimi); no
-  `factSources.maker` means no source was read for that row.
+  company (`ByteDance`, `Google DeepMind`). Telling a host's own models
+  from hosted ones is decidable from this field on Mistral and Gemini
+  only.
 - `requiredRequestHeaders` (`array | null`): the client-supplied entries of
   the provider connect profile `requiredHeaders` (`name` plus the rule for
   the value). A constant header, such as `anthropic-version`, stays on

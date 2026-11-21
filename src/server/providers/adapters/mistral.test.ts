@@ -11,6 +11,7 @@ import { mistralAliasFacts, provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
 import {
   MISTRAL_WEBSEARCH_URL,
+  mistralSummaryMaker,
   parseMistralMakers,
   parseMistralMarkdownReleaseDate,
 } from '../mistral-pricing.ts'
@@ -120,18 +121,9 @@ describe('mistral listModels', () => {
         ),
       ).toEqual([
         // `created` is the request time on every row (#708), not a date.
-        {
-          rawId: 'mistral-small-latest',
-          releasedAt: null,
-          activity: null,
-          maker: null,
-        },
-        {
-          rawId: 'mistral-embed',
-          releasedAt: null,
-          activity: 'embeddings',
-          maker: null,
-        },
+        // Neither id is in the overview's API name column: no maker fact.
+        { rawId: 'mistral-small-latest', releasedAt: null, activity: null },
+        { rawId: 'mistral-embed', releasedAt: null, activity: 'embeddings' },
       ])
     } finally {
       globalThis.fetch = original
@@ -503,12 +495,45 @@ describe('mistral maker (#710)', () => {
   )
 
   it('reads "third-party ... model from X" off the overview (2026-11-21)', () => {
-    expect(Object.fromEntries(parseMistralMakers(OVERVIEW))).toEqual({
+    const { makers, named } = parseMistralMakers(OVERVIEW)
+    expect(Object.fromEntries(makers)).toEqual({
       'zai-glm-5-3-flash': 'Z.ai',
       'deepseek-v4-1-flash-1017': 'DeepSeek',
       'zai-glm-5-3': 'Z.ai',
       'zai-glm-5-2': 'Z.ai',
     })
+    expect(named.has('mistral-large-4')).toBe(true)
+    expect(named.has('mistral-large-2512')).toBe(true)
+    expect(named.has('mistral-large-latest')).toBe(false)
+  })
+
+  it('ends the name at the sentence and keeps dotted names whole', () => {
+    expect(mistralSummaryMaker('A third-party model from xAI.')).toBe('xAI')
+    expect(mistralSummaryMaker('A third-party model from 01.AI.')).toBe('01.AI')
+    expect(
+      mistralSummaryMaker('A third-party model from Z.ai. Great for coding.'),
+    ).toBe('Z.ai')
+    expect(
+      mistralSummaryMaker(
+        'A third-party open weight text model from Z.ai with a 1M-token context window.',
+      ),
+    ).toBe('Z.ai')
+    expect(mistralSummaryMaker('A third-party model from Alibaba Cloud')).toBe(
+      'Alibaba Cloud',
+    )
+    expect(mistralSummaryMaker('Mistral Small 4.')).toBeNull()
+  })
+
+  it('throws on any other third-party wording', () => {
+    for (const summary of [
+      'A third-party model built by Z.ai.',
+      'A third-party model from the Qwen team at Alibaba Cloud.',
+      'Our flagship model. Beats the third-party model from DeepSeek on coding.',
+    ]) {
+      expect(() => mistralSummaryMaker(summary), summary).toThrow(
+        /unreadable third-party summary/,
+      )
+    }
   })
 
   it('throws when the overview table is gone', () => {
@@ -517,7 +542,7 @@ describe('mistral maker (#710)', () => {
     )
   })
 
-  it('names the maker on every listed alias and says Mistral rows state none', async () => {
+  it('names the maker on every alias, says listed Mistral rows state none, says nothing of unlisted ids', async () => {
     const original = globalThis.fetch
     const group = ['zai-glm-5-3', 'zai-glm-5', 'zai-glm-latest']
     globalThis.fetch = ((url: string) => {
@@ -538,7 +563,9 @@ describe('mistral maker (#710)', () => {
               })),
               { id: 'glm-5-2', aliases: ['zai-glm-5-2'] },
               { id: 'zai-glm-5-2', aliases: ['glm-5-2'] },
-              { id: 'mistral-large-4' },
+              { id: 'mistral-large-4', aliases: ['mistral-large-latest'] },
+              { id: 'mistral-large-latest', aliases: ['mistral-large-4'] },
+              { id: 'labs-unlisted' },
             ],
           }),
         ),
@@ -559,6 +586,9 @@ describe('mistral maker (#710)', () => {
         'glm-5-2': ['Z.ai', 'Summary'],
         'zai-glm-5-2': ['Z.ai', 'Summary'],
         'mistral-large-4': [null, 'unstated'],
+        'mistral-large-latest': [null, 'unstated'],
+        // The overview never lists it: no maker and no source.
+        'labs-unlisted': [undefined, undefined],
       })
     } finally {
       globalThis.fetch = original

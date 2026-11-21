@@ -857,7 +857,7 @@ export type Model = {
    */
   weightsUrl: string | null
   /**
-   * Who made the model, exactly as this row's provider names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider. It can name the host's own company (ByteDance on BytePlus Seed rows, Google DeepMind on Gemma). null when the provider names none; factSources.maker with path unstated means its source was read and names no maker for this id, no factSources.maker means no source was read.
+   * The maker as the host names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "A third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider; it can name the host's own company. null with factSources.maker path unstated when the host's page lists the model and names no maker; null with no factSources.maker when the page does not list the model. Telling a host's own models from hosted ones is decidable from this field on Mistral and Gemini only.
    */
   maker: string | null
   /**
@@ -990,7 +990,7 @@ export type ExportModel = {
    */
   weightsUrl: string | null
   /**
-   * Who made the model, exactly as this row's provider names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider. It can name the host's own company (ByteDance on BytePlus Seed rows, Google DeepMind on Gemma). null when the provider names none; factSources.maker with path unstated means its source was read and names no maker for this id, no factSources.maker means no source was read.
+   * The maker as the host names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "A third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider; it can name the host's own company. null with factSources.maker path unstated when the host's page lists the model and names no maker; null with no factSources.maker when the page does not list the model. Telling a host's own models from hosted ones is decidable from this field on Mistral and Gemini only.
    */
   maker: string | null
   /**

@@ -236,7 +236,8 @@ export interface ModelFactSources {
   aliases?: FactSource
   /**
    * Where `maker` was read. With `maker` null, `path: 'unstated'`: the
-   * host's source was read and names no maker for this id.
+   * host's source lists this id and names no maker. An id the source does
+   * not list gets no entry.
    */
   maker?: FactSource
 }

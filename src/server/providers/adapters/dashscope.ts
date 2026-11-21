@@ -517,6 +517,10 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'dashscope',
+  // Hosts' `maker/model` ids (Together `alibaba/happyhorse-1.0-t2v`,
+  // Novita `qwen/qwen3.8-max`). Model Studio China is not claimed: one
+  // claimant per name, and this is the international API.
+  modelNamespaces: ['alibaba', 'qwen'],
   displayName: 'Alibaba Cloud Model Studio',
   authEnvVar: 'DASHSCOPE_API_KEY',
   specSourceUrl: SPEC_SOURCE_URL,

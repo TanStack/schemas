@@ -286,9 +286,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // true (#711). A v42 entry would keep GPT-6.2 reasoning null for six hours.
 // v44: a Mistral model page entry gained `releasedAt` from its markdown
 // twin (#708); a v43 entry has none.
-// v45: the Gemma card entry gained `card` (maker, open weights), and the
+// v46: the Gemma card entry gained `card` (maker, open weights), and the
 // Mistral overview and BytePlus model list gained maker entries (#710).
-const DOCS_CACHE_VERSION = 'v45'
+const DOCS_CACHE_VERSION = 'v46'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {
