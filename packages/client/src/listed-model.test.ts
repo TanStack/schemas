@@ -42,6 +42,7 @@ const row: Model = {
   knowledgeCutoff: null,
   openWeights: null,
   weightsUrl: null,
+  maker: null,
   firstSeenAt: 1,
   lastSeenAt: 1,
   deprecatedAt: null,

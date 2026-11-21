@@ -152,7 +152,7 @@ function usableReleasedAt(info: ModelInfo, before: number): number | null {
  */
 function sourcePath(
   sources: unknown,
-  fact: 'reasoning' | 'aliasOf' | 'aliases',
+  fact: 'reasoning' | 'aliasOf' | 'aliases' | 'maker',
 ): string | null {
   if (typeof sources !== 'object' || sources === null) return null
   const path = (sources as ModelFactSources)[fact]?.path
@@ -219,6 +219,8 @@ function comparable(
     knowledgeCutoff: info.knowledgeCutoff ?? null,
     openWeights: info.openWeights ?? null,
     weightsUrl: info.weightsUrl ?? null,
+    maker: info.maker ?? null,
+    makerSource: sourcePath(info.factSources, 'maker'),
     trainsOnRequestData: info.trainsOnRequestData ?? null,
     providerMetadata: info.providerMetadata ?? null,
     pricingRange: storedRange(info),
@@ -582,6 +584,7 @@ function storedFacts(
     releasedAt: row?.releasedAt ?? null,
     knowledgeCutoff: row?.knowledgeCutoff ?? null,
     openWeights: row?.openWeights ?? null,
+    maker: row?.maker ?? null,
     trainsOnRequestData: row?.trainsOnRequestData ?? null,
     providerMetadata: row?.providerMetadata ?? null,
   }
@@ -600,6 +603,7 @@ const SOURCED_FACTS = [
   'trainsOnRequestData',
   'aliases',
   'aliasOf',
+  'maker',
 ] as const
 
 /** The facts `enrichListed` fills from the bound request schema. */
@@ -984,6 +988,7 @@ export async function pollProviderModels(
         knowledgeCutoff: info.knowledgeCutoff ?? null,
         openWeights: info.openWeights ?? null,
         weightsUrl: info.weightsUrl ?? null,
+        maker: info.maker ?? null,
         trainsOnRequestData: info.trainsOnRequestData ?? null,
         // Providers that report a release date get it as firstSeenAt, so
         // models predating our monitoring carry their historical date.
@@ -1025,6 +1030,8 @@ export async function pollProviderModels(
       knowledgeCutoff: existing.knowledgeCutoff,
       openWeights: existing.openWeights,
       weightsUrl: existing.weightsUrl,
+      maker: existing.maker,
+      makerSource: sourcePath(existing.factSources, 'maker'),
       trainsOnRequestData: existing.trainsOnRequestData,
       providerMetadata: existing.providerMetadata,
       pricingRange: existing.pricingRange,
@@ -1042,6 +1049,13 @@ export async function pollProviderModels(
     // before the column existed had nowhere to keep it.
     const firstMetadata =
       existing.providerMetadata === null && info.providerMetadata != null
+    // And the maker fact (issue #710) on a row that never had one or its
+    // source: the model did not change, we first read who made it.
+    const makerSource = sourcePath(info.factSources, 'maker')
+    const firstMaker =
+      existing.maker === null &&
+      sourcePath(existing.factSources, 'maker') === null &&
+      (info.maker != null || makerSource !== null)
     // Facts, not bytes: a source hash, an extract time, `+` operand order,
     // and an input's `values` order are not a change. A first release date
     // or listing object is written below with no event.
@@ -1050,6 +1064,7 @@ export async function pollProviderModels(
         ...before,
         ...(firstRelease ? { releasedAt: info.releasedAt } : {}),
         ...(firstMetadata ? { providerMetadata: info.providerMetadata } : {}),
+        ...(firstMaker ? { maker: info.maker ?? null, makerSource } : {}),
       },
       after,
     )
@@ -1063,12 +1078,14 @@ export async function pollProviderModels(
     if (backdatedFirstSeen !== null) outcome.backdated++
 
     if (!dirty) {
-      if (firstMetadata) {
+      if (firstMetadata || firstMaker) {
         // One write per row: few rows gain one (a provider's chat rows).
         await db
           .update(models)
           .set({
             providerMetadata: info.providerMetadata ?? null,
+            maker: info.maker ?? null,
+            ...(firstMaker ? { factSources: info.factSources ?? null } : {}),
             releasedAt: info.releasedAt ?? null,
             firstSeenAt: backdatedFirstSeen ?? existing.firstSeenAt,
             lastSeenAt: now,
@@ -1112,6 +1129,7 @@ export async function pollProviderModels(
         knowledgeCutoff: info.knowledgeCutoff ?? null,
         openWeights: info.openWeights ?? null,
         weightsUrl: info.weightsUrl ?? null,
+        maker: info.maker ?? null,
         trainsOnRequestData: info.trainsOnRequestData ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.

@@ -707,6 +707,56 @@ describe('pollProviderModels', () => {
     expect((await row())?.providerMetadata).toEqual({ category: 'b' })
   })
 
+  it('stores the maker and its source, the first one silently (#710)', async () => {
+    const id = 'poll-maker'
+    const deps = await freshDeps(id)
+    const glm: ModelInfo = { rawId: 'glm', activity: 'chat' }
+    const own: ModelInfo = { rawId: 'own', activity: 'chat' }
+    const row = async (rawId: string) =>
+      (
+        await deps.db
+          .select()
+          .from(models)
+          .where(eq(models.id, modelDbId(id, rawId)))
+      )[0]
+    const source = (path: string) => ({
+      maker: { derivation: 'docs-derived' as const, path },
+    })
+    await pollProviderModels(deps, stubProvider(id, [glm, own]))
+
+    // Stored rows learn who made them, or that the source names nobody:
+    // neither is a change to the model.
+    const named = { ...glm, maker: 'Z.ai', factSources: source('Provider') }
+    const silent = { ...own, maker: null, factSources: source('unstated') }
+    expect(
+      await pollProviderModels(deps, stubProvider(id, [named, silent])),
+    ).toMatchObject({ updated: 0 })
+    expect(await row('glm')).toMatchObject({
+      maker: 'Z.ai',
+      factSources: source('Provider'),
+    })
+    expect(await row('own')).toMatchObject({
+      maker: null,
+      factSources: source('unstated'),
+    })
+
+    // A docs outage keeps both; a maker that changes is news.
+    expect(
+      await pollProviderModels(
+        deps,
+        stubProvider(id, [
+          { ...glm, absent: { maker: 'unavailable' } },
+          { ...own, maker: 'Acme', factSources: source('Provider') },
+        ]),
+      ),
+    ).toMatchObject({ updated: 1 })
+    expect(await row('glm')).toMatchObject({
+      maker: 'Z.ai',
+      factSources: source('Provider'),
+    })
+    expect((await row('own'))?.maker).toBe('Acme')
+  })
+
   it('stores a cutoff only in its format and a weights link only beside a yes', async () => {
     const id = 'poll-stated-facts'
     const deps = await freshDeps(id)

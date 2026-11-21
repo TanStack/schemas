@@ -1,0 +1,60 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "allam-2-7b",
+      "object": "model",
+      "owned_by": "SDAIA"
+    },
+    {
+      "id": "canopylabs/orpheus-arabic-saudi",
+      "object": "model",
+      "owned_by": "Canopy Labs"
+    },
+    {
+      "id": "canopylabs/orpheus-v1-english",
+      "object": "model",
+      "owned_by": "Canopy Labs"
+    },
+    {
+      "id": "meta-llama/llama-prompt-guard-2-22m",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "id": "meta-llama/llama-prompt-guard-2-86m",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "id": "openai/gpt-oss-safeguard-20b",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "id": "qwen/qwen3.8-27b",
+      "object": "model",
+      "owned_by": "Alibaba Cloud"
+    },
+    {
+      "id": "whisper-large-v3",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "object": "model",
+      "owned_by": "OpenAI"
+    }
+  ]
+}

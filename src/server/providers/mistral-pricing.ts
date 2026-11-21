@@ -1041,6 +1041,57 @@ export function parseMistralApiSlugs(markdown: string): Map<string, string> {
   return out
 }
 
+/**
+ * The maker a Summary names, or null when it makes no third-party claim.
+ * Only a Summary that opens "A third-party ... model from <Name>" names
+ * one; the name ends at the sentence (a full stop then a space or the
+ * end), a comma or semicolon, or the first word with no capital or digit,
+ * so `Z.ai`, `01.AI` and `xAI` stay whole. Any other wording that says
+ * "third-party" throws: a new phrasing must fail loudly, never read as
+ * one of Mistral's own models.
+ */
+export function mistralSummaryMaker(summary: string): string | null {
+  const text = summary.trim()
+  if (!/third-party/i.test(text)) return null
+  const rest = /^An? third-party\b[^.,;]*?\bmodel from (.+)$/i.exec(text)?.[1]
+  const sentence = rest?.split(/\.(?=\s|$)|[,;]/)[0] ?? ''
+  const name =
+    /^[\w.&'-]*[A-Z0-9][\w.&'-]*(?: [\w.&'-]*[A-Z0-9][\w.&'-]*)*/.exec(
+      sentence,
+    )?.[0]
+  if (!name) {
+    throw new Error(
+      `mistral models overview: unreadable third-party summary ${JSON.stringify(text)}`,
+    )
+  }
+  return name
+}
+
+/**
+ * The overview's third-party makers (issue #710): API name → maker as
+ * written (`mistralSummaryMaker`). `named` is every id in an API name
+ * column, current or deprecated: only those can be said to name no maker.
+ * Throws when the overview names no API ids: the table moved.
+ */
+export function parseMistralMakers(markdown: string): {
+  makers: Map<string, string>
+  named: Set<string>
+} {
+  parseMistralApiSlugs(markdown)
+  const makers = new Map<string, string>()
+  const named = new Set<string>()
+  for (const match of markdown.matchAll(
+    /^\|\s*\[[^\]]*\]\([^)]*\)\s*\|\s*`([^`]+)`\s*\|[^|]*\|[^|]*\|\s*([^|]*)\|/gm,
+  )) {
+    const id = match[1]
+    if (!id) continue
+    named.add(id)
+    const maker = mistralSummaryMaker(match[2] ?? '')
+    if (maker) makers.set(id, maker)
+  }
+  return { makers, named }
+}
+
 export interface MistralModelPage {
   slug: string
   ids: Array<string>
@@ -1647,6 +1698,7 @@ const ALIAS_FACTS = [
   // The listing's mutual alias names the snapshot an id is, so it settles
   // an id two pages date differently (`voxtral-mini-tts-latest`).
   'releasedAt',
+  'maker',
 ] as const
 
 /**

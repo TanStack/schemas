@@ -18,6 +18,7 @@ import {
   MISTRAL_PRICING_URL,
   copyMistralAliasFacts,
   mistralModelPricing,
+  parseMistralMakers,
 } from '../mistral-pricing.ts'
 import {
   MISTRAL_OPENAPI_URL,
@@ -30,7 +31,7 @@ import {
   mistralModelReasoning,
   overlayModelFacts,
 } from '../reasoning-config.ts'
-import { fetchOpenApi } from '../types.ts'
+import { fetchOpenApi, fetchText, sha256Text } from '../types.ts'
 import { bearerConnect } from '../connect.ts'
 import type {
   FactSource,
@@ -121,6 +122,42 @@ export function mistralAliasFacts(
   }
 }
 
+/** The models overview, cached apart from its deprecations parse. */
+const MISTRAL_MAKERS_KEY = `${MISTRAL_DEPRECATIONS_URL}#makers`
+
+/**
+ * The maker an overview Summary names for this id. `unstated` only when
+ * the overview's API name column lists the id, or a mutual listing alias
+ * of it, and no Summary in that group names a maker (Mistral's own
+ * models). An alias of a third-party row is left for
+ * `copyMistralAliasFacts`. An id the overview never lists gets nothing:
+ * absence from the table is not a statement.
+ */
+export function mistralMakerFacts(
+  rawId: string,
+  makers: { byId: Record<string, string>; named: Array<string>; hash: string },
+  mutualAliases: ReadonlyArray<string> = [],
+): Partial<ModelInfo> {
+  const maker = makers.byId[rawId] ?? null
+  if (maker === null && !makers.named.includes(rawId)) {
+    const listed = mutualAliases.filter((id) => makers.named.includes(id))
+    if (listed.length === 0 || listed.some((id) => id in makers.byId)) {
+      return {}
+    }
+  }
+  return {
+    maker,
+    factSources: {
+      maker: {
+        derivation: 'docs-derived',
+        sourceUrl: MISTRAL_DEPRECATIONS_URL,
+        sourceHash: makers.hash,
+        path: maker === null ? 'unstated' : 'Summary',
+      },
+    },
+  }
+}
+
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const { spec, hash } = await fetchOpenApi(MISTRAL_OPENAPI_URL)
   return {
@@ -169,7 +206,7 @@ export const provider: ProviderConfig = {
     // The pricing load reads the pricing table, changelog, models index,
     // model pages and web search guide; a failing docs page keeps the
     // stored facts instead of failing the poll.
-    const [pricing, reasoning, wire] = await Promise.all([
+    const [pricing, reasoning, wire, makers] = await Promise.all([
       tryDocs(docs, MISTRAL_PRICING_URL, (cached) =>
         mistralModelPricing(
           kv,
@@ -181,6 +218,17 @@ export const provider: ProviderConfig = {
         mistralModelReasoning(kv, cached),
       ),
       chat ? mistralChatWire(kv) : Promise.resolve(null),
+      tryDocs(docs, MISTRAL_MAKERS_KEY, (cached) =>
+        cached(kv, MISTRAL_MAKERS_KEY, async () => {
+          const markdown = await fetchText(MISTRAL_DEPRECATIONS_URL)
+          const { makers: byId, named } = parseMistralMakers(markdown)
+          return {
+            byId: Object.fromEntries(byId),
+            named: [...named],
+            hash: await sha256Text(markdown),
+          }
+        }),
+      ),
     ])
     const models = listed.models.map((model) =>
       overlayModelFacts(
@@ -191,6 +239,15 @@ export const provider: ProviderConfig = {
         reasoning
           ? reasoning(model.rawId, listsReasoning(model.capabilities))
           : unavailable('reasoning'),
+        makers
+          ? mistralMakerFacts(
+              model.rawId,
+              makers,
+              (aliases.get(model.rawId) ?? []).filter((id) =>
+                aliases.get(id)?.includes(model.rawId),
+              ),
+            )
+          : unavailable('maker'),
       ),
     )
     copyMistralAliasFacts(models, aliases)

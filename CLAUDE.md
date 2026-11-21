@@ -234,9 +234,12 @@ ones).
   is the provider's own date (`firstSeenAt` still folds it in), kept when
   a listing stops stating it. `knowledgeCutoff` (`YYYY-MM[-DD]`) and
   `openWeights` + `weightsUrl` are null unless the provider states them.
-  A stored row's first `releasedAt` or `providerMetadata` is written with
-  no `model.updated`. Migration `0014` is a drizzle custom migration that
-  converted the stored lists. A fact the provider's docs do not state can
+  `models.maker` (#710) is the maker's name as the host's own source
+  writes it, never an id prefix; `factSources.maker.path: 'unstated'` is
+  a source that lists the id and names none; an unlisted id gets no
+  entry. A stored row's first `releasedAt`, `providerMetadata` or `maker`
+  is written with no `model.updated`. Migration `0014` is a drizzle custom
+  migration that converted the stored lists. A fact the provider's docs do not state can
   still come from a live API check: one file per provider under
   `src/server/providers/probes/`, derivation `probe-verified`, dated
   `verifiedAt`. The adapter binds that fact only for the exact model and

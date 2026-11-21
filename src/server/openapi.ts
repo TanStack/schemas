@@ -223,6 +223,11 @@ const modelFields = {
       'Where the provider says the weights are. Set only when openWeights is true.',
     type: ['string', 'null'],
   },
+  maker: {
+    description:
+      "The maker as the host names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's \"A third-party ... model from X\" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider; it can name the host's own company. null with factSources.maker path unstated when the host's page lists the model and names no maker; null with no factSources.maker when the page does not list the model. Telling a host's own models from hosted ones is decidable from this field on Mistral and Gemini only.",
+    type: ['string', 'null'],
+  },
   firstSeenAt: {
     description:
       'The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.',
@@ -289,6 +294,7 @@ const modelRequired = [
   'knowledgeCutoff',
   'openWeights',
   'weightsUrl',
+  'maker',
   'firstSeenAt',
   'deprecatedAt',
   'deprecation',
@@ -1426,6 +1432,7 @@ export const openApiDocument = {
           efforts: { $ref: '#/components/schemas/FactSource' },
           aliases: { $ref: '#/components/schemas/FactSource' },
           aliasOf: { $ref: '#/components/schemas/FactSource' },
+          maker: { $ref: '#/components/schemas/FactSource' },
         },
       },
       FactDiscrepancy: {

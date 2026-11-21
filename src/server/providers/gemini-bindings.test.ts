@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,6 +8,7 @@ import {
   parseChangelogAliases,
   parseGeminiReleaseDates,
   htmlTables,
+  parseGemmaCardFacts,
   parseGemmaModalities,
 } from './gemini-bindings.ts'
 import type { GeminiPublishedBindings } from './gemini-bindings.ts'
@@ -69,6 +72,7 @@ function bindings(
       hash: 'changelog',
     },
     gemma: {},
+    gemmaCard: null,
     gemmaSource: {
       url: 'https://ai.google.dev/gemma/docs/core/model_card_4',
       hash: 'gemma',
@@ -339,12 +343,18 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
       modalities: 'unavailable',
       aliases: 'unavailable',
       aliasOf: 'unavailable',
+      maker: 'unavailable',
+      openWeights: 'unavailable',
       // Its tools are the changelog target's too (#707).
       serverTools: 'unavailable',
     })
     expect(
       models.find((model) => model.rawId === 'gemini-3.5-flash')?.absent,
-    ).toEqual({ aliases: 'unavailable' })
+    ).toEqual({
+      aliases: 'unavailable',
+      maker: 'unavailable',
+      openWeights: 'unavailable',
+    })
     expect(
       models.find((model) => model.rawId === 'gemma-4-31b-it')?.absent
         ?.modalities,
@@ -415,5 +425,61 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
     ).find((model) => model.rawId === 'gemini-flash-latest')
     expect(unread?.absent?.serverTools).toBe('unavailable')
     expect(unread?.factSources?.serverTools).toBeUndefined()
+  })
+})
+
+describe('gemma maker and weights (#710)', () => {
+  const HEADER = readFileSync(
+    new URL('./fixtures/gemma-4-card-header.html.txt', import.meta.url),
+    'utf8',
+  )
+  const card = parseGemmaCardFacts(HEADER)
+  const rows: Array<Listed> = [
+    { rawId: 'gemma-4-31b-it', modalities: null },
+    { rawId: 'gemini-3.5-flash', modalities: null },
+  ]
+
+  it('reads Authors, the open-weights sentence and the Hugging Face link (2026-11-21)', () => {
+    expect(card).toEqual({
+      maker: 'Google DeepMind',
+      openWeights: true,
+      weightsUrl: 'https://huggingface.co/collections/google/gemma-4',
+    })
+    expect(parseGemmaCardFacts('<p>Gemma 4</p>')).toEqual({
+      maker: null,
+      openWeights: null,
+      weightsUrl: null,
+    })
+  })
+
+  it('binds them only to the sizes the card table binds', () => {
+    const [gemma, gemini] = attachGeminiPublishedFacts(
+      rows,
+      bindings({
+        gemma: { 'gemma-4-31b-it': { input: ['text'], output: ['text'] } },
+        gemmaCard: card,
+      }),
+    )
+    expect(gemma).toMatchObject({
+      maker: 'Google DeepMind',
+      openWeights: true,
+      weightsUrl: 'https://huggingface.co/collections/google/gemma-4',
+      factSources: {
+        maker: { path: 'Authors' },
+        openWeights: { path: 'open-weights models; Hugging Face' },
+      },
+    })
+    expect(gemini).toEqual(rows[1])
+  })
+
+  it('keeps the stored facts when the card could not be read', () => {
+    const [gemma] = attachGeminiPublishedFacts(
+      rows,
+      bindings({ gemma: null, gemmaCard: null }),
+    )
+    expect(gemma?.absent).toMatchObject({
+      maker: 'unavailable',
+      openWeights: 'unavailable',
+    })
   })
 })

@@ -760,6 +760,7 @@ export type ModelFactSources = {
   efforts?: FactSource
   aliases?: FactSource
   aliasOf?: FactSource
+  maker?: FactSource
 } | null
 
 export type FactDiscrepancy = {
@@ -880,6 +881,10 @@ export type Model = {
    * Where the provider says the weights are. Set only when openWeights is true.
    */
   weightsUrl: string | null
+  /**
+   * The maker as the host names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "A third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider; it can name the host's own company. null with factSources.maker path unstated when the host's page lists the model and names no maker; null with no factSources.maker when the page does not list the model. Telling a host's own models from hosted ones is decidable from this field on Mistral and Gemini only.
+   */
+  maker: string | null
   /**
    * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
    */
@@ -1009,6 +1014,10 @@ export type ExportModel = {
    * Where the provider says the weights are. Set only when openWeights is true.
    */
   weightsUrl: string | null
+  /**
+   * The maker as the host names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "A third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider; it can name the host's own company. null with factSources.maker path unstated when the host's page lists the model and names no maker; null with no factSources.maker when the page does not list the model. Telling a host's own models from hosted ones is decidable from this field on Mistral and Gemini only.
+   */
+  maker: string | null
   /**
    * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
    */

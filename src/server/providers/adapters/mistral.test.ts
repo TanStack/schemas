@@ -11,6 +11,8 @@ import { mistralAliasFacts, provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
 import {
   MISTRAL_WEBSEARCH_URL,
+  mistralSummaryMaker,
+  parseMistralMakers,
   parseMistralMarkdownReleaseDate,
 } from '../mistral-pricing.ts'
 import { MISTRAL_REASONING_URL } from '../reasoning-config.ts'
@@ -119,6 +121,7 @@ describe('mistral listModels', () => {
         ),
       ).toEqual([
         // `created` is the request time on every row (#708), not a date.
+        // Neither id is in the overview's API name column: no maker fact.
         { rawId: 'mistral-small-latest', releasedAt: null, activity: null },
         { rawId: 'mistral-embed', releasedAt: null, activity: 'embeddings' },
       ])
@@ -377,12 +380,14 @@ describe('mistral listModels docs failures', () => {
         maxOutput: 'unavailable',
         reasoning: 'unavailable',
         requestMap: 'unavailable',
+        maker: 'unavailable',
       })
       expect(models[0]?.requestMap).toBeUndefined()
       expect(docsFailures?.first.map((failure) => failure.source)).toEqual(
         expect.arrayContaining([
           'https://docs.mistral.ai/inference/pricing',
           MISTRAL_REASONING_URL,
+          `${MISTRAL_DEPRECATIONS_URL}#makers`,
         ]),
       )
     } finally {
@@ -479,6 +484,114 @@ describe('mistral alias links (#709)', () => {
       expect(row.aliases?.length).toBeGreaterThan(0)
       expect(row.aliasOf).toBeNull()
       expect(row.factSources?.aliasOf?.path).toBe('unstated')
+    }
+  })
+})
+
+describe('mistral maker (#710)', () => {
+  const OVERVIEW = readFileSync(
+    new URL('../fixtures/mistral-models-makers.md.txt', import.meta.url),
+    'utf8',
+  )
+
+  it('reads "third-party ... model from X" off the overview (2026-11-21)', () => {
+    const { makers, named } = parseMistralMakers(OVERVIEW)
+    expect(Object.fromEntries(makers)).toEqual({
+      'zai-glm-5-3-flash': 'Z.ai',
+      'deepseek-v4-1-flash-1017': 'DeepSeek',
+      'zai-glm-5-3': 'Z.ai',
+      'zai-glm-5-2': 'Z.ai',
+    })
+    expect(named.has('mistral-large-4')).toBe(true)
+    expect(named.has('mistral-large-2512')).toBe(true)
+    expect(named.has('mistral-large-latest')).toBe(false)
+  })
+
+  it('ends the name at the sentence and keeps dotted names whole', () => {
+    expect(mistralSummaryMaker('A third-party model from xAI.')).toBe('xAI')
+    expect(mistralSummaryMaker('A third-party model from 01.AI.')).toBe('01.AI')
+    expect(
+      mistralSummaryMaker('A third-party model from Z.ai. Great for coding.'),
+    ).toBe('Z.ai')
+    expect(
+      mistralSummaryMaker(
+        'A third-party open weight text model from Z.ai with a 1M-token context window.',
+      ),
+    ).toBe('Z.ai')
+    expect(mistralSummaryMaker('A third-party model from Alibaba Cloud')).toBe(
+      'Alibaba Cloud',
+    )
+    expect(mistralSummaryMaker('Mistral Small 4.')).toBeNull()
+  })
+
+  it('throws on any other third-party wording', () => {
+    for (const summary of [
+      'A third-party model built by Z.ai.',
+      'A third-party model from the Qwen team at Alibaba Cloud.',
+      'Our flagship model. Beats the third-party model from DeepSeek on coding.',
+    ]) {
+      expect(() => mistralSummaryMaker(summary), summary).toThrow(
+        /unreadable third-party summary/,
+      )
+    }
+  })
+
+  it('throws when the overview table is gone', () => {
+    expect(() => parseMistralMakers('# Models Overview\n')).toThrow(
+      /parsed 0 API slugs/,
+    )
+  })
+
+  it('names the maker on every alias, says listed Mistral rows state none, says nothing of unlisted ids', async () => {
+    const original = globalThis.fetch
+    const group = ['zai-glm-5-3', 'zai-glm-5', 'zai-glm-latest']
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      if (href === MISTRAL_DEPRECATIONS_URL) {
+        return Promise.resolve(new Response(OVERVIEW))
+      }
+      if (href !== 'https://api.mistral.ai/v1/models') {
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              ...group.map((id) => ({
+                id,
+                aliases: group.filter((other) => other !== id),
+              })),
+              { id: 'glm-5-2', aliases: ['zai-glm-5-2'] },
+              { id: 'zai-glm-5-2', aliases: ['glm-5-2'] },
+              { id: 'mistral-large-4', aliases: ['mistral-large-latest'] },
+              { id: 'mistral-large-latest', aliases: ['mistral-large-4'] },
+              { id: 'labs-unlisted' },
+            ],
+          }),
+        ),
+      )
+    }) as typeof fetch
+    try {
+      const { models } = await provider.listModels({ MISTRAL_API_KEY: 'k' })
+      const makers = Object.fromEntries(
+        models.map((model) => [
+          model.rawId,
+          [model.maker, model.factSources?.maker?.path],
+        ]),
+      )
+      expect(makers).toEqual({
+        'zai-glm-5-3': ['Z.ai', 'Summary'],
+        'zai-glm-5': ['Z.ai', 'Summary'],
+        'zai-glm-latest': ['Z.ai', 'Summary'],
+        'glm-5-2': ['Z.ai', 'Summary'],
+        'zai-glm-5-2': ['Z.ai', 'Summary'],
+        'mistral-large-4': [null, 'unstated'],
+        'mistral-large-latest': [null, 'unstated'],
+        // The overview never lists it: no maker and no source.
+        'labs-unlisted': [undefined, undefined],
+      })
+    } finally {
+      globalThis.fetch = original
     }
   })
 })

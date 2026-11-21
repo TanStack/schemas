@@ -469,6 +469,9 @@ export const models = sqliteTable(
     // Stated by the provider itself, never inferred; null = unstated.
     openWeights: integer('open_weights', { mode: 'boolean' }),
     weightsUrl: text('weights_url'),
+    // Who made the model, as the host's own source names it (issue #710).
+    // Null when it names none; factSources.maker says which.
+    maker: text('maker'),
     // True when this id's own source states it trains on request data.
     // Null when that source says it does not, or does not mention the id.
     trainsOnRequestData: integer('trains_on_request_data', { mode: 'boolean' }),

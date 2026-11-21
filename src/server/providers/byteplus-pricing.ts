@@ -653,6 +653,55 @@ export function parseByteplusAliases(doc: ByteplusDoc): Map<string, string> {
 }
 
 /**
+ * Model id → the "Provider" cell of its row in a model-list table (issue
+ * #710), as written ("ByteDance", "DeepSeek", "Z.ai"). A provider spans
+ * its rows as one merged cell; a blank cell outside a merge names none.
+ * Every id in the model cell takes it ("Also supports" ids too). `named`
+ * is every id in any Model ID column, with or without a provider: only
+ * those can be said to have none. One id given two providers throws, as
+ * does a page with no Provider table.
+ */
+export function parseByteplusMakers(doc: ByteplusDoc): {
+  makers: Map<string, string>
+  named: Set<string>
+} {
+  const out = new Map<string, string>()
+  const named = new Set<string>()
+  for (const { spec } of docTables(doc)) {
+    const grid = tableGrid(doc, spec)
+    const keys = grid?.[0]?.map((cell) => headerKey(cell.text))
+    const providerAt = keys?.indexOf('provider') ?? -1
+    const idAt = keys?.indexOf('model id') ?? -1
+    if (!grid || idAt < 0) continue
+    const merged = new Map<string, string>()
+    for (const row of grid.slice(1)) {
+      const ids = [
+        ...(row[idAt]?.text ?? '').matchAll(/\b[a-z0-9]+(?:-[a-z0-9]+)+\b/g),
+      ].map(([id]) => id)
+      for (const id of ids) named.add(id)
+      const cell = providerAt < 0 ? undefined : row[providerAt]
+      let maker = cell?.text ?? ''
+      if (cell?.merge) {
+        if (maker === '') maker = merged.get(cell.merge) ?? ''
+        else if (!merged.has(cell.merge)) merged.set(cell.merge, maker)
+      }
+      if (maker === '') continue
+      for (const id of ids) {
+        const prior = out.get(id)
+        if (prior !== undefined && prior !== maker) {
+          throw new Error(
+            `byteplus model list: ${id} has providers ${prior} and ${maker}`,
+          )
+        }
+        out.set(id, maker)
+      }
+    }
+  }
+  assertParsed(out, 'byteplus model list (providers)')
+  return { makers: out, named }
+}
+
+/**
  * Copy a price onto the unpriced side of an alias pair. Both sides priced,
  * or neither, stays as parsed. Chat rates are not passed here.
  */
@@ -1530,6 +1579,53 @@ async function modelListContent(): Promise<string | null> {
       }),
     )
     return null
+  }
+}
+
+/**
+ * Maker lookup by catalog id (issue #710): the model list's Provider cell;
+ * a stated silence (`unstated`) for an id the list names with no Provider
+ * (Seedance, Seedream); nothing at all for an id the list does not name.
+ * A list that fails to load or parse keeps the stored maker.
+ */
+export async function byteplusModelMakers(
+  run: DocsRun,
+  kv?: KVNamespace,
+): Promise<
+  (rawId: string) => Pick<ModelInfo, 'maker' | 'factSources' | 'absent'>
+> {
+  const list = await tryDocs(run, BYTEPLUS_MODEL_LIST_URL, (cached) =>
+    cached(kv, BYTEPLUS_MODEL_LIST_URL, async () => {
+      const content = pricingContent(
+        await fetchByteplusDoc(BYTEPLUS_MODEL_LIST_URL),
+        'byteplus model list',
+      )
+      const { makers, named } = parseByteplusMakers(
+        JSON.parse(content) as ByteplusDoc,
+      )
+      return {
+        makers: Object.fromEntries(makers),
+        named: [...named],
+        hash: await sha256Text(content),
+      }
+    }),
+  )
+  return (rawId) => {
+    if (!list) return unavailable('maker')
+    const maker = list.makers[rawId] ?? null
+    // Absent from every table is not a statement about this id.
+    if (maker === null && !list.named.includes(rawId)) return {}
+    return {
+      maker,
+      factSources: {
+        maker: {
+          derivation: 'docs-derived',
+          sourceUrl: BYTEPLUS_MODEL_LIST_URL,
+          sourceHash: list.hash,
+          path: maker === null ? 'unstated' : 'Provider',
+        },
+      },
+    }
   }
 }
 

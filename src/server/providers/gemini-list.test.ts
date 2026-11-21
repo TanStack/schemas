@@ -122,6 +122,9 @@ describe('gemini listModels', () => {
           schemaEndpointId: 'unavailable',
           // The changelog is unread too: its alias links are kept (#709).
           aliases: 'unavailable',
+          // So is the Gemma card, the only maker source (#710).
+          maker: 'unavailable',
+          openWeights: 'unavailable',
         },
       }),
     ])

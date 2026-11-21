@@ -289,7 +289,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v45: Gemini model pages read "Grounding with Google Search" as
 // `googleSearch` (#707), and OpenAI pages cache their Endpoints support.
 // A v44 entry would leave both out for six hours.
-const DOCS_CACHE_VERSION = 'v45'
+// v46: the Gemma card entry gained `card` (maker, open weights), and the
+// Mistral overview and BytePlus model list gained maker entries (#710).
+const DOCS_CACHE_VERSION = 'v46'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

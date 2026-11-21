@@ -4,6 +4,11 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
+**Added (0.1.x):** model rows gain `maker` (#710), the model's maker as
+its provider names it, and `factSources` gains `maker`. Gemma rows on
+Gemini gain `openWeights` and `weightsUrl` from the Gemma 4 card. Needs D1
+migration `0020`: migrate first, then deploy.
+
 **Breaking:** `completeness` on `GET /v1/status` and `GET /v1/providers`
 scores every live model, not only chat (#714). `chat` is replaced by
 `rows` (live models scored), and the entry gains `activities` (per

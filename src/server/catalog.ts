@@ -227,6 +227,7 @@ function toApiModel(
     knowledgeCutoff: row.knowledgeCutoff,
     openWeights: row.openWeights,
     weightsUrl: row.weightsUrl,
+    maker: row.maker,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
