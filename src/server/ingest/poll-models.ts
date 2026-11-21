@@ -85,6 +85,7 @@ import { loadServedProbeFacts } from './probe-facts.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 import {
+  ownNamespaces,
   persistUpstreamIdentities,
   reconcileSameAs,
   sameEvidence,
@@ -410,11 +411,16 @@ async function loadInputWalks(
   // Grain=model / generated listings skip the capability walk (thousands of
   // FAL endpoints; OpenAI-borrowed specs must not stamp flags). Still load
   // request property names when a listing already carries a RateCard so
-  // invented request-bound params refuse the write.
+  // invented request-bound params refuse the write, and when only synced
+  // routes may bind: an empty map there strips every listed route (#716).
   const needsRequestCheck = listed.some(
     (info) => parseStoredRateCard(info.pricing) !== null,
   )
-  if (skipFactWalk && !needsRequestCheck) {
+  if (
+    skipFactWalk &&
+    !needsRequestCheck &&
+    provider.bindSyncedRoutesOnly !== true
+  ) {
     return { walks, properties, storedRoutes }
   }
   const bound = new Set<string>()
@@ -815,6 +821,7 @@ export async function pollProviderModels(
   }
   const seenIds = new Set<string>()
   const identities: Array<UpstreamIdentityWrite> = []
+  const ownNames = await ownNamespaces(db, provider.id)
   // Unchanged rows only need their lastSeenAt bumped; collect them and write
   // in chunked bulk UPDATEs. One-per-row writes here previously cost ~2,000
   // sequential D1 round trips per poll (~10 min wall), starving the crons.
@@ -962,10 +969,13 @@ export async function pollProviderModels(
     if (rowDeprecation(deprecationIndex, id, existing?.deprecation)) {
       info.deprecated = true
     }
-    const identity =
+    const stated =
       info.upstream !== undefined
         ? info.upstream
         : (provider.upstreamModelIdentity?.(info.rawId) ?? null)
+    // `groq/compound` on Groq names the host, not an upstream.
+    const identity =
+      stated && ownNames.has(stated.providerNamespace) ? null : stated
     // Only changed evidence is written: most rows restate it every poll.
     if (!sameEvidence(existing, identity)) identities.push({ id, identity })
 
