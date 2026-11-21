@@ -282,7 +282,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // markdown page states (#543). A v40 page entry has no markdown price
 // and would log pricing_lost until the TTL.
 // v42: the BytePlus pricing entry gained `named` (#646); a v41 entry has none.
-const DOCS_CACHE_VERSION = 'v42'
+// v43: a Mistral model page entry gained `releasedAt` from its markdown
+// twin (#708); a v42 entry has none.
+const DOCS_CACHE_VERSION = 'v43'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

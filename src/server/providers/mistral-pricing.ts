@@ -27,6 +27,9 @@
  * That line is the card (#543). The models overview pairs the API name
  * with the page slug, including deprecated rows the index-slug rules miss
  * (`mistral-medium-3-5` → `mistral-medium-3-5-26-04`).
+ *
+ * The markdown twin's `Release date:` line is the model's `releasedAt`
+ * (#708). The listing's `created` is the request time, not a date.
  */
 import {
   cardPrice,
@@ -41,7 +44,7 @@ import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
 import { mistralDocsMarkdown } from './reasoning-config.ts'
 import { parseMistralPageTools } from './server-tools.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { FactSource, ModelInfo } from './types.ts'
+import type { FactSource, ModelFactSources, ModelInfo } from './types.ts'
 
 export const MISTRAL_PRICING_URL = 'https://docs.mistral.ai/inference/pricing'
 export const MISTRAL_CHANGELOG_URL =
@@ -985,6 +988,32 @@ export function parseMistralMarkdownPrice(
 }
 
 /**
+ * The model page markdown's `- Release date: YYYY-MM-DD` line, as epoch
+ * seconds (#708). No line is null: some pages (Timestral) state none. A
+ * second line or a value that is not a calendar date throws.
+ */
+export function parseMistralMarkdownReleaseDate(
+  markdown: string,
+): number | null {
+  const lines = [...markdown.matchAll(/^- Release date: (.+)$/gm)].map(
+    (match) => match[1]?.trim() ?? '',
+  )
+  if (lines.length === 0) return null
+  const date = lines[0] ?? ''
+  const time = Date.parse(`${date}T00:00:00Z`)
+  if (
+    lines.length > 1 ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    new Date(time).toISOString().slice(0, 10) !== date
+  ) {
+    throw new Error(
+      `mistral model page release date: unreadable ${JSON.stringify(lines)}`,
+    )
+  }
+  return time / 1000
+}
+
+/**
  * API name → docs slug from the models overview, current and deprecated
  * tables. A name two rows send to different slugs is omitted. An overview
  * that pairs nothing throws: the tables moved.
@@ -1029,6 +1058,10 @@ export interface MistralModelPage {
    * card the source could not be read for.
    */
   priceUnread?: boolean
+  /** The markdown twin's `Release date`, epoch seconds. */
+  releasedAt?: number | null
+  /** Hash of the markdown twin `releasedAt` was read from. */
+  markdownHash?: string
   features?: Array<string> | null
   extractedAt?: string
 }
@@ -1069,7 +1102,12 @@ export function indexMistralApiIds(
 
 type PricedFacts = Pick<
   ModelInfo,
-  'pricing' | 'factSources' | 'serverTools' | 'modalities' | 'absent'
+  | 'pricing'
+  | 'factSources'
+  | 'serverTools'
+  | 'modalities'
+  | 'absent'
+  | 'releasedAt'
 >
 
 interface MistralStatedModalities {
@@ -1319,26 +1357,31 @@ export async function mistralModelPricing(
       let priceUrl: string | undefined
       let priceHash: string | undefined
       let priceUnread = false
+      // The markdown twin states the release date on every page, and the
+      // price when the HTML widget is gone. A 404 leaves both unread.
+      const mdUrl = `${url}.md`
+      let markdown: string | null = null
+      try {
+        markdown = await fetchText(mdUrl)
+      } catch (error) {
+        if (!isMissingDocsPage(error)) throw error
+      }
+      const markdownHash = markdown ? await sha256Text(markdown) : undefined
       // The pricing table already priced this slug. Its page's markdown
       // is a second statement of the same card, not a replacement.
       if (!pagePrice && !bySlug.has(slug)) {
-        const mdUrl = `${url}.md`
-        let markdown: string | null = null
-        try {
-          markdown = await fetchText(mdUrl)
-        } catch (error) {
-          if (!isMissingDocsPage(error)) throw error
-          // The twin is the price source. A 404 is not "no price".
-          priceUnread = true
-        }
+        // The twin is the price source. A 404 is not "no price".
+        if (markdown === null) priceUnread = true
         const stated = markdown ? parseMistralMarkdownPrice(markdown) : null
-        if (stated && markdown) {
+        if (stated && markdownHash) {
           pagePrice = stated
           priceUrl = mdUrl
-          priceHash = await sha256Text(markdown)
+          priceHash = markdownHash
         }
       }
       return {
+        releasedAt: markdown ? parseMistralMarkdownReleaseDate(markdown) : null,
+        ...(markdownHash ? { markdownHash } : {}),
         ids,
         hash: await sha256Text(body),
         serverTools: parseMistralPageTools(body),
@@ -1424,6 +1467,14 @@ export async function mistralModelPricing(
     }),
   )
   const featured = indexPageField(pages, (page) => page.features)
+  const released = indexPageField(
+    pages,
+    (page) => page.releasedAt,
+    (page) => ({
+      url: `${MISTRAL_MODEL_PAGE(page.slug)}.md`,
+      hash: page.markdownHash ?? page.hash,
+    }),
+  )
   const webSearch = await cached(kv, MISTRAL_WEBSEARCH_URL, async () => {
     const markdown = await fetchText(MISTRAL_WEBSEARCH_URL)
     return {
@@ -1515,12 +1566,24 @@ export async function mistralModelPricing(
     const maxFacts = cap
       ? tagDocsFacts({ maxOutput: cap.value }, cap.url, cap.hash)
       : {}
+    const release = released.get(rawId)
+    const releaseFacts: ModelFactSources = release
+      ? {
+          releasedAt: {
+            derivation: 'docs-derived',
+            sourceUrl: release.url,
+            sourceHash: release.hash,
+            path: 'Release date',
+          },
+        }
+      : {}
     const factSources = {
       ...pricingFacts,
       ...cacheReadAbsent,
       ...toolFacts,
       ...modalityFacts,
       ...maxFacts,
+      ...releaseFacts,
     }
     const pricingUnread = !pricing && priceUnread.has(rawId) && !seen.has(rawId)
     if (
@@ -1528,11 +1591,13 @@ export async function mistralModelPricing(
       serverTools.length === 0 &&
       !stated &&
       !cap &&
+      !release &&
       !pricingUnread
     ) {
       return {}
     }
     return {
+      ...(release ? { releasedAt: release.value } : {}),
       ...(pricing ? { pricing } : {}),
       ...(pricingUnread ? { absent: { pricing: 'unavailable' as const } } : {}),
       ...(serverTools.length > 0 ? { serverTools } : {}),
@@ -1551,6 +1616,7 @@ const ALIAS_FACTS = [
   'maxOutput',
   'reasoning',
   'serverTools',
+  'releasedAt',
 ] as const
 
 /**

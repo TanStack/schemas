@@ -9,11 +9,19 @@ import {
 } from '../fixtures/mistral-model-page.ts'
 import { provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
-import { MISTRAL_WEBSEARCH_URL } from '../mistral-pricing.ts'
+import {
+  MISTRAL_WEBSEARCH_URL,
+  parseMistralMarkdownReleaseDate,
+} from '../mistral-pricing.ts'
 import { MISTRAL_REASONING_URL } from '../reasoning-config.ts'
 
 const MODELS_PAGE = readFileSync(
   new URL('../fixtures/mistral-models.md.txt', import.meta.url),
+  'utf8',
+)
+// https://docs.mistral.ai/models/mistral-small-4-0-26-03.md, 2026-11-21.
+const SMALL_4_MARKDOWN = readFileSync(
+  new URL('../fixtures/mistral-small-4-0-26-03.md.txt', import.meta.url),
   'utf8',
 )
 
@@ -110,11 +118,8 @@ describe('mistral listModels', () => {
           }) => rest,
         ),
       ).toEqual([
-        {
-          rawId: 'mistral-small-latest',
-          releasedAt: 1_700_000_000,
-          activity: null,
-        },
+        // `created` is the request time on every row (#708), not a date.
+        { rawId: 'mistral-small-latest', releasedAt: null, activity: null },
         { rawId: 'mistral-embed', releasedAt: null, activity: 'embeddings' },
       ])
     } finally {
@@ -160,6 +165,8 @@ describe('mistral listModels modalities', () => {
             ],
           ],
         ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        SMALL_4_MARKDOWN,
       [MISTRAL_REASONING_URL]:
         '- `mistral-small-latest`: Supports adjustable reasoning via the `reasoning_effort` parameter.',
       'https://docs.mistral.ai/models':
@@ -222,6 +229,15 @@ describe('mistral listModels modalities', () => {
       expect(vibe?.factSources?.modalities?.sourceUrl).toBe(
         'https://docs.mistral.ai/models/mistral-small-4-0-26-03',
       )
+      // The markdown twin's `Release date: 2026-03-16` (#708).
+      expect(small?.releasedAt).toBe(Date.UTC(2026, 2, 16) / 1000)
+      expect(small?.factSources?.releasedAt).toMatchObject({
+        derivation: 'docs-derived',
+        sourceUrl: 'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md',
+        path: 'Release date',
+      })
+      expect(vibe?.releasedAt).toBe(small?.releasedAt)
+      expect(unpriced?.releasedAt).toBeNull()
       // No page names this id: unknown, not a guess, and not a cleared price.
       expect(unpriced?.modalities).toBeUndefined()
       expect(unpriced?.factSources?.modalities).toBeUndefined()
@@ -229,6 +245,22 @@ describe('mistral listModels modalities', () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+})
+
+describe('parseMistralMarkdownReleaseDate', () => {
+  it('reads the page date, null for a page with none, throws on junk', () => {
+    expect(parseMistralMarkdownReleaseDate(SMALL_4_MARKDOWN)).toBe(
+      Date.UTC(2026, 2, 16) / 1000,
+    )
+    // Timestral pages state no release date.
+    expect(parseMistralMarkdownReleaseDate('- Version: 1.0\n')).toBeNull()
+    expect(() =>
+      parseMistralMarkdownReleaseDate('- Release date: March 2026\n'),
+    ).toThrow(/release date/)
+    expect(() =>
+      parseMistralMarkdownReleaseDate('- Release date: 2026-02-30\n'),
+    ).toThrow(/release date/)
   })
 })
 
