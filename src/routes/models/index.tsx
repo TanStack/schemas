@@ -28,7 +28,7 @@ interface CatalogSearch {
   q?: string
 }
 
-/** Chat facts filled of those scored for one row; null for non-chat rows. */
+/** Facts of the row's own activity filled of those scored for it. */
 interface RowCompleteness {
   filled: number
   needed: number
@@ -37,8 +37,8 @@ interface RowCompleteness {
 
 interface CatalogData {
   count: number
-  /** By model id, for the rows shown. */
-  completeness: Record<string, RowCompleteness>
+  /** By model id, for the rows shown; null when the activity has no fact set. */
+  completeness: Record<string, RowCompleteness | null>
   models: Array<SerializableModel>
   providers: Array<string>
   truncated: boolean
@@ -53,7 +53,8 @@ const getCatalog = createServerFn({ method: 'GET' })
     const { getDb } = await import('#/db/index.ts')
     const { listModelsCatalog, knownProviderIds } =
       await import('#/server/catalog.ts')
-    const { rowCompleteness, scoreRow } = await import('#/lib/completeness.ts')
+    const { ACTIVITY_FACTS, activityBucket, rowCompleteness, scoreRow } =
+      await import('#/lib/completeness.ts')
     const { sourceSilentLedger } = await import('#/server/source-silent.ts')
     const db = getDb(env, { replica: true })
     // The second read carries full rate cards: the score reads them, and the
@@ -63,11 +64,15 @@ const getCatalog = createServerFn({ method: 'GET' })
       listModelsCatalog(db, { ...data, pricing: true }),
       knownProviderIds(db),
     ])
-    const completeness: Record<string, RowCompleteness> = {}
+    const completeness: Record<string, RowCompleteness | null> = {}
     for (const row of scored.models.slice(0, MAX_ROWS)) {
-      if (row.activity !== 'chat') continue
+      if (!Object.hasOwn(ACTIVITY_FACTS, activityBucket(row))) {
+        completeness[row.id] = null
+        continue
+      }
       // Same scorer as the front page and `pnpm run gap:report`, one row at a
-      // time. Origin links need the whole catalog, so this column leaves them out.
+      // time, against the row's own activity's facts. Origin links need the
+      // whole catalog, which this page does not read, so they are left out.
       completeness[row.id] = rowCompleteness(
         scoreRow(row as unknown as ModelRow, sourceSilentLedger).filter(
           (fact) => fact.fact !== 'originLink',
@@ -115,12 +120,18 @@ function queryString(search: CatalogSearch): string {
   return qs === '' ? '' : `?${qs}`
 }
 
-function completenessCell(row: RowCompleteness | undefined): string {
-  return row ? `${String(row.filled)}/${String(row.needed)}` : '—'
+function completenessCell(row: RowCompleteness | null | undefined): string {
+  return row ? `${String(row.filled)}/${String(row.needed)}` : 'unscored'
 }
 
-function completenessTitle(row: RowCompleteness | undefined): string {
-  if (!row) return 'Scored for chat models only'
+function completenessTitle(
+  row: RowCompleteness | null | undefined,
+  activity: string | null,
+): string {
+  if (row === undefined) return 'Not scored on this page'
+  if (row === null) return `Not scored: ${activity} has no fact set`
+  if (row.needed === 0)
+    return 'Nothing to fill: the provider publishes none of these facts'
   return row.missing.length === 0
     ? 'Every scored fact is filled'
     : `Missing: ${row.missing.join(', ')}`
@@ -263,9 +274,9 @@ function ModelsCatalog() {
                     <th title="Has a price card">priced</th>
                     <th
                       className="num max-sm:hidden"
-                      title="Chat completeness: chat facts filled of those scored for this model. Facts the provider does not publish are left out."
+                      title="Completeness: facts of this model's activity filled of those scored. A model with no activity is scored on that one gap. Facts the provider does not publish, and origin links, are left out."
                     >
-                      chat
+                      complete
                     </th>
                     <th className="num">first seen</th>
                     <th className="num">last seen</th>
@@ -317,10 +328,19 @@ function ModelsCatalog() {
                               {m.pricing === null ? '✗' : '✓'}
                             </td>
                             <td
-                              className="num text-ink-soft max-sm:hidden"
-                              title={completenessTitle(data.completeness[m.id])}
+                              className="num cursor-help text-ink-soft max-sm:hidden"
+                              title={completenessTitle(
+                                data.completeness[m.id],
+                                m.activity,
+                              )}
                             >
                               {completenessCell(data.completeness[m.id])}
+                              {data.completeness[m.id]?.missing.length ? (
+                                <span className="block max-w-[14em] text-[11px] text-ink-faint">
+                                  missing:{' '}
+                                  {data.completeness[m.id]?.missing.join(', ')}
+                                </span>
+                              ) : null}
                             </td>
                             <td className="num text-ink-faint">
                               {shortDate(m.firstSeenAt)}
