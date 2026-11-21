@@ -270,7 +270,7 @@ export default defineAgentWorkflow('monitor', {
     budget: { maxCostUsd: 5, maxMinutes: 90 },
     egress: ['registry.npmjs.org'],
     steps: [
-      setup.node({ version: 24 }),
+      setup.node(),
       setup.pnpm(),
       { name: 'Install', run: 'pnpm install --frozen-lockfile' },
       agent({

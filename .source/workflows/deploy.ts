@@ -36,7 +36,7 @@ export default defineWorkflow('deploy', {
       name: 'Check variables',
       run: 'for n in CLOUDFLARE_ACCOUNT_ID VITE_PUBLIC_POSTHOG_PROJECT_TOKEN VITE_PUBLIC_POSTHOG_HOST; do [ -n "$(printenv "$n")" ] || { echo "CI variable $n is not set (src variable set $n)" >&2; exit 1; }; done',
     },
-    setup.node({ version: 24 }),
+    setup.node(),
     setup.pnpm(),
     { name: 'Install', run: 'pnpm install --frozen-lockfile' },
     { name: 'Build', run: 'pnpm run build' },
