@@ -1,0 +1,52 @@
+---
+description: Perform calculations, run Python code snippets, and solve computational problems automatically in a secure sandboxed environment.
+title: Code Execution - GroqDocs
+image: https://console.groq.com/og_cloudv5.jpg
+---
+
+# Code Execution
+
+Some models and systems on Groq have native support for automatic code execution, allowing them to perform calculations, run code snippets, and solve computational problems in real-time.
+
+  
+Only Python is currently supported for code execution.
+
+The use of this tool with a supported model or system in GroqCloud is not a HIPAA Covered Cloud Service under Groq's Business Associate Addendum at this time. This tool is also not available currently for use with regional / sovereign endpoints.
+
+## [Supported Models and Systems](#supported-models-and-systems)
+
+Built-in code execution is supported for the following models and systems:
+
+| Model ID            | Model                                                  |
+| ------------------- | ------------------------------------------------------ |
+| openai/gpt-oss-20b  | [OpenAI GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-oss-20b)   |
+| openai/gpt-oss-120b | [OpenAI GPT-OSS 120B](https://console.groq.com/docs/model/openai/gpt-oss-120b) |
+
+  
+## [Quick Start (GPT-OSS)](#quick-start-gptoss)
+
+To use code execution with OpenAI's GPT-OSS models on Groq ([20B](https://console.groq.com/docs/model/openai/gpt-oss-20b) & [120B](https://console.groq.com/docs/model/openai/gpt-oss-120b)), add the `code_interpreter` tool to your request.
+
+Python
+
+```
+from groq import Groq
+
+client = Groq(api_key="your-api-key-here")
+
+response = client.chat.completions.create(
+    messages=[
+        {
+            "role": "user",
+            "content": "Calculate the square root of 12345. Output only the final answer.",
+        }
+    ],
+    model="openai/gpt-oss-20b",  # or "openai/gpt-oss-120b"
+    tool_choice="required",
+    tools=[
+        {
+            "type": "code_interpreter"
+        }
+    ],
+)
+```

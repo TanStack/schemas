@@ -4,15 +4,21 @@
  * MCP (`byteplus-tools.ts`) are read beside their adapters; OpenRouter ids
  * are router-level and are not parsed.
  */
-import { tagDocsFacts } from './fact-sources.ts'
-import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
+import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
+import {
+  assertParsed,
+  markdownTableRows,
+  tryDocs,
+  unavailable,
+} from './model-facts.ts'
+import type { DocsRun, cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
 export const GROQ_BUILTIN_TOOLS_URL =
   'https://console.groq.com/docs/tool-use/built-in-tools.md'
 
-type HostedFacts = Pick<ModelInfo, 'serverTools' | 'factSources'>
+type HostedFacts = Pick<ModelInfo, 'serverTools' | 'factSources' | 'absent'>
 
 function unescapeDocs(markdown: string): string {
   return markdown.replace(/\\([_`])/g, '$1')
@@ -57,15 +63,61 @@ export function parseGroqBuiltinTools(
 }
 
 /**
- * Lookup from the built-in tools page. A fetch or empty parse throws so the
- * poll keeps stored tools. The page is not exhaustive (the browser search
- * page names `openai/gpt-oss-safeguard-20b`, this one does not), so a model
- * it does not name states nothing (#707).
+ * One page per hosted tool type Groq accepts: browser search and code
+ * execution (the two the built-in tools page says `tools` takes) and remote
+ * MCP. Each page's "Supported Models" table lists every model that takes
+ * its tool (#707).
  */
-export async function groqModelServerTools(
-  kv?: KVNamespace,
-): Promise<(rawId: string) => HostedFacts> {
-  const doc = await cachedDocs(kv, GROQ_BUILTIN_TOOLS_URL, async () => {
+export const GROQ_TOOL_PAGE_URLS = [
+  'https://console.groq.com/docs/browser-search.md',
+  'https://console.groq.com/docs/code-execution.md',
+  'https://console.groq.com/docs/tool-use/remote-mcp.md',
+] as const
+
+/**
+ * A Groq tool page: the Model ID column of its `## Supported Models` table,
+ * and the one tool type id its request examples put in `tools`. Any other
+ * shape throws, so changed wording never reads as "no model".
+ */
+export function parseGroqToolPage(markdown: string): {
+  tool: string
+  models: Array<string>
+} {
+  const text = unescapeDocs(markdown)
+  const section = text
+    .split(/^## /m)
+    .find((part) => part.startsWith('[Supported Models'))
+  const [header, ...rows] = section ? markdownTableRows(section) : []
+  if (!header || !/^model id$/i.test(header[0] ?? '')) {
+    throw new Error('groq tool page: no Supported Models table')
+  }
+  const models = rows.flatMap((row) => {
+    const id = row[0]?.trim() ?? ''
+    return /^[a-z0-9][\w./-]*$/i.test(id) ? [id] : []
+  })
+  const tools = new Set(
+    [
+      ...text.matchAll(
+        /\btools"?\s*[:=]\s*\[\s*\{\s*"?type"?\s*:\s*["']([a-z][a-z0-9_]*)["']/g,
+      ),
+    ].flatMap((match) => (match[1] ? [match[1]] : [])),
+  )
+  const [tool, ...more] = tools
+  if (models.length === 0 || !tool || more.length > 0) {
+    throw new Error(
+      `groq tool page: ${models.length} models, tools ${[...tools].join(',') || 'none'}`,
+    )
+  }
+  return { tool, models }
+}
+
+type GroqToolDoc = { tools: Record<string, Array<string>>; hash: string }
+
+async function loadGroqBuiltinTools(
+  kv: KVNamespace | undefined,
+  cached: typeof cachedDocs,
+): Promise<GroqToolDoc> {
+  return cached(kv, GROQ_BUILTIN_TOOLS_URL, async () => {
     const markdown = await fetchText(GROQ_BUILTIN_TOOLS_URL)
     const parsed = parseGroqBuiltinTools(markdown)
     assertParsed(parsed, 'groq built-in tools')
@@ -74,16 +126,70 @@ export async function groqModelServerTools(
       hash: await sha256Text(markdown),
     }
   })
-  return (rawId) => {
-    const tools = doc.tools[rawId]
-    if (!tools || tools.length === 0) return {}
+}
+
+async function loadGroqToolPage(
+  kv: KVNamespace | undefined,
+  cached: typeof cachedDocs,
+  url: string,
+): Promise<GroqToolDoc> {
+  return cached(kv, url, async () => {
+    const markdown = await fetchText(url)
+    const { tool, models } = parseGroqToolPage(markdown)
     return {
-      serverTools: tools,
-      factSources: tagDocsFacts(
-        { serverTools: tools },
-        GROQ_BUILTIN_TOOLS_URL,
-        doc.hash,
+      tools: Object.fromEntries(models.map((id) => [id, [tool]])),
+      hash: await sha256Text(markdown),
+    }
+  })
+}
+
+/**
+ * Lookup from the built-in tools page and the three tool pages, each loaded
+ * through `tryDocs` under its own cache key. Any page failing marks every
+ * row `unavailable`, so a partial list is never stored. With all four read,
+ * a model none of them names takes no hosted tool: source-silent (#707).
+ */
+export async function groqModelServerTools(
+  kv: KVNamespace | undefined,
+  docs: DocsRun,
+): Promise<(rawId: string) => HostedFacts> {
+  const urls = [GROQ_BUILTIN_TOOLS_URL, ...GROQ_TOOL_PAGE_URLS]
+  const loaded = await Promise.all(
+    urls.map((url) =>
+      tryDocs(docs, url, (cached) =>
+        url === GROQ_BUILTIN_TOOLS_URL
+          ? loadGroqBuiltinTools(kv, cached)
+          : loadGroqToolPage(kv, cached, url),
       ),
+    ),
+  )
+  const pages = urls.flatMap((url, index) => {
+    const doc = loaded[index]
+    return doc ? [{ url, doc }] : []
+  })
+  if (pages.length < urls.length) return () => unavailable('serverTools')
+  return (rawId) => {
+    const hits = pages.flatMap(({ url, doc }) => {
+      const tools = doc.tools[rawId]
+      return tools && tools.length > 0 ? [{ url, hash: doc.hash, tools }] : []
+    })
+    if (hits.length === 0) {
+      return {
+        factSources: { serverTools: serverToolsSilent(GROQ_BUILTIN_TOOLS_URL) },
+      }
+    }
+    return {
+      serverTools: [...new Set(hits.flatMap((hit) => hit.tools))],
+      factSources: {
+        serverTools: Object.fromEntries(
+          hits.flatMap((hit) =>
+            Object.entries(
+              tagDocsFacts({ serverTools: hit.tools }, hit.url, hit.hash)
+                .serverTools ?? {},
+            ),
+          ),
+        ),
+      },
     }
   }
 }
