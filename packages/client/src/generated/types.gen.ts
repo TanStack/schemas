@@ -733,6 +733,8 @@ export type ModelFactSources = {
   serverTools?: FactSourceMap
   cacheRead?: FactSource
   efforts?: FactSource
+  aliases?: FactSource
+  aliasOf?: FactSource
 } | null
 
 export type FactDiscrepancy = {
@@ -826,9 +828,13 @@ export type Model = {
    */
   trainsOnRequestData: boolean | null
   /**
-   * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
+   * Caller ids that resolve to this row, as the provider states them (for example claude-opus-4-5 → the dated snapshot, gpt-4o → gpt-4o-2024-08-06). An alias may also be a row of its own, whose aliasOf names this row; Mistral lists its alias groups on every member. null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias that is not a row and returns this row. factSources.aliases is the source. With aliases null, its path Snapshots means the model page lists every alias and snapshot and none resolves to this row, and unstated means no docs page names this id.
    */
   aliases: Array<string> | null
+  /**
+   * For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source was read and names no target for this id (every grouped Mistral row: its listing states the group, not which id the others resolve to).
+   */
+  aliasOf: string | null
   /**
    * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
    */
@@ -951,9 +957,13 @@ export type ExportModel = {
    */
   trainsOnRequestData: boolean | null
   /**
-   * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
+   * Caller ids that resolve to this row, as the provider states them (for example claude-opus-4-5 → the dated snapshot, gpt-4o → gpt-4o-2024-08-06). An alias may also be a row of its own, whose aliasOf names this row; Mistral lists its alias groups on every member. null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias that is not a row and returns this row. factSources.aliases is the source. With aliases null, its path Snapshots means the model page lists every alias and snapshot and none resolves to this row, and unstated means no docs page names this id.
    */
   aliases: Array<string> | null
+  /**
+   * For an alias row, the rawId of the row at this same provider it resolves to, as the provider states it (an OpenAI model page's default snapshot, a Gemini changelog line). Never read from the id's shape. null when the provider names no target, or the named target has no live row. factSources.aliasOf is the source; its path unstated means the source was read and names no target for this id (every grouped Mistral row: its listing states the group, not which id the others resolve to).
+   */
+  aliasOf: string | null
   /**
    * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
    */
