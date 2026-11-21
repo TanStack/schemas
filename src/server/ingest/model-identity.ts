@@ -5,7 +5,10 @@ import { changes, models } from '#/db/schema.ts'
 import { originNameKey } from '#/lib/origin-key.ts'
 import { stableStringify } from '#/server/kv.ts'
 import { changedFactPaths, modelUpdatedPayload } from './change-facts.ts'
+import { isOwnRow, loadMakerContext } from '#/server/first-party.ts'
+import type { MakerContext } from '#/server/first-party.ts'
 import type {
+  FactSource,
   SameAsInference,
   UpstreamModelIdentity,
 } from '#/server/providers/types.ts'
@@ -56,6 +59,8 @@ export interface LinkRow {
   raw_id: string
   aliases: string | null
   maker: string | null
+  /** `fact_sources.maker` as JSON text; null when the source never read it. */
+  maker_source: string | null
   /** 1 when the row's provider states an upstream for it. */
   stated: number
   /** The stated tiers' answer; null when they resolve to no single row. */
@@ -102,27 +107,42 @@ function parseAliases(value: string | null): Array<string> {
  * The name tier (issue #719), for rows whose provider states no upstream
  * and is not declared a maker. Candidates are the rows that can stand for
  * an origin: a row whose stated link resolves (it stands for its chain's
- * end), and a declared maker's row with no stated upstream and no `maker`
- * (it stands for itself). A row links to the one root every candidate at
- * another provider leads to. Candidates that lead to two roots (regional
- * twins), to a looping chain, or back to the row itself give no link.
+ * end), and a declared maker's own row with no stated upstream
+ * (`isOwnRow`, the predicate firstParty uses; it stands for itself). A row
+ * links to the one root every candidate at another provider leads to, and
+ * only when that root is a maker's own row: a chain that ends at a host's
+ * row, two roots (regional twins), a loop, or the row itself give no link.
  * Name-inferred links are never candidates, so one inference never feeds
  * another.
  */
 export function inferLinks(
   rows: ReadonlyArray<LinkRow>,
   prefixes: ReadonlySet<string>,
+  makers: MakerContext,
 ): Map<string, { target: string; inference: SameAsInference }> {
   const byId = new Map(rows.map((row) => [row.id, row]))
+  const own = new Set(
+    rows
+      .filter(
+        (row) =>
+          !row.stated &&
+          isOwnRow(
+            makers.get(row.provider_id),
+            row.maker,
+            row.maker_source === null
+              ? undefined
+              : (JSON.parse(row.maker_source) as FactSource),
+          ),
+      )
+      .map((row) => row.id),
+  )
   const statedNext = (id: string) => {
     const row = byId.get(id)
     return row?.stated ? row.stated_target : null
   }
   const candidates = new Map<string, Array<LinkRow>>()
   for (const row of rows) {
-    const origin = row.stated
-      ? row.stated_target !== null
-      : row.declared === 1 && row.maker === null
+    const origin = row.stated ? row.stated_target !== null : own.has(row.id)
     if (!origin) continue
     const keys = new Set(
       [row.raw_id, ...parseAliases(row.aliases)].map((id) =>
@@ -151,6 +171,8 @@ export function inferLinks(
     )
     const [root, ...others] = roots
     if (others.length > 0 || !root || root === row.id) continue
+    // A host's row is not an origin: the root must be a maker's own row.
+    if (!own.has(root)) continue
     if (byId.get(root)?.provider_id === row.provider_id) continue
     inferred.set(row.id, {
       target: root,
@@ -229,6 +251,7 @@ export async function reconcileSameAs(db: Db, now: number): Promise<void> {
       GROUP BY source_id
     )
     SELECT m.id, m.provider_id, m.raw_id, m.aliases, m.maker,
+      json_extract(m.fact_sources, '$.maker') AS maker_source,
       m.upstream_provider IS NOT NULL AS stated,
       resolved.target_id AS stated_target,
       m.same_as_model_id, m.root_model_id, m.same_as_inference,
@@ -246,7 +269,7 @@ export async function reconcileSameAs(db: Db, now: number): Promise<void> {
     ).map(({ name }) => name.toLowerCase()),
   )
 
-  const inferred = inferLinks(rows, prefixes)
+  const inferred = inferLinks(rows, prefixes, await loadMakerContext(db))
   const linkOf = new Map<string, string>()
   for (const row of rows) {
     const target = row.stated

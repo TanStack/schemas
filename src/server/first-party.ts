@@ -86,11 +86,28 @@ export interface FirstPartyInput {
 }
 
 /**
+ * Whether a row is the declared maker's own model: its provider is
+ * declared, its `maker` (if any) names the provider itself, and, on a
+ * maker that also hosts other makers' models, its maker source was read
+ * for this row. The one predicate for `firstParty` and for the name tier's
+ * candidate roots (`inferLinks`).
+ */
+export function isOwnRow(
+  provider: ProviderMaker | undefined,
+  maker: string | null,
+  makerSource: FactSource | undefined,
+): boolean {
+  if (!provider?.declared) return false
+  if (maker !== null && !makerNamesProvider(maker, provider.names)) return false
+  return !provider.hostsOthers || makerSource !== undefined
+}
+
+/**
  * Evidence first: a served link to another provider's row, or a `maker`
- * naming someone else, is `false`. Then a row other hosts' links end at is
- * `true`. Then the declaration: on a declared maker that also hosts other
- * makers' models, only a row whose maker source was read and names no one
- * else is `true`; elsewhere every row is. Otherwise null.
+ * naming someone else, is `false`. Then only the declared maker's own row
+ * (`isOwnRow`) can be `true`: from other rows' links ending here, from its
+ * maker source on a maker that hosts others, or from the declaration.
+ * Otherwise null: a host's row that others link to is not the maker's.
  */
 export function firstParty(
   input: FirstPartyInput,
@@ -102,24 +119,24 @@ export function firstParty(
     input.sameAsProvider !== input.providerId
   )
     return { value: false, source: { decidedBy: 'same-as' } }
-  const own =
-    input.maker === null || !provider
-      ? null
-      : makerNamesProvider(input.maker, provider.names)
-  if (own === false && input.makerSource)
+  if (
+    input.maker !== null &&
+    provider &&
+    input.makerSource &&
+    !makerNamesProvider(input.maker, provider.names)
+  )
     return {
       value: false,
       source: { decidedBy: 'maker', source: input.makerSource },
     }
+  if (!provider || !isOwnRow(provider, input.maker, input.makerSource))
+    return { value: null }
   if (input.linkedFrom > 0)
     return {
       value: true,
       source: { decidedBy: 'linked-from', count: input.linkedFrom },
     }
-  if (!provider?.declared) return { value: null }
-  if (!provider.hostsOthers)
-    return { value: true, source: { decidedBy: 'provider-declared' } }
-  return input.makerSource && own !== false
+  return provider.hostsOthers && input.makerSource
     ? { value: true, source: { decidedBy: 'maker', source: input.makerSource } }
-    : { value: null }
+    : { value: true, source: { decidedBy: 'provider-declared' } }
 }

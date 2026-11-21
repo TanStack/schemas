@@ -272,17 +272,19 @@ ones).
   of 2026-11-21): `originNameKey` (`src/lib/origin-key.ts`, the one
   normaliser) lowercases, drops a provider-id or namespace prefix and
   Bedrock's version, and reads dots as hyphens; it links when every
-  candidate (a resolved stated row, or a declared maker's row with no
-  `maker`) leads to one root, else no link. `factSources.sameAs` is then
+  candidate (a resolved stated row, or a declared maker's own row,
+  `isOwnRow` in `src/server/first-party.ts`) leads to one root and that
+  root is a maker's own row, else no link. `factSources.sameAs` is then
   `{ derivation: 'name-inferred', key, candidates }`
   (`models.same_as_inference`). `models.root_model_id` is the chain's end
   when it is more than one hop away (served as `sameAsRoot`); a loop drops
   the link. `firstParty` is derived on read (`src/server/first-party.ts`)
   from `ProviderConfig.makesOwnModels` (mirrored to
   `providers.makes_own_models`), the links, `maker` and the namespaces:
-  `false` on a link or a `maker` naming someone else, `true` when links end
-  here or the provider is a declared maker (a maker that also hosts other
-  makers' models needs the maker source read for the row), else null.
+  `false` on a link or a `maker` naming someone else, `true` only on a
+  declared maker's own row (a maker that also hosts other makers' models
+  needs the maker source read for the row), else null, even when other
+  rows link to it.
   Polls store stated evidence
   (`models.upstream_provider`/`upstream_raw_id`/`upstream_source`), writing
   only what changed. Names gateways use for a provider (`google` → gemini)
@@ -293,8 +295,10 @@ ones).
   dots-as-hyphens; ambiguous or missing → null; then the name tier. Each
   change to the link or its root emits `model.updated`. The catalog serves
   the link, with the evidence as `factSources.sameAs`, only while the
-  row's current evidence still names that target. Cloudflare AI Gateway is
-  held until it has its own listing. Migrations `0012` and `0021` are
+  row's current evidence still names that target. Cloudflare AI Gateway
+  states no upstream (no adapter states it until it has its own listing);
+  the name tier still applies to its rows like any other provider with no
+  stated upstream. Migrations `0012` and `0021` are
   hand-written (in-place `ALTER TABLE`, no rebuild).
 - **API** (`src/routes/v1/`): catalog and schema reads (`getDb(env, { replica: true })`,
   ETag/304 and `public, max-age` via `http-cache.ts`), `POST /v1/validate`

@@ -2962,7 +2962,7 @@
             "type": "string"
           },
           "sameAs": {
-            "description": "The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.",
+            "description": "The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root, and that root is a declared maker's own row; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.",
             "oneOf": [
               {
                 "type": "object",
@@ -3008,7 +3008,7 @@
             ]
           },
           "firstParty": {
-            "description": "Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true when other rows' sameAs chains end at this row, or when the provider is declared a maker; on a declared maker that also hosts other makers' models (a row whose maker names someone else), only where the maker source was read for this row. null otherwise. Derived on read; factSources.firstParty says what decided it.",
+            "description": "Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true only on a declared maker's own row: the provider is declared a maker and, where it also hosts other makers' models (a row whose maker names someone else), the maker source was read for this row; factSources.firstParty is linked-from when other rows' sameAs chains end here. null otherwise, including a host's row that other rows link to. Derived on read; factSources.firstParty says what decided it.",
             "type": [
               "boolean",
               "null"
@@ -3361,7 +3361,7 @@
             "type": "string"
           },
           "sameAs": {
-            "description": "The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.",
+            "description": "The catalog row at another provider that this row is the same model as. It does not change this row's facts. A stated link: the provider's own listing or docs name the upstream; factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens, and variant when the listing states the id is a variant (OpenRouter's :batch) of the linked one. A row whose provider states no upstream and is not declared a maker can be linked by name: its id, lowercased, with a provider or namespace prefix dropped, Bedrock's version dropped and dots read as hyphens, matched candidate rows (a stated link's chain, or a declared maker's own row) that all lead to one root, and that root is a declared maker's own row; factSources.sameAs then has derivation name-inferred, key and candidates. A stated link always wins, and a stated upstream that matches nothing is never linked by name. null when nothing links.",
             "oneOf": [
               {
                 "type": "object",
@@ -3407,7 +3407,7 @@
             ]
           },
           "firstParty": {
-            "description": "Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true when other rows' sameAs chains end at this row, or when the provider is declared a maker; on a declared maker that also hosts other makers' models (a row whose maker names someone else), only where the maker source was read for this row. null otherwise. Derived on read; factSources.firstParty says what decided it.",
+            "description": "Whether this provider is the maker of this model. false when sameAs links to another provider's row, or maker names a company that is not this provider. true only on a declared maker's own row: the provider is declared a maker and, where it also hosts other makers' models (a row whose maker names someone else), the maker source was read for this row; factSources.firstParty is linked-from when other rows' sameAs chains end here. null otherwise, including a host's row that other rows link to. Derived on read; factSources.firstParty says what decided it.",
             "type": [
               "boolean",
               "null"

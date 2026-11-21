@@ -119,7 +119,8 @@ and other facts stay its own provider's.
   `-v1:0` dropped, dots read as hyphens. The candidates are rows at other
   providers with that key that stand for an origin: a row with a resolved
   stated link, or a declared maker's own row. It links only when every
-  candidate leads to one root row; regional twins (`moonshot` and
+  candidate leads to one root row and that root is a declared maker's own
+  row (a chain that ends at a host's row gives no link); regional twins (`moonshot` and
   `moonshotai-cn`) are two roots and give no link. A stated link always
   wins, and a stated upstream that matches nothing is never linked by
   name, so Llama on Groq and Together stays unlinked.
@@ -135,11 +136,11 @@ and other facts stay its own provider's.
 
 `firstParty` says whether the row's provider is the model's maker. It is
 `false` when the row links to another provider's row or its `maker` names
-someone else; `true` when other rows' links end at this row, or when the
-provider is declared a maker (`ProviderConfig.makesOwnModels`). On a
-declared maker that also hosts other makers' models (Mistral, BytePlus) a
-row is `true` only when the maker source was read for it. Otherwise
-`null`. `factSources.firstParty.decidedBy` names what decided it.
+someone else; `true` only on a declared maker's own row
+(`ProviderConfig.makesOwnModels`): on a declared maker that also hosts
+other makers' models (Mistral, BytePlus) a row is `true` only when the
+maker source was read for it. Otherwise `null`, including a host's row
+that other rows link to. `factSources.firstParty.decidedBy` names what decided it.
 
 ### Aliases at the same provider
 

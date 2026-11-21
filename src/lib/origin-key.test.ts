@@ -36,6 +36,16 @@ describe('makerNamesProvider (#719)', () => {
     ['Mistral AI', new Set(['mistral']), true],
     ['ByteDance', new Set(['byteplus', 'bytedance']), true],
     ['DeepSeek', new Set(['byteplus', 'bytedance']), false],
+    // Groq claims no namespace: every maker its listing names is another.
+    ['Meta', new Set(['groq']), false],
+    ['meta-llama', new Set(['groq']), false],
+    ['OpenAI', new Set(['groq']), false],
+    ['Alibaba Cloud', new Set(['groq']), false],
+    ['Z.ai', new Set(['groq']), false],
+    // The same names at the provider that is the maker.
+    ['meta-llama', new Set(['meta']), true],
+    ['Alibaba Cloud', new Set(['dashscope', 'alibaba', 'qwen']), true],
+    ['Z.ai', new Set(['zai', 'zaiorg']), true],
   ] as const)('%s', (maker, names, expected) => {
     expect(makerNamesProvider(maker, names)).toBe(expected)
   })

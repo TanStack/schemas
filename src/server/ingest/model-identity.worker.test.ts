@@ -238,14 +238,11 @@ describe('sameAs links', () => {
     expect(
       (await detail('identity-self', 'identity-self/m'))?.sameAs,
     ).toBeNull()
-    // No stated upstream: the name tier links it through the stated row.
+    // No stated upstream, and the one candidate's chain ends at a row of a
+    // provider not declared a maker: a host's row is no origin, no link.
     const inferred = await detail('identity-unproven-host', 'identity-a/model')
-    expect(inferred?.sameAs).toEqual({ provider: 'identity-a', rawId: 'model' })
-    expect(inferred?.factSources?.sameAs).toEqual({
-      derivation: 'name-inferred',
-      key: 'model',
-      candidates: [{ provider: host, rawId: 'identity-a/model' }],
-    })
+    expect(inferred?.sameAs).toBeNull()
+    expect(inferred?.factSources?.sameAs).toBeUndefined()
 
     // Dropping the rival claim from config removes its row, so the namespace
     // resolves again.
@@ -535,6 +532,73 @@ describe('name-inferred links and chain roots (#719)', () => {
       sameAsModelId: null,
       sameAsInference: null,
     })
+  })
+
+  it('links only to a maker row, never to a host row a chain ends at', async () => {
+    const d = deps()
+    // dashscope / dashscope-cn: neither is a declared maker. Gateways state
+    // a namespace the first claims, so their chains end at its row.
+    await pollProviderModels(
+      d,
+      stub('identity-ds', [{ rawId: 'glm-9-prime' }], {
+        modelNamespaces: ['identity-ds-ns'],
+      }),
+    )
+    await pollProviderModels(
+      d,
+      stub(
+        'identity-ds-gateway',
+        [{ rawId: 'identity-ds-ns/glm-9-prime' }],
+        gateway,
+      ),
+    )
+    await pollProviderModels(
+      d,
+      stub('identity-ds-cn', [{ rawId: 'glm-9-prime' }]),
+    )
+    // A mixed maker: one row's maker names someone else, and a hosted row
+    // its maker source never read is no root either.
+    const madeElsewhere = {
+      maker: 'Elsewhere Labs',
+      factSources: {
+        maker: { derivation: 'docs-derived' as const, path: 'Provider' },
+      },
+    }
+    await pollProviderModels(
+      d,
+      stub(
+        'identity-mixed',
+        [{ rawId: 'third-9', ...madeElsewhere }, { rawId: 'oss-9-hosted' }],
+        maker,
+      ),
+    )
+    await pollProviderModels(
+      d,
+      stub('identity-mixed-bare', [{ rawId: 'oss-9-hosted' }]),
+    )
+    await reconcileSameAs(d.db, NOW)
+    expect(
+      (await row(d, 'identity-ds-gateway', 'identity-ds-ns/glm-9-prime'))
+        ?.sameAsModelId,
+    ).toBe(modelDbId('identity-ds', 'glm-9-prime'))
+    for (const [provider, rawId] of [
+      ['identity-ds-cn', 'glm-9-prime'],
+      ['identity-mixed-bare', 'oss-9-hosted'],
+    ] as const) {
+      expect(await row(d, provider, rawId)).toMatchObject({
+        sameAsModelId: null,
+        sameAsInference: null,
+      })
+    }
+    // A host's link target is not first-party; nor is the mixed maker's
+    // unread row.
+    expect(
+      (await getModelDetail(d.db, 'identity-ds', 'glm-9-prime'))?.firstParty,
+    ).toBeNull()
+    expect(
+      (await getModelDetail(d.db, 'identity-mixed', 'oss-9-hosted'))
+        ?.firstParty,
+    ).toBeNull()
   })
 
   it('writes no link when the candidates lead to two roots (regional twins)', async () => {
