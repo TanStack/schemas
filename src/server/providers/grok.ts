@@ -8,6 +8,7 @@ import type { RateCard, UnitCardSpec } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
+import { serverToolsSilent } from './fact-sources.ts'
 import {
   displayNameFromRawId,
   grokGenerationEndpointId,
@@ -131,7 +132,8 @@ function listingMaxOutput(m: GrokExtrasModel): number | null {
  * tool, and its "Agentic models only" bullet names the models that can.
  * xAI's other server-side tools (web_search, x_search, code_execution, …)
  * are documented per provider, with no per-model list, so they are not
- * assigned (#409).
+ * assigned (#409). A language model the bullet does not name is
+ * source-silent, not `[]`: the bullet is "e.g." (#707).
  */
 export const GROK_FILES_DOC_URL = 'https://docs.x.ai/developers/files.md'
 
@@ -619,6 +621,10 @@ async function grokModelFacts(
           },
         ]),
       )
+    } else if (hosted !== null && language.models?.includes(m) === true) {
+      // The files page is xAI's one per-model tool statement and does not
+      // name this model; model pages list no tools (#707).
+      sources.serverTools = serverToolsSilent(GROK_FILES_DOC_URL)
     }
     if (Object.keys(sources).length > 0) facts.factSources = sources
     if (hosted === null) return { ...facts, ...unavailable('serverTools') }

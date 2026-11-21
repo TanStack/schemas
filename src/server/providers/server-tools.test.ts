@@ -1,8 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { parseGrokFileTool } from './grok.ts'
+import { requestUrl } from '#/lib/text.ts'
+
+import { GROK_FILES_DOC_URL, grokProvider, parseGrokFileTool } from './grok.ts'
+import {
+  OPENAI_MODELS_INDEX_URL,
+  OPENAI_MODEL_PAGE,
+  openaiModelFacts,
+} from './openai-model-docs.ts'
 import { openrouterServerTools } from './openrouter.ts'
 import {
+  GROQ_BUILTIN_TOOLS_URL,
+  groqModelServerTools,
   parseByteplusServerTools,
   parseGroqBuiltinTools,
   parseMistralPageTools,
@@ -112,5 +121,134 @@ describe('server tools from docs (issue #123)', () => {
         supported_parameters: ['tools', 'tool_choice', 'web_search'],
       }),
     ).toBeNull()
+  })
+})
+
+/** Serve each URL's body; anything else is a 404. */
+function serve(pages: Record<string, string>) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: string | URL | Request) => {
+      const url = requestUrl(input)
+      const body = pages[url]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('not found', { status: 404 })
+          : new Response(body, { status: 200 }),
+      )
+    }),
+  )
+}
+
+describe('a read page that names no tool is source-silent (#707)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('Groq: a model the built-in tools page does not name', async () => {
+    serve({ [GROQ_BUILTIN_TOOLS_URL]: GROQ_TOOLS })
+    const tools = await groqModelServerTools()
+    expect(tools('openai/gpt-oss-20b').serverTools).toEqual([
+      'browser_search',
+      'code_interpreter',
+    ])
+    expect(tools('allam-2-7b')).toEqual({
+      factSources: {
+        serverTools: {
+          derivation: 'source-silent',
+          sourceUrl: GROQ_BUILTIN_TOOLS_URL,
+        },
+      },
+    })
+  })
+
+  it('OpenAI: a model page with no Supported tools section', async () => {
+    // developers.openai.com/api/docs/models/gpt-audio.md, 2026-11-21, cut down.
+    const audio = [
+      'Model ID: `gpt-audio`',
+      '',
+      '## Model details',
+      '',
+      '- Default snapshot: `gpt-audio-2025-08-28`',
+      '- 128,000 context window',
+      '',
+      '## Supported features',
+      '',
+      '- streaming',
+      '- function_calling',
+      '',
+      '## Snapshots',
+      '',
+      '- `gpt-audio-2025-08-28` — Deprecated',
+    ].join('\n')
+    // developers.openai.com/api/docs/models/gpt-4o.md, 2026-11-21, cut down.
+    const gpt4o = [
+      'Model ID: `gpt-4o`',
+      '',
+      '## Supported tools',
+      '',
+      'Tools supported by this model when using the Responses API.',
+      '',
+      '- function_calling',
+      '- web_search',
+    ].join('\n')
+    serve({
+      [OPENAI_MODELS_INDEX_URL]:
+        '[GPT-Audio](/api/docs/models/gpt-audio.md)\n[GPT-4o](/api/docs/models/gpt-4o.md)',
+      [OPENAI_MODEL_PAGE('gpt-audio')]: audio,
+      [OPENAI_MODEL_PAGE('gpt-4o')]: gpt4o,
+    })
+    const facts = await openaiModelFacts([
+      'gpt-audio',
+      'gpt-audio-2025-08-28',
+      'gpt-4o',
+      'gpt-5-search-api',
+    ])
+    for (const id of ['gpt-audio', 'gpt-audio-2025-08-28']) {
+      expect(facts(id).serverTools).toBeNull()
+      expect(facts(id).factSources?.serverTools).toEqual({
+        derivation: 'source-silent',
+        sourceUrl: OPENAI_MODEL_PAGE('gpt-audio'),
+      })
+    }
+    expect(facts('gpt-4o').serverTools).toEqual(['web_search'])
+    // No model page read: nothing is stated (the ledger covers it).
+    expect(facts('gpt-5-search-api').factSources?.serverTools).toBeUndefined()
+  })
+
+  it('Grok: a language model the files page does not name, unless the page failed', async () => {
+    // docs.x.ai/developers/files.md as served on 2026-11-21, cut down.
+    const files = [
+      'When you attach files to a chat message, the xAI API automatically activates the `attachment_search` [server-side tool](/developers/tools/overview).',
+      '* **Agentic models only**: Requires models that support agentic tool calling (e.g., `grok-4.20`, `grok-4.5`, `grok-4.6`, `grok-4.7`)',
+    ].join('\n')
+    const api = {
+      'https://api.x.ai/v1/models': JSON.stringify({
+        data: [{ id: 'grok-4.7' }, { id: 'grok-4.3' }],
+      }),
+      'https://api.x.ai/v1/language-models': JSON.stringify({
+        models: [{ id: 'grok-4.7' }, { id: 'grok-4.3' }],
+      }),
+      'https://api.x.ai/v1/image-generation-models': '{"models":[]}',
+      'https://api.x.ai/v1/video-generation-models': '{"models":[]}',
+      'https://docs.x.ai/docs/models.md':
+        '| Model | Context |\n| --- | --- |\n| grok-4.7 | 500k |\n| grok-4.3 | 1M |',
+    }
+    const env = { XAI_API_KEY: 'test' }
+    serve({ ...api, [GROK_FILES_DOC_URL]: files })
+    const read = await grokProvider.listModels(env)
+    const byId = new Map(read.models.map((m) => [m.rawId, m]))
+    expect(byId.get('grok-4.7')?.serverTools).toEqual(['attachment_search'])
+    expect(byId.get('grok-4.3')?.serverTools).toBeUndefined()
+    expect(byId.get('grok-4.3')?.factSources?.serverTools).toEqual({
+      derivation: 'source-silent',
+      sourceUrl: GROK_FILES_DOC_URL,
+    })
+
+    serve(api)
+    const failed = await grokProvider.listModels(env)
+    const grok43 = failed.models.find((m) => m.rawId === 'grok-4.3')
+    expect(grok43?.absent?.serverTools).toBe('unavailable')
+    expect(grok43?.factSources?.serverTools).toBeUndefined()
   })
 })

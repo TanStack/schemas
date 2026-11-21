@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -512,6 +514,39 @@ describe('gemini features (issue #77)', () => {
       const row =
         '| Capabilities | **[Code execution](u)** Not supported **[Search grounding](u)** Not supported |'
       expect(parsePageTools(`x\n${row}\n`)).toEqual([])
+    })
+
+    it('reads "Grounding with Google Search" as googleSearch (#707)', () => {
+      // https://aistudio.google.com/docs/models/gemini-3.5-flash.md, 2026-11-21, cut down.
+      const markdown = readFileSync(
+        new URL('./fixtures/gemini-3.5-flash.md.txt', import.meta.url),
+        'utf8',
+      )
+      expect(parsePageSections(markdown)[0]?.tools).toEqual([
+        'codeExecution',
+        'googleMaps',
+        'googleSearch',
+        'urlContext',
+      ])
+    })
+
+    it('is source-silent on a read page that marks no tool supported (#707)', async () => {
+      const { features } = await withPages(
+        {
+          'antigravity-preview-09-2026':
+            '| Supported data types | **Input** Text, Image **Output** Text |',
+        },
+        () => geminiModelFeatures(['antigravity-preview-09-2026']),
+      )
+      expect(features('antigravity-preview-09-2026', false)).toMatchObject({
+        serverTools: null,
+        factSources: {
+          serverTools: {
+            derivation: 'source-silent',
+            sourceUrl: `${INDEX}/antigravity-preview-09-2026.md`,
+          },
+        },
+      })
     })
 
     it('reads backtick thinking levels and drops a level the same paragraph rejects', () => {

@@ -807,7 +807,7 @@ export type Model = {
    */
   reasoning: ModelReasoning | null
   /**
-   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
+   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id, or, on a null, a source-silent object when the provider names no built-in tool for the model.
    */
   serverTools: Array<string> | null
   /**
@@ -830,7 +830,7 @@ export type Model = {
    */
   aliases: Array<string> | null
   /**
-   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. A null serverTools also carries a source-silent object, with sourceUrl, when the poll read the provider page that states tools for that model and it names none. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Other nulls gain no entry.
    */
   factSources?: ModelFactSources
   /**
@@ -932,7 +932,7 @@ export type ExportModel = {
    */
   reasoning: ModelReasoning | null
   /**
-   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
+   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id, or, on a null, a source-silent object when the provider names no built-in tool for the model.
    */
   serverTools: Array<string> | null
   /**
@@ -955,7 +955,7 @@ export type ExportModel = {
    */
   aliases: Array<string> | null
   /**
-   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. A null serverTools also carries a source-silent object, with sourceUrl, when the poll read the provider page that states tools for that model and it names none. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Other nulls gain no entry.
    */
   factSources?: ModelFactSources
   /**

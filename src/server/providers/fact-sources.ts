@@ -18,6 +18,7 @@ import type {
   FactSource,
   ModelFactSources,
   ModelInfo,
+  SourceSilentEvidence,
 } from './types.ts'
 
 /** OpenRouter `supported_parameters` names plus native extras we already store. */
@@ -62,6 +63,16 @@ const NESTED_CONTAINERS = new Set([
  * no modalities: the field is null because the source is silent.
  */
 export const MODALITIES_SOURCE_SILENT = 'silent'
+
+/**
+ * `factSources.serverTools` for a row whose `serverTools` stays null because
+ * the model's own tool statement at `sourceUrl` was read and names no
+ * built-in tool for it (#707). Only for a source that loaded: a failed one
+ * is `absent: unavailable`.
+ */
+export function serverToolsSilent(sourceUrl: string): SourceSilentEvidence {
+  return { derivation: 'source-silent', sourceUrl }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

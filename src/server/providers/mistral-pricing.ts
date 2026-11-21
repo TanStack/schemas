@@ -36,7 +36,7 @@ import {
 import type { Expr, RateCard } from '@modelschemas/rate-card'
 
 import { MISTRAL_DEPRECATIONS_URL } from './deprecations.ts'
-import { tagDocsFacts } from './fact-sources.ts'
+import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
 import { mistralDocsMarkdown } from './reasoning-config.ts'
 import { parseMistralPageTools } from './server-tools.ts'
@@ -1506,7 +1506,14 @@ export async function mistralModelPricing(
         path: `serverTools.${tool}`,
       }
     }
-    const toolFacts = serverTools.length > 0 ? { serverTools: toolSources } : {}
+    // A model page read for this id whose Features name no conversations
+    // tools and whose tools sections name none is silent (#707).
+    const toolFacts =
+      serverTools.length > 0
+        ? { serverTools: toolSources }
+        : features
+          ? { serverTools: serverToolsSilent(features.url) }
+          : {}
     const stated = modalities.get(rawId)
     const modalityFacts = stated
       ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
@@ -1526,6 +1533,7 @@ export async function mistralModelPricing(
     if (
       !pricing &&
       serverTools.length === 0 &&
+      !features &&
       !stated &&
       !cap &&
       !pricingUnread

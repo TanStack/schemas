@@ -24,6 +24,7 @@ import { fetchText, sha256Text } from './types.ts'
 import type {
   DocsFailures,
   FactAbsence,
+  FactSource,
   ModelFact,
   ModelFactSources,
 } from './types.ts'
@@ -378,6 +379,7 @@ interface FactRow {
   modalities?: unknown
   aliases?: Array<string> | null
   pricing?: unknown
+  serverTools?: Array<string> | null
   factSources?: ModelFactSources
   absent?: Partial<Record<ModelFact, FactAbsence>>
 }
@@ -387,8 +389,8 @@ function sourceHash(hash: string | undefined): { sourceHash?: string } {
 }
 
 /**
- * Copy a published Gemma cell, then a changelog alias's modalities, onto
- * rows that still have none. A failed document keeps stored modalities
+ * Copy a published Gemma cell, then a changelog alias's modalities and
+ * server tools, onto rows that still have none. A failed document keeps stored modalities
  * (`unavailable`) instead of clearing them.
  */
 export function attachGeminiPublishedFacts<T extends FactRow>(
@@ -443,6 +445,33 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
           },
         })
       }
+      // The alias is the target model, so the target page's tools are its
+      // own (#707). A silent target stays the alias's silence.
+      const aliasTools = byId.get(alias)
+      if (aliasTools && aliasTools.serverTools == null) {
+        const prior = target.factSources?.serverTools
+        const tools = target.serverTools ?? null
+        const sources =
+          tools && tools.length > 0 && prior
+            ? Object.fromEntries(
+                Object.entries(prior as Record<string, FactSource>).map(
+                  ([tool, source]) => [
+                    tool,
+                    { ...source, path: `${source.path}; alias of ${targetId}` },
+                  ],
+                ),
+              )
+            : prior?.derivation === 'source-silent'
+              ? prior
+              : undefined
+        if (sources) {
+          put({
+            ...aliasTools,
+            ...(tools && tools.length > 0 ? { serverTools: tools } : {}),
+            factSources: { ...aliasTools.factSources, serverTools: sources },
+          })
+        }
+      }
       const current = byId.get(targetId)
       if (!current) continue
       put({
@@ -486,13 +515,12 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
   } else {
     for (const rawId of rawIds) {
       const model = byId.get(rawId)
-      if (!model || !rawId.includes('latest') || model.modalities != null) {
-        continue
-      }
-      put({
-        ...model,
-        absent: { ...model.absent, modalities: 'unavailable' },
-      })
+      if (!model || !rawId.includes('latest')) continue
+      const absent = { ...model.absent }
+      if (model.modalities == null) absent.modalities = 'unavailable'
+      if (model.serverTools == null) absent.serverTools = 'unavailable'
+      if (Object.keys(absent).length === 0) continue
+      put({ ...model, absent })
     }
   }
 

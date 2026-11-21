@@ -8,7 +8,11 @@ One file per provider, `<provider>.md`, so two branches never edit the same
 file. One entry per list line: `- <provider>: <fact> — <why, with the issue>`.
 The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 `priced`, `cacheRead`, `capabilities`, `reasoning`, `efforts`, `requestMap`,
-`endpoint`). Remove an entry when the provider starts publishing the fact.
+`endpoint`), or `serverTools`, which is evidence only: it is served as
+`factSources.serverTools` on a null row and never scored. A poll that read
+the model's own tool statement and found none already stores that evidence
+(#707), so a `serverTools` entry is only for a model with no such page.
+Remove an entry when the provider starts publishing the fact.
 
 For a fact missing only on particular models, use the exact native raw model id:
 `- provider/maker/model-id: fact — why, https://provider.example/model, checked YYYY-MM-DD`.

@@ -9,6 +9,7 @@ import {
   parseGemmaModalities,
 } from './gemini-bindings.ts'
 import type { GeminiPublishedBindings } from './gemini-bindings.ts'
+import type { ModelInfo } from './types.ts'
 
 const CHANGELOG = `This page documents updates to the Gemini API.
 
@@ -327,5 +328,50 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
     expect(
       models.find((model) => model.rawId === 'gemma-4-26b-a4b-it')?.modalities,
     ).toEqual({ input: ['text'], output: ['text'] })
+  })
+  it('copies alias server tools from the changelog target, or keeps them when it fails (#707)', () => {
+    type Row = Pick<
+      ModelInfo,
+      'rawId' | 'modalities' | 'serverTools' | 'factSources' | 'absent'
+    >
+    const page =
+      'https://aistudio.google.com/docs/models/gemini-3-flash-preview.md'
+    const rows: Array<Row> = [
+      {
+        rawId: 'gemini-3-flash-preview',
+        modalities: null,
+        serverTools: ['googleSearch'],
+        factSources: {
+          serverTools: {
+            googleSearch: {
+              derivation: 'docs-derived',
+              sourceUrl: page,
+              path: 'Capabilities',
+            },
+          },
+        },
+      },
+      { rawId: 'gemini-flash-latest', modalities: null, serverTools: null },
+    ]
+    const alias = attachGeminiPublishedFacts<Row>(
+      rows,
+      bindings({
+        aliases: { 'gemini-flash-latest': 'gemini-3-flash-preview' },
+      }),
+    ).find((model) => model.rawId === 'gemini-flash-latest')
+    expect(alias?.serverTools).toEqual(['googleSearch'])
+    expect(alias?.factSources?.serverTools).toEqual({
+      googleSearch: {
+        derivation: 'docs-derived',
+        sourceUrl: page,
+        path: 'Capabilities; alias of gemini-3-flash-preview',
+      },
+    })
+
+    const failed = attachGeminiPublishedFacts<Row>(
+      rows,
+      bindings({ aliases: null }),
+    ).find((model) => model.rawId === 'gemini-flash-latest')
+    expect(failed?.absent?.serverTools).toBe('unavailable')
   })
 })

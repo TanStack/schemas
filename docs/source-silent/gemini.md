@@ -123,3 +123,15 @@
 - `gemini/gemini-3.1-pro-preview-customtools`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview.md.txt, checked 2026-10-22
 
 - `gemini/gemini-3.5-flash`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash.md.txt, checked 2026-10-22
+
+- `gemini/aqa`: serverTools — Google publishes no model page for this id, so no Capabilities list names a tool for it (#707), https://aistudio.google.com/docs/models.md, checked 2026-11-21
+
+- `gemini/antigravity-preview-latest`: serverTools — the model page names only antigravity-preview-09-2026, and the changelog does not bind this alias (#707), https://aistudio.google.com/docs/models/antigravity-preview-09-2026.md, checked 2026-11-21
+
+- `gemini/gemini-flash-lite-latest`: serverTools — no model page, and the changelog never binds this alias (#707), https://aistudio.google.com/docs/changelog.md, checked 2026-11-21
+
+- `gemini/gemini-pro-latest`: serverTools — no model page; the changelog binds it to gemini-3-pro-preview, which its own page says was shut down on 2026-03-09, so no live page states its tools (#707), https://aistudio.google.com/docs/changelog.md, checked 2026-11-21
+
+- `gemini/gemma-4-26b-a4b-it`: serverTools — no Gemini API model page; the Gemma on Gemini API guide and the model card name no built-in tool (#707), https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api, checked 2026-11-21
+
+- `gemini/gemma-4-31b-it`: serverTools — no Gemini API model page; the Gemma on Gemini API guide and the model card name no built-in tool (#707), https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api, checked 2026-11-21

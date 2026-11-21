@@ -11,6 +11,7 @@ import {
   tablesWith,
 } from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
+import { serverToolsSilent } from './fact-sources.ts'
 import { tryDocs, unavailable } from './model-facts.ts'
 import type { DocsRun } from './model-facts.ts'
 import { sha256Text } from './types.ts'
@@ -60,7 +61,8 @@ export function parseByteplusMcpSupport(
 type HostedFacts = Pick<ModelInfo, 'serverTools' | 'factSources' | 'absent'>
 
 /**
- * `mcp` for each model the Tool use table marks supported. When the page
+ * `mcp` for each model the Tool use table marks supported; any other model
+ * is source-silent at that page. When the page
  * fails to load, every row keeps its stored tools (`unavailable`), and the
  * failure is in `docsFailures`.
  */
@@ -84,7 +86,14 @@ export async function byteplusServerTools(
   )
   return (rawId) => {
     if (!doc) return unavailable('serverTools')
-    if (doc.mcp[rawId] !== true) return {}
+    // `Not supported`, or a model the table does not list: silent (#707).
+    if (doc.mcp[rawId] !== true) {
+      return {
+        factSources: {
+          serverTools: serverToolsSilent(BYTEPLUS_MODEL_LIST_URL),
+        },
+      }
+    }
     return {
       serverTools: ['mcp'],
       factSources: {

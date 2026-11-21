@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { BYTEPLUS_MODEL_LIST_URL } from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
-import { parseByteplusMcpSupport } from './byteplus-tools.ts'
+import {
+  byteplusServerTools,
+  parseByteplusMcpSupport,
+} from './byteplus-tools.ts'
+import { docsRun } from './model-facts.ts'
 
 /** A one-table model-list document, in the page's zone layout. */
 function doc(rows: Array<Array<string>>): ByteplusDoc {
@@ -72,5 +77,51 @@ describe('parseByteplusMcpSupport', () => {
     expect(() =>
       parseByteplusMcpSupport(doc([HEADER, ['m-1', 'Supported', 'Beta']])),
     ).toThrow('unread Tool use row')
+  })
+})
+
+describe('byteplusServerTools', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('is source-silent for a model the read table does not mark supported (#707)', async () => {
+    const content = JSON.stringify(
+      doc([
+        HEADER,
+        ['dola-seed-2-1-turbo-260628', 'Supported', 'Supported'],
+        ['seed-2-0-code-preview-260328', 'Supported', 'Not Supported'],
+      ]),
+    )
+    const html = `<script>window._ROUTER_DATA = ${JSON.stringify({
+      loaderData: { page: { curDoc: { Content: content } } },
+    })}</script>`
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(html, { status: 200 }))),
+    )
+    const tools = await byteplusServerTools(docsRun())
+    expect(tools('dola-seed-2-1-turbo-260628').serverTools).toEqual(['mcp'])
+    const silent = {
+      factSources: {
+        serverTools: {
+          derivation: 'source-silent',
+          sourceUrl: BYTEPLUS_MODEL_LIST_URL,
+        },
+      },
+    }
+    expect(tools('seed-2-0-code-preview-260328')).toEqual(silent)
+    expect(tools('seed-1-6-250615')).toEqual(silent)
+  })
+
+  it('keeps stored tools when the table fails to load', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('down', { status: 503 }))),
+    )
+    const tools = await byteplusServerTools(docsRun())
+    expect(tools('seed-1-6-250615')).toEqual({
+      absent: { serverTools: 'unavailable' },
+    })
   })
 })

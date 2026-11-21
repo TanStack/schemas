@@ -31,6 +31,7 @@ import {
   tryDocs,
   unavailable,
 } from './model-facts.ts'
+import { serverToolsSilent } from './fact-sources.ts'
 import { fetchOptional } from './provider-aliases.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type {
@@ -55,6 +56,8 @@ const TOOL_FIELDS: Record<string, string> = {
   'Computer use': 'computerUse',
   'File search': 'fileSearch',
   'Grounding with Google Maps': 'googleMaps',
+  // The label pages served until 2026-11; current pages say the long form.
+  'Grounding with Google Search': 'googleSearch',
   'Search grounding': 'googleSearch',
   'URL context': 'urlContext',
 }
@@ -852,11 +855,14 @@ export async function geminiModelFeatures(
     if (bound.modalities) {
       factSources.modalities = source('Supported data types')
     }
-    if (bound.tools.length > 0) {
-      factSources.serverTools = Object.fromEntries(
-        bound.tools.map((tool) => [tool, source('Capabilities')]),
-      )
-    }
+    // A bound page whose Capabilities mark no tool Supported, or that has
+    // no Capabilities at all, is silent (#707).
+    factSources.serverTools =
+      bound.tools.length > 0
+        ? Object.fromEntries(
+            bound.tools.map((tool) => [tool, source('Capabilities')]),
+          )
+        : serverToolsSilent(bound.sourceUrl)
     return {
       reasoning,
       budget,

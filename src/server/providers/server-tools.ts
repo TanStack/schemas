@@ -4,7 +4,7 @@
  * MCP (`byteplus-tools.ts`) are read beside their adapters; OpenRouter ids
  * are router-level and are not parsed.
  */
-import { tagDocsFacts } from './fact-sources.ts'
+import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
@@ -56,7 +56,11 @@ export function parseGroqBuiltinTools(
   return out
 }
 
-/** Lookup from the built-in tools page. A fetch or empty parse throws so the poll keeps stored tools. */
+/**
+ * Lookup from the built-in tools page. A fetch or empty parse throws so the
+ * poll keeps stored tools. The page's "Which Models Support Built-In Tools"
+ * sections name every supporting model, so one it does not name is silent.
+ */
 export async function groqModelServerTools(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => HostedFacts> {
@@ -71,7 +75,11 @@ export async function groqModelServerTools(
   })
   return (rawId) => {
     const tools = doc.tools[rawId]
-    if (!tools || tools.length === 0) return {}
+    if (!tools || tools.length === 0) {
+      return {
+        factSources: { serverTools: serverToolsSilent(GROQ_BUILTIN_TOOLS_URL) },
+      }
+    }
     return {
       serverTools: tools,
       factSources: tagDocsFacts(

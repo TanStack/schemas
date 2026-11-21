@@ -96,11 +96,21 @@ export type GapReport = {
   providers: Array<ProviderReport>
 }
 
-/** Provider id or provider/exact-raw-id → facts its sources do not publish. */
-export type Ledger = Map<string, Set<FactKey>>
+/**
+ * Ledger facts served as `factSources` evidence and never scored: the gap
+ * report does not count them, so an entry changes no score.
+ */
+export const EVIDENCE_KEYS = ['serverTools'] as const
 
-function isFactKey(value: string): value is FactKey {
-  return (FACT_KEYS as ReadonlyArray<string>).includes(value)
+export type LedgerKey = FactKey | (typeof EVIDENCE_KEYS)[number]
+
+/** Provider id or provider/exact-raw-id → facts its sources do not publish. */
+export type Ledger = Map<string, Set<LedgerKey>>
+
+function isLedgerKey(value: string): value is LedgerKey {
+  return ([...FACT_KEYS, ...EVIDENCE_KEYS] as ReadonlyArray<string>).includes(
+    value,
+  )
 }
 
 /** Ledger entries are list lines: `- <provider>: <fact> — <why>`. */
@@ -110,12 +120,12 @@ export function parseLedger(markdown: string): Ledger {
     const entry = parseLedgerEntry(line)
     if (!entry) continue
     const { scope, fact } = entry
-    if (!isFactKey(fact)) {
+    if (!isLedgerKey(fact)) {
       throw new Error(
         `source-silent ledger: unknown fact "${fact}" in: ${line}`,
       )
     }
-    const facts = ledger.get(scope) ?? new Set<FactKey>()
+    const facts = ledger.get(scope) ?? new Set<LedgerKey>()
     facts.add(fact)
     ledger.set(scope, facts)
   }

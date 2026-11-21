@@ -19,7 +19,7 @@ import type {
   UnitCardSpec,
 } from '@modelschemas/rate-card'
 
-import { tagDocsFacts } from './fact-sources.ts'
+import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
@@ -837,6 +837,10 @@ export async function openaiModelFacts(
       ...withPricing,
       factSources: {
         ...tagDocsFacts(withPricing, url, loaded.page.hash),
+        // The page has no "Supported tools" section, or names no hosted type.
+        ...(withPricing.serverTools == null
+          ? { serverTools: serverToolsSilent(url) }
+          : {}),
         ...(loaded.page.pricing?.cacheReadNotOffered &&
         loaded.page.pricing.rates.cache_read_tokens === undefined
           ? {
