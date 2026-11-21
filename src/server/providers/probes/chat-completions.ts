@@ -1,4 +1,5 @@
-import type { ProbedFact } from './types.ts'
+import { probeAgeDays } from './types.ts'
+import type { ProbedFact, ProbedFactRecord } from './types.ts'
 
 /**
  * The generic probe for the OpenAI-style `chat/completions` wire (issue
@@ -18,12 +19,28 @@ export interface ChatCompletionsProbe {
   route: string
   /** Env name of the bearer key. The key itself is never in a file. */
   keyEnv: string
-  /** Catalog raw ids to probe. Each costs `PROBE_CHECKS.length` requests. */
+  /** Catalog raw ids to probe. Each costs `probeChecks(probe).length` requests. */
   models: Array<string>
+  /**
+   * Opt in to the `off` check: whose refusal of `reasoning_effort: "none"`
+   * is read, and only in that provider's own wording. Set it only when
+   * that provider's level list is per model (not one enum shared by every
+   * model, nor a gateway forwarding an upstream's 400) and
+   * `reasoning_effort` is the model's only reasoning control. Without it
+   * no `off` request is sent.
+   */
+  mandatoryRule?: MandatoryRule
 }
 
+export type MandatoryRule = 'groq' | 'openai'
 export type ProbeCheck = 'limits' | 'replay' | 'off'
-export const PROBE_CHECKS: Array<ProbeCheck> = ['limits', 'replay', 'off']
+
+/** The checks one provider's run sends per model. */
+export function probeChecks(probe: ChatCompletionsProbe): Array<ProbeCheck> {
+  return probe.mandatoryRule
+    ? ['limits', 'replay', 'off']
+    : ['limits', 'replay']
+}
 
 /** Hard per-provider cap. A run that plans more requests aborts before the first. */
 export const MAX_PROBE_REQUESTS = 30
@@ -32,8 +49,9 @@ export const MAX_PROBE_REQUESTS = 30
 const OVERSIZED_MAX_TOKENS = 10_000_000
 
 /**
- * Every body streams, so a 2xx is cancelled before the model writes
- * (the oversized `max_tokens` would otherwise bill a long answer).
+ * Every body streams and the script cancels a 2xx unread. Cancelling does
+ * not guarantee the provider stops billing; the real bound is the one-word
+ * prompt (and `max_tokens: 1` on every check but `limits`).
  */
 export function probeBody(
   check: ProbeCheck,
@@ -129,18 +147,21 @@ const OFF_VALUES = new Set(['none', 'off', 'disabled', 'disable'])
 
 /**
  * The level list a 400 gave for this model's `reasoning_effort`, when it
- * refused `none`. Null when the message is anything else.
+ * refused `none`, read only in the opted-in provider's wording. Null when
+ * the message is anything else.
  */
-function refusedOffLevels(message: string): Array<string> | null {
-  // OpenAI: "Unsupported value: 'reasoning_effort' does not support 'none'
-  // with this model. Supported values are: 'minimal', 'low', ...".
-  const openai =
-    /'reasoning_effort' does not support 'none' with this model\. Supported values are: (.+)$/.exec(
-      message,
-    )
-  // Groq: "`reasoning_effort` must be one of `low`, `medium`, or `high`".
-  const groq = /^`reasoning_effort` must be one of (.+)$/.exec(message)
-  const list = openai?.[1] ?? groq?.[1]
+function refusedOffLevels(
+  message: string,
+  rule: MandatoryRule,
+): Array<string> | null {
+  const pattern =
+    rule === 'openai'
+      ? // "Unsupported value: 'reasoning_effort' does not support 'none'
+        // with this model. Supported values are: 'minimal', 'low', ...".
+        /'reasoning_effort' does not support 'none' with this model\. Supported values are: (.+)$/
+      : // "`reasoning_effort` must be one of `low`, `medium`, or `high`".
+        /^`reasoning_effort` must be one of (.+)$/
+  const list = pattern.exec(message)?.[1]
   if (!list) return null
   const levels = quotedValues(list)
   return levels.length > 0 ? levels : null
@@ -148,14 +169,20 @@ function refusedOffLevels(message: string): Array<string> | null {
 
 /**
  * Reads one probe response. Pure: the only inputs are the check, the
- * status and the raw body. Each rule matches a wording a provider was
- * seen to send (fixtures in `fixtures/probe-responses/`).
+ * status, the raw body and the provider's `mandatoryRule`. Each rule
+ * matches a wording seen in a live response
+ * (`fixtures/probe-responses.json`). No rule writes `contextWindow` yet:
+ * no live response has stated one.
  */
 export function classifyProbeResponse(
   check: ProbeCheck,
   status: number,
   body: string,
+  mandatoryRule?: MandatoryRule,
 ): ProbeOutcome {
+  if (check === 'off' && !mandatoryRule) {
+    return { undecided: 'off: the provider has no mandatoryRule opt-in' }
+  }
   const reason = statusReason(status)
   if (reason) return { undecided: reason }
   const message = errorMessage(body)
@@ -176,13 +203,6 @@ export function classifyProbeResponse(
     if (output) {
       return { fact: 'maxOutput', value: Number(output), message }
     }
-    // vLLM: "This model's maximum context length is 32768 tokens."
-    const context = /This model's maximum context length is (\d+) tokens/.exec(
-      message,
-    )
-    if (context?.[1]) {
-      return { fact: 'contextWindow', value: Number(context[1]), message }
-    }
     return { undecided: `${status} names no limit a rule reads: ${message}` }
   }
 
@@ -202,7 +222,7 @@ export function classifyProbeResponse(
     }
   }
 
-  const levels = refusedOffLevels(message)
+  const levels = refusedOffLevels(message, mandatoryRule!)
   if (!levels) {
     return {
       undecided: `${status} does not list this model's reasoning_effort levels: ${message}`,
@@ -213,4 +233,44 @@ export function classifyProbeResponse(
   }
   // The model's own exhaustive level list, with no off value.
   return { fact: 'reasoning.mandatory', value: true, message }
+}
+
+/** Under the 90 stale days, so a weekly run re-dates a record in time. */
+export const REDATE_AFTER_DAYS = 60
+
+/**
+ * One provider's records after a run. A decided check replaces its stored
+ * record, or keeps it unchanged when the value is the same and the record
+ * is at most `REDATE_AFTER_DAYS` old. A stored record the run did not
+ * decide is kept and listed in `unconfirmed`. Another provider's records
+ * are never read.
+ */
+export function mergeProbedRecords(
+  provider: string,
+  stored: Array<ProbedFactRecord>,
+  found: Array<ProbedFactRecord>,
+  now: Date,
+): {
+  records: Array<ProbedFactRecord>
+  unconfirmed: Array<ProbedFactRecord>
+} {
+  const mine = new Map(
+    stored
+      .filter((record) => record.provider === provider)
+      .map((record) => [record.id, record] as const),
+  )
+  const decided = found.map((record) => {
+    const prior = mine.get(record.id)
+    return prior &&
+      prior.value === record.value &&
+      probeAgeDays(prior.verifiedAt, now) <= REDATE_AFTER_DAYS
+      ? prior
+      : record
+  })
+  const ids = new Set(decided.map((record) => record.id))
+  const unconfirmed = [...mine.values()].filter((record) => !ids.has(record.id))
+  const records = [...unconfirmed, ...decided].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  )
+  return { records, unconfirmed }
 }

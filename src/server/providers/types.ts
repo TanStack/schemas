@@ -282,7 +282,8 @@ export interface UpstreamModelIdentity {
  *   so it is `null`. A gateway can drop the off value, so a gateway list
  *   stays `null` until that model's own source speaks. A bare 400 on
  *   an off value is not a source. A probe record is, when that 400 listed
- *   the model's own accepted levels with no off value (issue #717).
+ *   the model's own accepted levels with no off value, and that field is
+ *   the model's only reasoning control (issue #717, `mandatoryRule`).
  * - A model's OWN exhaustive effort list, with no off value, and no other
  *   reasoning control, means `mandatory: true`. The list is the only
  *   control, and it has no way to turn thinking off.
