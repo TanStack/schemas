@@ -6,10 +6,12 @@
 // CLOUDFLARE_API_TOKEN outside the container; the job sees a placeholder.
 // The Worker's runtime secrets stay where they are (Doppler prd ->
 // `pnpm run secrets:push`); this job does not touch them.
-import { defineWorkflow, push, setup } from '@tanstack-source/ci'
+import { defineWorkflow, manual, push, setup } from '@tanstack-source/ci'
 
 export default defineWorkflow('deploy', {
-  on: [push({ branches: ['main'] })],
+  // manual(): deploy main again with no new commit (`src workflow run deploy`).
+  // A rerun cannot do it: it keeps the trust level of its first attempt.
+  on: [push({ branches: ['main'] }), manual()],
 }).job('deploy', {
   environment: 'production',
   secrets: { CLOUDFLARE_API_TOKEN: {} },
