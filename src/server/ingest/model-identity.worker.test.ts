@@ -11,6 +11,12 @@ import { openaiProvider } from '#/server/providers/openai.ts'
 import { openrouterProvider } from '#/server/providers/openrouter.ts'
 import { provider as vercel } from '#/server/providers/adapters/vercel.ts'
 import { provider as azure } from '#/server/providers/adapters/azure.ts'
+import { provider as groq } from '#/server/providers/adapters/groq.ts'
+import { provider as huggingface } from '#/server/providers/adapters/huggingface.ts'
+import { provider as lovable } from '#/server/providers/adapters/lovable.ts'
+import { provider as novita } from '#/server/providers/adapters/novita.ts'
+import { provider as perplexity } from '#/server/providers/adapters/perplexity.ts'
+import { provider as together } from '#/server/providers/adapters/together.ts'
 import { namespacedUpstreamIdentity } from '#/server/providers/upstream-model.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { GPT_4O } from '../../../packages/rate-card/src/fixtures/gpt-4o.ts'
@@ -20,7 +26,7 @@ import {
   pollProviderModels,
 } from './poll-models.ts'
 import type { SyncDeps } from './sync.ts'
-import { reconcileSameAs } from './model-identity.ts'
+import { ownNamespaces, reconcileSameAs } from './model-identity.ts'
 
 const SOURCE = {
   derivation: 'listing' as const,
@@ -435,6 +441,100 @@ describe('sameAs links', () => {
         { provider: 'vercel', rawId: 'anthropic/claude-opus-4.5' },
       ],
     })
+  })
+})
+
+describe("a host's own namespace states no upstream", () => {
+  it('stores no evidence for an id in the host namespace, for every adapter on the shared helper', async () => {
+    const d = deps()
+    // Real listed ids, 2026-11-21. Only OpenRouter, Groq and Perplexity
+    // list ids in their own namespace today; the others show the stated
+    // upstream is untouched.
+    const cases: Array<[ProviderConfig, string, string | null]> = [
+      [groq, 'groq/compound', null],
+      [groq, 'groq/compound-mini', null],
+      [groq, 'openai/gpt-oss-120b', 'openai'],
+      [openrouterProvider, 'openrouter/auto', null],
+      [openrouterProvider, 'openrouter/free', null],
+      [openrouterProvider, 'moonshotai/kimi-k3', 'moonshotai'],
+      [perplexity, 'perplexity/glm-5.3', null],
+      [perplexity, 'openai/gpt-6.2-sol', 'openai'],
+      [vercel, 'perplexity/sonar', 'perplexity'],
+      [together, 'moonshotai/Kimi-K3', 'moonshotai'],
+      [huggingface, 'zai-org/GLM-5.3', 'zai-org'],
+      [novita, 'deepseek/deepseek-v4-pro', 'deepseek'],
+      [lovable, 'openai/gpt-5.5', 'openai'],
+    ]
+    for (const adapter of new Set(cases.map(([p]) => p))) {
+      await pollProviderModels(d, {
+        ...adapter,
+        listModels: async () => ({
+          models: cases
+            .filter(([p]) => p === adapter)
+            .map(([, rawId]) => ({ rawId })),
+        }),
+      })
+    }
+    for (const [p, rawId, upstream] of cases) {
+      const [row] = await d.db
+        .select()
+        .from(models)
+        .where(eq(models.id, modelDbId(p.id, rawId)))
+      expect([p.id, rawId, row?.upstreamProvider]).toEqual([
+        p.id,
+        rawId,
+        upstream,
+      ])
+      if (upstream === null) expect(row?.upstreamSource).toBeNull()
+    }
+    // Now unstated, the row goes to the name tier, which finds no maker row
+    // named `compound` or `auto`; neither host is a declared maker.
+    await reconcileSameAs(d.db, NOW)
+    for (const [p, rawId] of [
+      [groq, 'groq/compound'],
+      [openrouterProvider, 'openrouter/auto'],
+    ] as const) {
+      const detail = await getModelDetail(d.db, p.id, rawId)
+      expect(detail?.sameAs).toBeNull()
+      expect(detail?.firstParty).toBeNull()
+    }
+  })
+
+  it('clears self evidence a row already holds', async () => {
+    const d = deps()
+    await pollProviderModels(d, stub('groq', [{ rawId: 'groq/compound' }]))
+    const id = modelDbId('groq', 'groq/compound')
+    await d.db
+      .update(models)
+      .set({
+        upstreamProvider: 'groq',
+        upstreamRawId: 'compound',
+        upstreamSource: SOURCE,
+      })
+      .where(eq(models.id, id))
+    await pollProviderModels(d, {
+      ...groq,
+      listModels: async () => ({ models: [{ rawId: 'groq/compound' }] }),
+    })
+    const [row] = await d.db.select().from(models).where(eq(models.id, id))
+    expect(row?.upstreamProvider).toBeNull()
+    expect(row?.upstreamRawId).toBeNull()
+  })
+
+  it("resolves the host's names from the providers and namespace tables", async () => {
+    const d = deps()
+    await pollProviderModels(d, {
+      ...geminiProvider,
+      listModels: async () => ({ models: [] }),
+    })
+    await pollProviderModels(d, {
+      ...vercel,
+      listModels: async () => ({ models: [] }),
+    })
+    expect(await ownNamespaces(d.db, 'gemini')).toEqual(
+      new Set(['gemini', 'google', 'google-ai-studio']),
+    )
+    expect(await ownNamespaces(d.db, 'vercel')).toEqual(new Set(['vercel']))
   })
 })
 
