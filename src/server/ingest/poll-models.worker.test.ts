@@ -99,6 +99,42 @@ const haiku: ModelInfo = {
 }
 
 describe('pollProviderModels', () => {
+  it('fills a gap from a probe record, dated and probe-verified (#717)', async () => {
+    const id = 'groq'
+    const deps = await freshDeps(id)
+    const rawId = 'openai/gpt-oss-safeguard-20b'
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId,
+          activity: 'chat',
+          schemaEndpointId: 'openai/v1/chat/completions',
+          reasoning: {
+            mode: 'effort',
+            mandatory: null,
+            efforts: ['low', 'medium', 'high'],
+          },
+        },
+      ]),
+    )
+    const [row] = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, rawId)))
+    const sources = row?.factSources as ModelFactSources
+    expect(row?.maxOutput).toBe(65536)
+    expect(row?.reasoning).toMatchObject({ mandatory: true })
+    expect(row?.requestMap).toMatchObject({ replayReasoningContent: false })
+    expect(sources.maxOutput).toMatchObject({
+      derivation: 'probe-verified',
+      verifiedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as string,
+    })
+    expect(sources.reasoningMandatory?.derivation).toBe('probe-verified')
+    expect(sources.requestMapFields?.replayReasoningContent?.derivation).toBe(
+      'probe-verified',
+    )
+  })
   it('clears a stored heuristic map when the native listing explicitly reports unknown', async () => {
     const id = 'openai'
     const deps = await freshDeps(id)

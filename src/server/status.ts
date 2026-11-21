@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, sql } from 'drizzle-orm'
+import { count, eq, isNull, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import {
@@ -18,33 +18,41 @@ import type {
   UpdateStorm,
 } from '#/server/ingest/docs-failing.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
-import { servePricing } from '#/server/rate-card.ts'
-import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { staleProbeCount } from '#/server/providers/probes/index.ts'
 import { sourceSilentLedger } from '#/server/source-silent.ts'
 
+/** One activity's share of `Completeness`; `score` null = no fact set. */
+export interface ActivityCompleteness {
+  rows: number
+  score: number | null
+  filled: number
+  needed: number
+}
+
 /**
  * The gap-report score (`#/lib/completeness.ts`) over the provider's live
- * chat models: `filled / needed`, the same number `pnpm run gap:report`
- * prints.
+ * models: `filled / needed`, the same number `pnpm run gap:report` prints.
  */
 export interface Completeness {
   /**
-   * 0 to 1. Null when the provider has no live chat models, and when
-   * there is no current score: none computed yet, or the provider's chat
-   * models changed since the last poll scored them. The CLI prints n/a
-   * for a provider that does not serve chat, and 0 when classification
-   * produced no chat rows.
+   * 0 to 1 over every scored activity and `originLink`. Null when nothing
+   * is scored (every row's activity has no fact set and no row needs a
+   * link), and when there is no current score: none computed yet, or the
+   * provider's live rows changed since the last poll scored them.
    */
   score: number | null
-  /** Live chat models scored. */
-  chat: number
+  /** Live models scored. */
+  rows: number
   /** Facts carried, summed over those models; `silent` facts left out. */
   filled: number
   /** Facts that apply, summed over those models; `silent` facts left out. */
   needed: number
   /** Facts the provider does not publish (`docs/source-silent`). */
   silent: Array<FactKey>
+  /** By activity, plus `unclassified` for rows with a null activity. */
+  activities: Record<string, ActivityCompleteness>
+  /** Rows that need an upstream link (`need`) and rows that have one. */
+  originLink: { have: number; need: number }
 }
 
 export interface ProviderStatus {
@@ -109,69 +117,50 @@ const live = (where = sql`1`) =>
 
 /**
  * The `cache_meta` row holding every provider's score: `fetched_at` is when
- * it was computed, `last_error` the JSON. Scoring reads every live chat
- * row's JSON facts (about 2 MB on the full catalog), so the 15-minute poll
+ * it was computed, `last_error` the JSON. Scoring reads every live row
+ * as `GET /v1/models?pricing=1` serves it, so the 15-minute poll
  * computes it once (`recordCompleteness`) and requests only read the row.
  * Bump the version when the scorer or the `Completeness` shape changes: the
  * old row then reads as no record, and scores are null until the next poll.
  */
-const COMPLETENESS_KEY = 'status:completeness:v2'
+const COMPLETENESS_KEY = 'status:completeness:v3'
 
 /**
- * Completeness of every provider with live chat rows. One query, only the
- * columns the score reads, each row shaped as `GET /v1/models?pricing=1`
- * serves it (`toApiModel`) so this and the CLI score the same thing.
+ * Completeness of every provider with live rows: the rows `GET
+ * /v1/models?pricing=1` serves, so this and the CLI score the same thing.
+ * Origin links match across the whole catalog, so every row is read.
  */
 async function scoreCompleteness(
   db: Db,
   ledger: Ledger,
 ): Promise<Record<string, Completeness>> {
-  const rows = await db
-    .select({
-      providerId: models.providerId,
-      rawId: models.rawId,
-      activity: models.activity,
-      contextWindow: models.contextWindow,
-      maxOutput: models.maxOutput,
-      modalities: models.modalities,
-      pricing: models.pricing,
-      capabilities: models.capabilities,
-      reasoning: models.reasoning,
-      requestMap: models.requestMap,
-      schemaEndpointId: models.schemaEndpointId,
-      factSources: models.factSources,
-    })
-    .from(models)
-    .where(and(eq(models.activity, 'chat'), isNull(models.deprecatedAt)))
-  const report = buildReport(
-    rows.map((row): ModelRow => ({
-      provider: row.providerId,
-      rawId: row.rawId,
-      activity: row.activity,
-      contextWindow: row.contextWindow,
-      maxOutput: row.maxOutput,
-      // JSON columns: the scorer checks what it reads of each.
-      modalities: row.modalities as ModelRow['modalities'],
-      pricing: servePricing(row.pricing, 'full') as ModelRow['pricing'],
-      capabilities: row.capabilities,
-      reasoning: row.reasoning as ModelRow['reasoning'],
-      requestMap: row.requestMap,
-      schemaEndpointId: resolveSchemaEndpointId(row),
-      factSources: row.factSources as ModelRow['factSources'],
-    })),
-    ledger,
-  )
+  // Imported here: the catalog imports this module for its status rows.
+  const { listModelsCatalog } = await import('#/server/catalog.ts')
+  const { models: rows } = await listModelsCatalog(db, { pricing: true })
+  // JSON columns: the scorer checks what it reads of each.
+  const report = buildReport(rows as Array<ModelRow>, ledger)
   return Object.fromEntries(
     report.providers.map((provider) => {
       const { have, need } = scoredFacts(provider)
+      const activities: Record<string, ActivityCompleteness> = {}
+      for (const [name, a] of Object.entries(provider.activities)) {
+        if (!a) continue
+        const { rows: n, score, filled, needed } = a
+        activities[name] = { rows: n, score, filled, needed }
+      }
       return [
         provider.provider,
         {
           score: provider.score,
-          chat: provider.chat,
+          rows: provider.rows,
           filled: have,
           needed: need,
           silent: provider.silent,
+          activities,
+          originLink: {
+            have: provider.originLink.have,
+            need: provider.originLink.need,
+          },
         },
       ]
     }),
@@ -184,17 +173,38 @@ const logCompleteness = (error: unknown) => {
   )
 }
 
+const isCount = (value: unknown) => typeof value === 'number'
+const isScore = (value: unknown) => value === null || isCount(value)
+
 /** A stored entry is served only if it is wholly a `Completeness`. */
 function isCompleteness(value: unknown): value is Completeness {
   if (typeof value !== 'object' || value === null) return false
   const entry = value as Partial<Record<keyof Completeness, unknown>>
+  const link = entry.originLink as Record<string, unknown> | null | undefined
   return (
-    (entry.score === null || typeof entry.score === 'number') &&
-    typeof entry.chat === 'number' &&
-    typeof entry.filled === 'number' &&
-    typeof entry.needed === 'number' &&
+    isScore(entry.score) &&
+    isCount(entry.rows) &&
+    isCount(entry.filled) &&
+    isCount(entry.needed) &&
     Array.isArray(entry.silent) &&
-    entry.silent.every((fact) => typeof fact === 'string')
+    entry.silent.every((fact) => typeof fact === 'string') &&
+    typeof entry.activities === 'object' &&
+    entry.activities !== null &&
+    Object.values(entry.activities).every((a: unknown) => {
+      const act = a as Record<string, unknown> | null
+      return (
+        typeof act === 'object' &&
+        act !== null &&
+        isCount(act.rows) &&
+        isScore(act.score) &&
+        isCount(act.filled) &&
+        isCount(act.needed)
+      )
+    }) &&
+    typeof link === 'object' &&
+    link !== null &&
+    isCount(link.have) &&
+    isCount(link.need)
   )
 }
 
@@ -328,21 +338,23 @@ export async function getServiceStatus(
   const endpointsBy = toMap(endpointCounts)
   const schemasBy = toMap(schemaCounts)
   // The record is as old as the last poll. It is served only for a provider
-  // whose live chat count still equals the count it scored, so a score never
-  // sits over a different row set; that also makes no chat rows a null, not
-  // a zero.
+  // whose live row count still equals the count it scored, so a score never
+  // sits over a different row set; that also makes no rows a null, not a
+  // zero.
   const completeness = (providerId: string): Completeness => {
     const scored = scores[providerId]
-    const chat = modelsBy.get(providerId)?.chat ?? 0
-    if (chat > 0 && scored?.chat === chat) return scored
+    const rows = modelsBy.get(providerId)?.models ?? 0
+    if (rows > 0 && scored?.rows === rows) return scored
     return {
       score: null,
-      chat: 0,
+      rows: 0,
       filled: 0,
       needed: 0,
       silent: FACT_KEYS.filter((key) =>
         sourceSilentLedger.get(providerId)?.has(key),
       ),
+      activities: {},
+      originLink: { have: 0, need: 0 },
     }
   }
 

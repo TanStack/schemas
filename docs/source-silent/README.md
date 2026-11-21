@@ -7,8 +7,22 @@ lists them under `silent`. We never fill them from another catalog.
 One file per provider, `<provider>.md`, so two branches never edit the same
 file. One entry per list line: `- <provider>: <fact> — <why, with the issue>`.
 The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
-`priced`, `cacheRead`, `capabilities`, `reasoning`, `efforts`, `requestMap`,
-`endpoint`). Remove an entry when the provider starts publishing the fact.
+`outputModalities`, `priced`, `cacheRead`, `capabilities`, `reasoning`,
+`efforts`, `requestMap`, `endpoint`, `replayReasoningContent`,
+`originLink`). `activity` is scored but cannot be ledgered. Remove an entry when the provider starts publishing the fact.
+
+Each activity has its own fact set (`ACTIVITY_FACTS` in
+`src/lib/completeness.ts`). Chat rows are scored on the chat keys above.
+Image, video and audio rows are scored on `priced` (any stored rate card
+that is not a models.dev price), `endpoint`, `modalities` (input) and
+`outputModalities`. A row with a null activity is scored on `activity`,
+which it always lacks: classify the row, do not ledger it. Rows of an
+activity with no fact set (embeddings, moderation, decision, world,
+search) are listed with `facts: null` and not scored. `originLink` is
+scored on every row: a row needs an upstream link when its raw id or an
+alias, also with dots read as hyphens, matches a row at another provider
+and no row links to it; a row with `sameAs` set has one. A provider-wide
+entry applies to every activity that scores that key.
 
 For a fact missing only on particular models, use the exact native raw model id:
 `- provider/maker/model-id: fact — why, https://provider.example/model, checked YYYY-MM-DD`.
@@ -23,9 +37,9 @@ partially sourced fact.
 endpoint id is a `chat/completions` route (`reasoning_content` is that wire).
 Anthropic messages, Gemini `generateContent`, OpenAI Responses, and Bedrock
 Converse are not scored for it. `requestMap` applies only when the endpoint
-id is `chat/completions`, `completions`, or `responses`. A provider that does
-not serve chat scores n/a. A chat provider whose classification produced no
-chat rows scores 0.
+id is `chat/completions`, `completions`, or `responses`. A provider with
+nothing scored (every row of an activity with no fact set, no row needing a
+link) scores n/a.
 
 A sourced `true` or `false` fills `replayReasoningContent`; null remains
 unknown. A ledger entry adds read-time evidence at

@@ -9,6 +9,17 @@ its provider names it, and `factSources` gains `maker`. Gemma rows on
 Gemini gain `openWeights` and `weightsUrl` from the Gemma 4 card. Needs D1
 migration `0020`: migrate first, then deploy.
 
+**Breaking:** `completeness` on `GET /v1/status` and `GET /v1/providers`
+scores every live model, not only chat (#714). `chat` is replaced by
+`rows` (live models scored), and the entry gains `activities` (per
+activity `{ rows, score, filled, needed }`, plus `unclassified` for a
+null activity) and `originLink` (`{ have, need }`). Image, video and audio
+rows are scored on `priced`, `endpoint`, `modalities` and
+`outputModalities`; a null activity counts as one missing fact; a model
+whose id another provider also lists needs an origin link. `score` is
+null only when nothing is scored, so an audio-only provider now has one.
+Scores are null until the first models poll after the deploy.
+
 **Changed (0.1.x):** model rows gain `aliasOf` (#709), and `aliases` can
 now name ids that are rows of their own. Mistral rows list their whole
 alias group, an OpenAI dated snapshot lists the undated alias that

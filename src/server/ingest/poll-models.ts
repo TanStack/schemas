@@ -29,6 +29,7 @@ import {
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
 import { keepValidReasoning } from '#/server/providers/reasoning-config.ts'
+import { withProbedFacts } from '#/server/providers/probes/index.ts'
 import { KNOWLEDGE_CUTOFF } from '#/server/providers/types.ts'
 import { chatRequestMap } from '#/server/providers/request-map.ts'
 import {
@@ -166,6 +167,20 @@ function requestMapFor(providerId: string, info: ModelInfo) {
   return info.requestMap !== undefined
     ? info.requestMap
     : chatRequestMap(providerId, info.rawId, info.activity ?? null)
+}
+
+/** Probe records fill the gaps a row still has (issue #717). */
+function probed(
+  info: ModelInfo,
+  providerId: string,
+  bound: string | null,
+): ModelInfo {
+  return withProbedFacts(
+    info,
+    providerId,
+    bound,
+    requestMapFor(providerId, info),
+  )
 }
 
 /**
@@ -900,7 +915,11 @@ export async function pollProviderModels(
       provider,
       keepValidReasoning(
         provider.id,
-        { ...enriched, pricing: card, factSources: factSources ?? undefined },
+        probed(
+          { ...enriched, pricing: card, factSources: factSources ?? undefined },
+          provider.id,
+          bound,
+        ),
         existing,
       ),
       existing,

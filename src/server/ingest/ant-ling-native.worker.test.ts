@@ -86,8 +86,8 @@ it('syncs native Ant Ling schema without spreading model-specific reasoning acro
     })),
     parseLedger(ledgerMarkdown),
   ).providers[0]!
-  expect(report.chat).toBe(7)
-  expect(report.score).toBe(1)
+  expect(report.activities.chat?.rows).toBe(7)
+  expect(report.activities.chat?.score).toBe(1)
   const plain = rows.find(
     (row) => row.activity === 'chat' && !reasoningIds.includes(row.rawId),
   )!

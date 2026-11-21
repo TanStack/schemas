@@ -16,10 +16,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 11,
-  hash: '7c53b47ed7a415d80a3c6de90f091dcb193cf644f69ee63472bba7997a5e4cf1',
+  version: 12,
+  hash: '580456962b829f3b590a31372bb2d749c2b130d887714724bb06236c6138978b',
   notes:
-    'Rows gained maker, who made the model as its provider names it, and factSources gained maker (issue #710).',
+    'Rows gained maker, who made the model as its provider names it, and factSources gained maker (issue #710). Version 11 added factSources.reasoningMandatory (#717); version 10 added aliasOf and factSources.aliases/aliasOf (#709).',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

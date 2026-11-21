@@ -148,7 +148,9 @@ const GLM_TOOL_STREAM = [
   'glm-4.6',
 ]
 
-function blank(partial: Partial<ChatRequestMap>): ChatRequestMap {
+export function blankRequestMap(
+  partial: Partial<ChatRequestMap>,
+): ChatRequestMap {
   return {
     thinking: null,
     maxTokensField: null,
@@ -213,7 +215,7 @@ export function chatRequestMap(
   if (activity !== 'chat') return null
   switch (providerId) {
     case 'openai':
-      return blank({
+      return blankRequestMap({
         thinking: withLevels(
           { on: OPENAI_ON, off: null, levels: null },
           providerId,
@@ -224,7 +226,7 @@ export function chatRequestMap(
         reasoningEffort: true,
       })
     case 'deepseek':
-      return blank({
+      return blankRequestMap({
         thinking: withLevels(
           { on: DEEPSEEK_ON, off: DEEPSEEK_OFF, levels: null },
           providerId,
@@ -237,7 +239,7 @@ export function chatRequestMap(
       })
     case 'zai':
     case 'glm':
-      return blank({
+      return blankRequestMap({
         // The spec's `thinking` is "GLM-4.5 series and higher" only, and
         // `thinking.type` is enabled | disabled, except that the GLM-5.3
         // and GLM-5.3-FLASH series "can only be enabled".
@@ -262,7 +264,7 @@ export function chatRequestMap(
         reasoningEffort: levelsFor(providerId, rawId) === null ? null : true,
       })
     case 'qwen':
-      return blank({
+      return blankRequestMap({
         thinking: withLevels(
           { on: QWEN_ON, off: null, levels: null },
           providerId,
@@ -277,7 +279,7 @@ export function chatRequestMap(
     // spec states the same of the same ids.
     case 'minimax':
     case 'minimax-cn':
-      return blank({
+      return blankRequestMap({
         thinking: withLevels(
           {
             on: MINIMAX_ON,
@@ -292,7 +294,7 @@ export function chatRequestMap(
         reasoningEffort: true,
       })
     case 'vllm':
-      return blank({
+      return blankRequestMap({
         thinking: withLevels(
           { on: VLLM_QWEN_ON, off: null, levels: null },
           providerId,
@@ -303,7 +305,7 @@ export function chatRequestMap(
     // Hugging Face's chat-completion schema names `max_tokens` only. The
     // rest depends on the routed provider, so it stays null.
     case 'huggingface':
-      return blank({ maxTokensField: 'max_tokens' })
+      return blankRequestMap({ maxTokensField: 'max_tokens' })
     // From Moonshot's chat spec, not probed. The international and China
     // documents agree: `max_tokens` is deprecated for
     // `max_completion_tokens`, the role enum has no `developer`, and only
@@ -313,14 +315,14 @@ export function chatRequestMap(
     // field stays null until probed.
     case 'moonshot':
     case 'moonshotai-cn':
-      return blank({
+      return blankRequestMap({
         thinking: kimiThinking(rawId),
         maxTokensField: rawId === 'kimi-k3' ? null : 'max_completion_tokens',
         developerRole: false,
         reasoningEffort: rawId === 'kimi-k3' ? true : null,
       })
     case 'grok':
-      return blank({
+      return blankRequestMap({
         developerRole: false,
         reasoningEffort: false,
       })
@@ -330,7 +332,7 @@ export function chatRequestMap(
     // `thinking` is null: only reasoning models take it, and this map is
     // not per capability.
     case 'cohere':
-      return blank({
+      return blankRequestMap({
         maxTokensField: 'max_tokens',
         developerRole: false,
         reasoningEffort: false,
@@ -342,7 +344,7 @@ export function chatRequestMap(
     // (low | medium | high) with no off value.
     // https://raw.githubusercontent.com/sambanova/sambanova-inference-api-spec/refs/heads/main/openapi.documented.json
     case 'sambanova':
-      return blank({
+      return blankRequestMap({
         thinking: {
           on: { reasoning_effort: 'high' },
           off: null,
