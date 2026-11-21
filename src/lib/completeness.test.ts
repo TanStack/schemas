@@ -192,7 +192,7 @@ describe('origin links', () => {
 
   // The link rules' cases are pinned against reconcileSameAs in
   // src/server/ingest/origin-link-score.worker.test.ts.
-  it('needs a link only where the service wrote one', () => {
+  it('counts the links the service wrote and scores none', () => {
     const report = buildReport([
       origin,
       linked,
@@ -200,20 +200,27 @@ describe('origin links', () => {
       { provider: 'host', rawId: 'model-4.5' },
     ])
     const by = (id: string) =>
-      report.providers.find((p) => p.provider === id)?.originLink
-    expect(by('maker')).toEqual({ have: 0, need: 0, modelSilent: 0 })
-    expect(by('gateway')).toEqual({ have: 1, need: 1, modelSilent: 0 })
-    expect(by('host')).toEqual({ have: 0, need: 0, modelSilent: 0 })
+      report.providers.find((p) => p.provider === id)?.originLinks
+    expect(by('maker')).toBe(0)
+    expect(by('gateway')).toBe(1)
+    expect(by('host')).toBe(0)
+    // Each row lacks only its activity: the link adds nothing to the score.
+    expect(report.providers.map((p) => p.score)).toEqual([0, 0, 0])
   })
 
-  it('names the missing facts of one row', () => {
+  it('leaves a link out of one row’s facts', () => {
     const row: ModelRow = { ...chat, maxOutput: null }
     expect(
       rowCompleteness(scoreRow(row, parseLedger('- host: cacheRead — none'))),
     ).toEqual({ filled: 9, needed: 10, missing: ['maxOutput'] })
-    // A linked row needs its link and has it.
     expect(
       rowCompleteness(scoreRow({ ...row, sameAs: linked.sameAs })),
-    ).toEqual({ filled: 11, needed: 12, missing: ['maxOutput'] })
+    ).toEqual({ filled: 10, needed: 11, missing: ['maxOutput'] })
+  })
+
+  it('refuses an origin-link ledger entry', () => {
+    expect(() => parseLedger('- host: originLink — none')).toThrow(
+      /origin links are not scored/,
+    )
   })
 })

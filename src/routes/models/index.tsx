@@ -71,12 +71,9 @@ const getCatalog = createServerFn({ method: 'GET' })
         continue
       }
       // Same scorer as the front page and `pnpm run gap:report`, one row at a
-      // time, against the row's own activity's facts. Origin links need the
-      // whole catalog, which this page does not read, so they are left out.
+      // time, against the row's own activity's facts.
       completeness[row.id] = rowCompleteness(
-        scoreRow(row as unknown as ModelRow, sourceSilentLedger).filter(
-          (fact) => fact.fact !== 'originLink',
-        ),
+        scoreRow(row as unknown as ModelRow, sourceSilentLedger),
       )
     }
     return {
@@ -274,7 +271,7 @@ function ModelsCatalog() {
                     <th title="Has a price card">priced</th>
                     <th
                       className="num max-sm:hidden"
-                      title="Completeness: facts of this model's activity filled of those scored. A model with no activity is scored on that one gap. Facts the provider does not publish, and origin links, are left out."
+                      title="Completeness: facts of this model's activity filled of those scored. A model with no activity is scored on that one gap. Facts the provider does not publish are left out."
                     >
                       complete
                     </th>

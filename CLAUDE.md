@@ -79,7 +79,7 @@ register→execute), `pnpm run client-smoke` (typed client),
 shares `classifyAndBundle` with the sync engine), `pnpm run gap:report -- --table`
 (per-provider score for the facts `@tanstack/ai-models` needs: chat, image,
 video and audio rows on their own fact sets, null-activity rows as a gap,
-and origin links; one
+and an origin-link count (not scored); one
 `/v1/models` request; `docs/source-silent/<provider>.md` lists facts a provider does not
 publish; `--check` exits 1 below `--target`). Admin sync:
 `curl -X POST localhost:3100/v1/admin/sync/openrouter -H "X-Admin-Key: $ADMIN_KEY"`.
@@ -183,8 +183,8 @@ ones).
   `scripts/gap-report.ts`; the Worker bundles `docs/source-silent/*.md`
   (`source-silent.ts`). The 15-minute cron scores once after the poll
   (`recordCompleteness`, one `cache_meta` row); requests only read it.
-  Its `originLink` reads the served `sameAs` and never re-matches names:
-  a row needs a link only when `reconcileSameAs` wrote one (pinned by
+  Origin links are not scored: `originLinks` counts rows with `sameAs`
+  served, the links `reconcileSameAs` wrote (pinned by
   `origin-link-score.worker.test.ts`).
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console

@@ -372,7 +372,7 @@ describe('getServiceStatus', () => {
       needed: 4,
       silent: [],
       activities: { image: { rows: 1, score: 1 / 4, filled: 1, needed: 4 } },
-      originLink: { have: 0, need: 0 },
+      originLinks: 0,
     })
     // Chat rows with every fact on the ledger have nothing left to fill.
     expect(allSilent).toEqual({
@@ -382,7 +382,7 @@ describe('getServiceStatus', () => {
       needed: 0,
       silent: [...FACT_KEYS],
       activities: { chat: { rows: 1, score: 1, filled: 0, needed: 0 } },
-      originLink: { have: 0, need: 0 },
+      originLinks: 0,
     })
     // full: 10 of 10. thin: contextWindow and capabilities of 7 (no
     // OpenAI-compat route, so requestMap and replay are not scored).
@@ -397,7 +397,7 @@ describe('getServiceStatus', () => {
         chat: { rows: 3, score: 12 / 23, filled: 12, needed: 23 },
         image: { rows: 1, score: 0, filled: 0, needed: 4 },
       },
-      originLink: { have: 0, need: 0 },
+      originLinks: 0,
     })
 
     // The same rows as `pnpm run gap:report` reads them, off the API.
@@ -477,7 +477,7 @@ describe('getServiceStatus', () => {
       needed: 8,
       silent: [],
       activities: {},
-      originLink: { have: 0, need: 0 },
+      originLinks: 0,
     }
     for (const entry of [
       7,
@@ -485,7 +485,10 @@ describe('getServiceStatus', () => {
       { ...whole, score: 'high', silent: 'x' },
       { ...whole, silent: [1] },
       { ...whole, activities: { chat: { rows: 1 } } },
-      { ...whole, originLink: null },
+      { ...whole, originLinks: null },
+      // The `originLink: { have, need }` shape stored before origin links
+      // left the score.
+      { ...whole, originLinks: undefined, originLink: { have: 0, need: 0 } },
       // The chat-only shape stored before per-activity scores.
       { score: 0, chat: 1, filled: 0, needed: 8, silent: [] },
     ]) {
@@ -501,7 +504,7 @@ describe('getServiceStatus', () => {
         needed: 0,
         silent: [],
         activities: {},
-        originLink: { have: 0, need: 0 },
+        originLinks: 0,
       })
     }
     // An array is not a record. One bad entry does not cost the good ones.

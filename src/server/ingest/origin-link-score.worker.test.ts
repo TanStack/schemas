@@ -1,8 +1,8 @@
 /**
- * Pins the completeness scorer's `originLink` to the link rules: one table
- * of cases runs through `reconcileSameAs` (stated tiers, then the name tier
- * `inferLinks`), the catalog serves the rows, and `scoreRow` must say a row
- * needs a link exactly when the rules wrote one.
+ * Pins the gap report's `originLinks` count to the link rules: one table of
+ * cases runs through `reconcileSameAs` (stated tiers, then the name tier
+ * `inferLinks`), the catalog serves the rows, and the report must count
+ * exactly the links the rules wrote, without moving the score.
  */
 import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
@@ -10,7 +10,7 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 
 import { getDb } from '#/db/index.ts'
 import { models } from '#/db/schema.ts'
-import { buildReport, scoreRow } from '#/lib/completeness.ts'
+import { buildReport } from '#/lib/completeness.ts'
 import type { ModelRow } from '#/lib/completeness.ts'
 import { listModelsCatalog } from '#/server/catalog.ts'
 import { namespacedUpstreamIdentity } from '#/server/providers/upstream-model.ts'
@@ -52,7 +52,7 @@ const gateway = {
     namespacedUpstreamIdentity(rawId, SOURCE),
 }
 
-/** [provider, rawId, needs a link]: the rules' answer for each case. */
+/** [provider, rawId, linked]: the rules' answer for each case. */
 const CASES: Record<string, Array<readonly [string, string, boolean]>> = {
   // dashscope / dashscope-cn: shared ids, neither a declared maker.
   'regional twins, no maker': [
@@ -133,7 +133,7 @@ async function seed(d: SyncDeps) {
   await poll(stub('ols-bare', [{ rawId: 'OPUS-9' }]))
 }
 
-describe('originLink need agrees with the links reconcileSameAs writes', () => {
+describe('originLinks counts the links reconcileSameAs writes', () => {
   it.each(Object.entries(CASES))('%s', async (_, rows) => {
     let now = 1_781_150_000
     const d: SyncDeps = {
@@ -154,25 +154,27 @@ describe('originLink need agrees with the links reconcileSameAs writes', () => {
         (r) => r.provider === provider && r.rawId === rawId,
       )
       if (!stored || !row) throw new Error(`${provider}/${rawId} not seeded`)
-      const needs = scoreRow(row).some((f) => f.fact === 'originLink')
       const label = `${provider}/${rawId}`
-      expect({ label, linked: stored.sameAsModelId !== null }).toEqual({
+      expect({
         label,
-        linked: expected,
-      })
-      expect({ label, needs }).toEqual({ label, needs: expected })
+        linked: stored.sameAsModelId !== null,
+        served: row.sameAs != null,
+      }).toEqual({ label, linked: expected, served: expected })
     }
-    // The catalog-wide report agrees too: it counts no row the rules left
-    // unlinked, however many providers list the same name.
+    // The report counts exactly the stored links, however many providers
+    // list the same name, and a link never moves the score.
     const report = buildReport(served)
+    const unlinked = buildReport(served.map((r) => ({ ...r, sameAs: null })))
     for (const provider of new Set(rows.map(([p]) => p))) {
       const linked = await d.db.$count(
         models,
         and(eq(models.providerId, provider), isNotNull(models.sameAsModelId)),
       )
-      expect(
-        report.providers.find((p) => p.provider === provider)?.originLink,
-      ).toEqual({ have: linked, need: linked, modelSilent: 0 })
+      const scored = report.providers.find((p) => p.provider === provider)
+      expect(scored?.originLinks).toBe(linked)
+      expect(scored?.score).toBe(
+        unlinked.providers.find((p) => p.provider === provider)?.score,
+      )
     }
   })
 })

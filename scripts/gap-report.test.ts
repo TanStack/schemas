@@ -198,7 +198,7 @@ describe('gap report scoring', () => {
     expect(speech.providers[0]?.score).toBeNull()
     expect(formatTable(speech)).toContain('n/a')
     expect(formatTable(speech)).toMatch(
-      /unscored.*originLink.*media\.outputModalities/,
+      /unscored.*originLinks.*media\.outputModalities/,
     )
     expect(failing(speech, 1, ['speech', 'absent'])).toEqual(['absent'])
   })

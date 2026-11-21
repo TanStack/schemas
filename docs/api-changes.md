@@ -4,13 +4,16 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
-**Changed (0.1.x):** `completeness.originLink.need` on `GET /v1/status`
-and `GET /v1/providers` counts only models the link rules linked
-(`sameAs` set), not every model whose id another provider also lists. A
-model no rule can link (no declared maker's row, regional twins, a host's
-own model, a stated upstream that matches nothing) no longer lowers the
-score. Stored scores are null until the first models poll after the
-deploy.
+**Breaking:** `completeness` on `GET /v1/status` and `GET /v1/providers`
+no longer scores origin links. `originLink` (`{ have, need }`) is replaced
+by `originLinks`, the number of live models with `sameAs` set: a count,
+not part of `score`, `filled` or `needed`. The old `need` counted every
+model whose id another provider also lists, including models no link rule
+can link (no declared maker's row, regional twins, a stated upstream that
+matches nothing). Scores drop the origin term, so a provider with links
+no longer gets a lift from them. Scores are null until the first models
+poll after the deploy. A `source-silent` ledger entry for `originLink` is
+now refused.
 
 **Added (0.1.x):** model rows gain `sameAsRoot` and `firstParty` (#719),
 and `factSources` gains `firstParty`. `sameAs` can now be name-inferred

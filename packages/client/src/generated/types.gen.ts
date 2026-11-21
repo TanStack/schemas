@@ -112,11 +112,11 @@ export type ServiceStatus = {
       priced: number
     }
     /**
-     * The gap-report score over the live models of the provider (src/lib/completeness.ts). Each activity has its own fact set. chat: contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint, replayReasoningContent. image, video and audio: priced (any stored rate card that is not a models.dev price), endpoint, modalities (input) and outputModalities. A row with a null activity is in unclassified and counts as one missing fact (activity). Rows of an activity with no fact set (embeddings, moderation, decision, world, search) are listed with score null and do not change the score. originLink is scored on every row: a row needs an upstream link when its raw id or an alias, also with dots read as hyphens, matches a row at another provider and no row links to it; a row with sameAs set needs one and has it. Summed per model, each fact counted only where it applies. requestMap applies on chat/completions, completions, and responses routes. replayReasoningContent applies on chat/completions routes whose rows reason. A stated cached-input absence (factSources.cacheRead path not-offered) fills cacheRead. Provider-wide and exact-model source-silent exceptions are excluded. Computed at the models poll (completenessComputedAt), not per request.
+     * The gap-report score over the live models of the provider (src/lib/completeness.ts). Each activity has its own fact set. chat: contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint, replayReasoningContent. image, video and audio: priced (any stored rate card that is not a models.dev price), endpoint, modalities (input) and outputModalities. A row with a null activity is in unclassified and counts as one missing fact (activity). Rows of an activity with no fact set (embeddings, moderation, decision, world, search) are listed with score null and do not change the score. Origin links are not scored: originLinks counts them. Summed per model, each fact counted only where it applies. requestMap applies on chat/completions, completions, and responses routes. replayReasoningContent applies on chat/completions routes whose rows reason. A stated cached-input absence (factSources.cacheRead path not-offered) fills cacheRead. Provider-wide and exact-model source-silent exceptions are excluded. Computed at the models poll (completenessComputedAt), not per request.
      */
     completeness?: {
       /**
-       * filled / needed, 0 to 1, over every scored activity and originLink. 1 when every fact that applies is in silent. null when nothing is scored (every live model is of an activity with no fact set and none needs an origin link), when no score is stored yet, and when the live models changed since the stored score.
+       * filled / needed, 0 to 1, over every scored activity. 1 when every fact that applies is in silent. null when nothing is scored (every live model is of an activity with no fact set), when no score is stored yet, and when the live models changed since the stored score.
        */
       score: number | null
       /**
@@ -150,12 +150,9 @@ export type ServiceStatus = {
         }
       }
       /**
-       * Models the link rules linked to another provider's row (need) and models whose sameAs is served (have). A model no rule can link (no declared maker's row, two roots, a declared maker's own row, a stated upstream that matches nothing) needs none. Silent and exact-model exceptions are not subtracted here.
+       * Live models whose sameAs is served: links to the origin row at another provider. A count, not part of score: whether an unlinked model could be linked depends on what the link rules read and the catalog does not serve (stated upstreams that match nothing, the namespace table, the maker declaration). 0 when no score is served.
        */
-      originLink: {
-        have: number
-        need: number
-      }
+      originLinks: number
     }
     /**
      * Model tallies count live models only: what GET /v1/models lists by default. Deprecated models are in deprecated and nowhere else.

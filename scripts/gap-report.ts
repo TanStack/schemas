@@ -1,6 +1,6 @@
 /**
  * Gap report: which facts `@tanstack/ai-models` needs are still missing,
- * per provider and activity, with origin-link coverage. One HTTP request;
+ * per provider and activity, with origin-link counts. One HTTP request;
  * no per-model detail calls.
  *
  *   pnpm run gap:report                       # JSON
@@ -110,7 +110,7 @@ export function formatTable(report: GapReport): string {
     ...MEDIA,
     'noAct',
     'unscored',
-    'originLink',
+    'originLinks',
     'm.dev',
     ...CHAT_FACT_KEYS,
     ...MEDIA_FACT_KEYS.map((key) => `media.${key}`),
@@ -126,9 +126,7 @@ export function formatTable(report: GapReport): string {
     }),
     String(p.activities[UNCLASSIFIED]?.rows ?? 0),
     String(unscoredRows(p)),
-    p.silent.includes('originLink')
-      ? 'silent'
-      : `${p.originLink.have}/${p.originLink.need}`,
+    String(p.originLinks),
     String(p.fromModelsDev),
     ...CHAT_FACT_KEYS.map((key) => factCell(p, key, ['chat'])),
     ...MEDIA_FACT_KEYS.map((key) => factCell(p, key, MEDIA)),
