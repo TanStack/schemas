@@ -952,4 +952,39 @@ describe('Bedrock malformed current quotes', () => {
       bedrockCardPrice(GPT54.replace('$2.00', '$unreadable'), 'global'),
     ).toThrow('amazon-bedrock model card pricing: unreadable quote')
   })
+
+  it('states the maker and model a card id names, minus Bedrock version and geography', () => {
+    const upstream = (rawId: string) => {
+      const identity = provider.upstreamModelIdentity?.(rawId)
+      return identity ? `${identity.providerNamespace}/${identity.rawId}` : null
+    }
+    // Ids from the live listing, 2026-11-21.
+    expect(upstream('anthropic.claude-opus-4-5-20251101-v1:0')).toBe(
+      'anthropic/claude-opus-4-5-20251101',
+    )
+    expect(upstream('global.anthropic.claude-opus-4-6-v1')).toBe(
+      'anthropic/claude-opus-4-6',
+    )
+    expect(upstream('us-gov.openai.gpt-oss-120b-1:0')).toBe(
+      'openai/gpt-oss-120b',
+    )
+    expect(upstream('apac.anthropic.claude-sonnet-4-20250514-v1:0')).toBe(
+      'anthropic/claude-sonnet-4-20250514',
+    )
+    expect(upstream('us.xai.grok-4.7')).toBe('xai/grok-4.7')
+    expect(upstream('stability.stable-image-core-v1:1')).toBe(
+      'stability/stable-image-core',
+    )
+    // A maker's own version stays: only Bedrock's v1 is stripped.
+    expect(upstream('cohere.embed-v4:0')).toBe('cohere/embed-v4')
+    expect(upstream('deepseek.v3.2')).toBe('deepseek/v3.2')
+    // Bedrock's own models name no other host.
+    expect(upstream('amazon.nova-pro-v1:0')).toBeNull()
+    expect(upstream('eu.amazon.nova-lite-v1:0')).toBeNull()
+    expect(provider.upstreamModelIdentity?.('openai.gpt-5.5')?.source).toEqual({
+      derivation: 'docs-derived',
+      sourceUrl: BEDROCK_CARDS_URL,
+      path: 'Programmatic Access: Model ID',
+    })
+  })
 })
