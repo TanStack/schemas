@@ -380,7 +380,8 @@ Pushes to `main` deploy through `.source/workflows/deploy.ts` on TanStack
 Source. The job runs only as a protected run in the `production` CI
 environment: with no branch rule on `main`, or no `CLOUDFLARE_API_TOKEN`
 in `production`, it is skipped, not failed. Check `src run list` after a
-merge.
+merge. To deploy `main` again with no new commit, run
+`src workflow run deploy`: a rerun of a skipped run stays skipped.
 
 Steps:
 
