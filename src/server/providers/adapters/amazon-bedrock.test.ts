@@ -11,6 +11,7 @@ import {
   bedrockCardPrice,
   bedrockReasoning,
   parseBedrockCard,
+  parseBedrockProfileRows,
 } from '../bedrock-cards.ts'
 import {
   BEDROCK_METERED_URL,
@@ -980,6 +981,18 @@ describe('Bedrock malformed current quotes', () => {
     expect(upstream('deepseek.v3.2')).toBe('deepseek/v3.2')
     // Bedrock's own models name no other host.
     expect(upstream('amazon.nova-pro-v1:0')).toBeNull()
+    // An unknown geography is not a maker.
+    expect(upstream('me.anthropic.claude-opus-5')).toBeNull()
+    expect(upstream('mx.amazon.nova-pro-v1:0')).toBeNull()
+    // Every id the card parser emits from the fixture card.
+    const source = { url: BEDROCK_CARDS_URL, hash: 'h', extractedAt: 'now' }
+    const parsed = [
+      parseBedrockCard(SONNET, source),
+      ...parseBedrockProfileRows(SONNET, source),
+    ].map((row) => (row ? upstream(row.rawId) : null))
+    expect(parsed).toEqual(
+      Array(4).fill('anthropic/claude-sonnet-4-5-20250929'),
+    )
     expect(upstream('eu.amazon.nova-lite-v1:0')).toBeNull()
     expect(provider.upstreamModelIdentity?.('openai.gpt-5.5')?.source).toEqual({
       derivation: 'docs-derived',

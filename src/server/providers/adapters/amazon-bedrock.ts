@@ -44,6 +44,10 @@ const BEDROCK_VERSION = /(?:-v1(?::\d+)?|-1:\d+|:\d+)$/
 function bedrockUpstreamIdentity(rawId: string): UpstreamModelIdentity | null {
   const match = rawId.replace(PROFILE_GEO, '').match(/^([a-z0-9-]+)\.(.+)$/)
   if (!match?.[1] || !match[2] || match[1] === 'amazon') return null
+  // A model part that still opens with `maker.` means the first segment was a
+  // geography this rule does not know (`me.anthropic.…`): state nothing.
+  // Every dot inside a listed model name is followed by a digit (`grok-4.7`).
+  if (/^[a-z][a-z0-9-]*\.[a-z]/.test(match[2])) return null
   const upstreamId = match[2].replace(BEDROCK_VERSION, '')
   return upstreamId
     ? {
