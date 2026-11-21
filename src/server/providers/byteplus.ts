@@ -49,7 +49,10 @@ import {
   arkGoFileUrl,
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
-import { byteplusModelPricing } from './byteplus-pricing.ts'
+import {
+  byteplusModelMakers,
+  byteplusModelPricing,
+} from './byteplus-pricing.ts'
 import { byteplusSpeechPricing } from './byteplus-speech-pricing.ts'
 import { byteplusServerTools } from './byteplus-tools.ts'
 import { docsReport, docsRun } from './model-facts.ts'
@@ -620,11 +623,12 @@ async function listModels(
       elapsedMs: 0,
     })
   }
-  const [pricing, speech, reasoning, tools] = await Promise.all([
+  const [pricing, speech, reasoning, tools, makers] = await Promise.all([
     byteplusModelPricing(docs, kv),
     byteplusSpeechPricing(docs, kv),
     byteplusModelReasoning(kv),
     byteplusServerTools(docs, kv),
+    byteplusModelMakers(docs, kv),
   ])
   const withPricing = (models: Array<ModelInfo>): Array<ModelInfo> =>
     models.map((model) => {
@@ -654,6 +658,7 @@ async function listModels(
             }
           : {},
         reasoning(model.rawId, listsReasoning(model.capabilities)),
+        makers(model.rawId),
       )
     })
   if (!key) {

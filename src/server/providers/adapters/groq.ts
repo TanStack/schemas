@@ -27,10 +27,12 @@ import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import { bearerConnect } from '../connect.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
+import type { OpenAiCompatModelRow } from '../openai-compat.ts'
 
 const GROQ_MOCK_URL =
   'https://raw.githubusercontent.com/groq/groq-python/main/scripts/mock'
@@ -60,6 +62,26 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   return parseGzippedOpenApi(bytes, 'groq', GROQ_MOCK_URL)
 }
 
+/**
+ * The maker Groq's listing names in `owned_by` (issue #710), as written.
+ * A row with none states no maker.
+ */
+export function groqMakerFacts(
+  row: Pick<OpenAiCompatModelRow, 'owned_by'>,
+): Partial<ModelInfo> {
+  const maker = row.owned_by?.trim() ?? ''
+  return {
+    maker: maker === '' ? null : maker,
+    factSources: {
+      maker: {
+        derivation: 'listing',
+        sourceUrl: GROQ_MODELS_URL,
+        path: maker === '' ? 'unstated' : 'owned_by',
+      },
+    },
+  }
+}
+
 async function listModels(
   env: ProviderSecrets,
   kv?: KVNamespace,
@@ -70,6 +92,7 @@ async function listModels(
     env,
     envVar: 'GROQ_API_KEY',
     activity: groqModelActivity,
+    extend: (row) => Promise.resolve(groqMakerFacts(row)),
   })
   if (listed.models.length === 0) return listed
   const docs = docsRun()

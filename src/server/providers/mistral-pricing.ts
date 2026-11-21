@@ -1012,6 +1012,28 @@ export function parseMistralApiSlugs(markdown: string): Map<string, string> {
   return out
 }
 
+/**
+ * API name → maker, from an overview Summary that says "A third-party ...
+ * model from Z.ai" (issue #710). The name is copied as written. Mistral's
+ * own models carry no such sentence and are absent. Throws when the
+ * overview names no API ids: the table moved.
+ */
+export function parseMistralMakers(markdown: string): Map<string, string> {
+  parseMistralApiSlugs(markdown)
+  const out = new Map<string, string>()
+  for (const match of markdown.matchAll(
+    /^\|\s*\[[^\]]*\]\([^)]*\)\s*\|\s*`([^`]+)`\s*\|[^|]*\|[^|]*\|\s*([^|]*)\|/gm,
+  )) {
+    const id = match[1]
+    const maker =
+      /\bthird-party\b[^|]*?\bmodel from ([A-Z][\w.&-]*(?: [A-Z][\w.&-]*)*)/.exec(
+        match[2] ?? '',
+      )?.[1]
+    if (id && maker) out.set(id, maker.replace(/\.$/, ''))
+  }
+  return out
+}
+
 export interface MistralModelPage {
   slug: string
   ids: Array<string>
@@ -1551,6 +1573,7 @@ const ALIAS_FACTS = [
   'maxOutput',
   'reasoning',
   'serverTools',
+  'maker',
 ] as const
 
 /**

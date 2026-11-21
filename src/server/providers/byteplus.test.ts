@@ -18,7 +18,10 @@ import {
   BYTEPLUS_PRICING_URL,
   BYTEPLUS_VIDEO_GUIDE_URL,
   compileSeedreamProCard,
+  parseByteplusMakers,
 } from './byteplus-pricing.ts'
+import type { ByteplusDoc } from './byteplus-pricing.ts'
+import modelListProviders from './fixtures/byteplus-model-list-providers.json'
 import {
   BYTEPLUS_ASR_PRICING_URL,
   BYTEPLUS_AUDIO_API_URL,
@@ -504,6 +507,59 @@ describe('byteplus pricing pages failing', () => {
         [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
       }),
     ).rejects.toThrow(/video\): parsed 0/)
+  })
+})
+
+describe('byteplus maker (#710)', () => {
+  const doc = modelListProviders as ByteplusDoc
+
+  it('reads the merged Provider cells of the model list (2026-11-21)', () => {
+    const makers = parseByteplusMakers(doc)
+    expect(makers.get('seed-2-0-lite-260428')).toBe('ByteDance')
+    expect(makers.get('deepseek-v4-pro-ga-260813')).toBe('DeepSeek')
+    expect(makers.get('deepseek-v4-pro-260425')).toBe('DeepSeek')
+    expect(makers.get('glm-5-3-flash-260828')).toBe('Z.ai')
+    expect(makers.get('glm-5-2-260617')).toBe('Z.ai')
+    expect(makers.get('hitem3d-2-0-251223')).toBe('Hitem3D')
+    expect(makers.has('gpt-oss-120b-250805')).toBe(false)
+  })
+
+  it('throws on a list with no Provider table', () => {
+    expect(() => parseByteplusMakers({ data: { '0': { ops: [] } } })).toThrow(
+      /parsed 0 model rows/,
+    )
+  })
+
+  it('names the maker, says when the list is silent, keeps it when down', async () => {
+    const pick = (models: Array<{ rawId: string; maker?: unknown }>) =>
+      Object.fromEntries(
+        models
+          .filter((m) =>
+            ['glm-5-2-260617', 'gpt-oss-120b-250805'].includes(m.rawId),
+          )
+          .map((m) => [m.rawId, m]),
+      )
+    const read = pick(
+      (
+        await listWith({
+          [BYTEPLUS_MODEL_LIST_URL]: () => routerHtml(doc),
+        })
+      ).models,
+    )
+    expect(read['glm-5-2-260617']).toMatchObject({
+      maker: 'Z.ai',
+      factSources: {
+        maker: { sourceUrl: BYTEPLUS_MODEL_LIST_URL, path: 'Provider' },
+      },
+    })
+    expect(read['gpt-oss-120b-250805']).toMatchObject({
+      maker: null,
+      factSources: { maker: { path: 'unstated' } },
+    })
+    const down = await listWith({ [BYTEPLUS_MODEL_LIST_URL]: null })
+    expect(
+      down.models.find((m) => m.rawId === 'glm-5-2-260617')?.absent,
+    ).toMatchObject({ maker: 'unavailable' })
   })
 })
 

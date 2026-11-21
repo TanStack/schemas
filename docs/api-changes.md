@@ -4,6 +4,11 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
+**Added (0.1.x):** model rows gain `maker` (#710), the model's maker as
+its provider names it, and `factSources` gains `maker`. Gemma rows on
+Gemini gain `openWeights` and `weightsUrl` from the Gemma 4 card. Needs D1
+migration `0020`: migrate first, then deploy.
+
 **Changed (0.1.x):** model rows gain `aliasOf` (#709), and `aliases` can
 now name ids that are rows of their own. Mistral rows list their whole
 alias group, an OpenAI dated snapshot lists the undated alias that

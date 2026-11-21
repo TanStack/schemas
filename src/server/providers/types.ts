@@ -233,6 +233,11 @@ export interface ModelFactSources {
    * `path: 'unstated'`: no docs page names this id.
    */
   aliases?: FactSource
+  /**
+   * Where `maker` was read. With `maker` null, `path: 'unstated'`: the
+   * host's source was read and names no maker for this id.
+   */
+  maker?: FactSource
 }
 
 /**
@@ -355,6 +360,7 @@ export type ModelFact =
   | 'releasedAt'
   | 'knowledgeCutoff'
   | 'openWeights'
+  | 'maker'
   | 'trainsOnRequestData'
   | 'providerMetadata'
 
@@ -406,6 +412,7 @@ export type ModelFact =
  * | `knowledgeCutoff`  | null                                             |
  * | `openWeights`      | null, and `weightsUrl` with it: the pair is one  |
  * |                    | fact, marked absent as `openWeights`             |
+ * | `maker`            | null                                             |
  * | `trainsOnRequestData` | null. A probe can still set it at read time  |
  * |                    | when this poll did not state the id              |
  * | `providerMetadata` | null                                             |
@@ -480,6 +487,13 @@ export interface ModelInfo {
   openWeights?: boolean | null
   /** Where the provider says the weights are; stored only with `openWeights: true`. */
   weightsUrl?: string | null
+  /**
+   * Who made the model, exactly as the host's own source names it (Groq's
+   * `owned_by`, a BytePlus "Provider" cell, Mistral's "third-party ...
+   * model from X"). Never read from an id prefix. Null when the source
+   * names none; `factSources.maker` says whether it was read.
+   */
+  maker?: string | null
   /**
    * True only when this id's own source states it trains on request data.
    * Null when that source states it does not, or does not mention the id.

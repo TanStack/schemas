@@ -135,6 +135,8 @@ export interface OpenAiCompatModelRow {
   aliases?: Array<string>
   /** mistral: the alias group's model id, the same on every member. */
   name?: string
+  /** groq: the maker's name (`OpenAI`, `Alibaba Cloud`). */
+  owned_by?: string
   /** fireworks: `HF_BASE_MODEL`, `EMBEDDING_MODEL`, `ROUTER`, `CUSTOM_MODEL`. */
   kind?: string
   supports_chat?: boolean

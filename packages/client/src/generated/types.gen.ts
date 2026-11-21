@@ -735,6 +735,7 @@ export type ModelFactSources = {
   efforts?: FactSource
   aliases?: FactSource
   aliasOf?: FactSource
+  maker?: FactSource
 } | null
 
 export type FactDiscrepancy = {
@@ -855,6 +856,10 @@ export type Model = {
    * Where the provider says the weights are. Set only when openWeights is true.
    */
   weightsUrl: string | null
+  /**
+   * Who made the model, exactly as this row's provider names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider. It can name the host's own company (ByteDance on BytePlus Seed rows, Google DeepMind on Gemma). null when the provider names none; factSources.maker with path unstated means its source was read and names no maker for this id, no factSources.maker means no source was read.
+   */
+  maker: string | null
   /**
    * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
    */
@@ -984,6 +989,10 @@ export type ExportModel = {
    * Where the provider says the weights are. Set only when openWeights is true.
    */
   weightsUrl: string | null
+  /**
+   * Who made the model, exactly as this row's provider names it: Groq's owned_by, the Provider column of BytePlus's model list, Mistral's "third-party ... model from X" summary, the Authors line of Google's Gemma model card. Never read from an id prefix, never copied from another provider. It can name the host's own company (ByteDance on BytePlus Seed rows, Google DeepMind on Gemma). null when the provider names none; factSources.maker with path unstated means its source was read and names no maker for this id, no factSources.maker means no source was read.
+   */
+  maker: string | null
   /**
    * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
    */

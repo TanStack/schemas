@@ -18,6 +18,7 @@ import {
   MISTRAL_PRICING_URL,
   copyMistralAliasFacts,
   mistralModelPricing,
+  parseMistralMakers,
 } from '../mistral-pricing.ts'
 import {
   MISTRAL_OPENAPI_URL,
@@ -30,7 +31,7 @@ import {
   mistralModelReasoning,
   overlayModelFacts,
 } from '../reasoning-config.ts'
-import { fetchOpenApi } from '../types.ts'
+import { fetchOpenApi, fetchText, sha256Text } from '../types.ts'
 import { bearerConnect } from '../connect.ts'
 import type {
   FactSource,
@@ -129,6 +130,32 @@ export function mistralAliasFacts(
   }
 }
 
+/** The models overview, cached apart from its deprecations parse. */
+const MISTRAL_MAKERS_KEY = `${MISTRAL_DEPRECATIONS_URL}#makers`
+
+/**
+ * The maker an overview Summary names for this id, or a stated silence:
+ * the overview was read and names none (Mistral's own models, and alias
+ * ids the overview does not list until `copyMistralAliasFacts` fills them).
+ */
+export function mistralMakerFacts(
+  rawId: string,
+  makers: { byId: Record<string, string>; hash: string },
+): Partial<ModelInfo> {
+  const maker = makers.byId[rawId] ?? null
+  return {
+    maker,
+    factSources: {
+      maker: {
+        derivation: 'docs-derived',
+        sourceUrl: MISTRAL_DEPRECATIONS_URL,
+        sourceHash: makers.hash,
+        path: maker === null ? 'unstated' : 'Summary',
+      },
+    },
+  }
+}
+
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const { spec, hash } = await fetchOpenApi(MISTRAL_OPENAPI_URL)
   return {
@@ -175,7 +202,7 @@ export const provider: ProviderConfig = {
     // The pricing load reads the pricing table, changelog, models index,
     // model pages and web search guide; a failing docs page keeps the
     // stored facts instead of failing the poll.
-    const [pricing, reasoning, wire] = await Promise.all([
+    const [pricing, reasoning, wire, makers] = await Promise.all([
       tryDocs(docs, MISTRAL_PRICING_URL, (cached) =>
         mistralModelPricing(
           kv,
@@ -187,6 +214,15 @@ export const provider: ProviderConfig = {
         mistralModelReasoning(kv, cached),
       ),
       chat ? mistralChatWire(kv) : Promise.resolve(null),
+      tryDocs(docs, MISTRAL_MAKERS_KEY, (cached) =>
+        cached(kv, MISTRAL_MAKERS_KEY, async () => {
+          const markdown = await fetchText(MISTRAL_DEPRECATIONS_URL)
+          return {
+            byId: Object.fromEntries(parseMistralMakers(markdown)),
+            hash: await sha256Text(markdown),
+          }
+        }),
+      ),
     ])
     const models = listed.models.map((model) =>
       overlayModelFacts(
@@ -197,6 +233,7 @@ export const provider: ProviderConfig = {
         reasoning
           ? reasoning(model.rawId, listsReasoning(model.capabilities))
           : unavailable('reasoning'),
+        makers ? mistralMakerFacts(model.rawId, makers) : unavailable('maker'),
       ),
     )
     copyMistralAliasFacts(models, aliases)

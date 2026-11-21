@@ -281,6 +281,39 @@ export function parseGemmaModalities(
   return out
 }
 
+/** What the Gemma 4 card's header states about every size it binds. */
+export interface GemmaCardFacts {
+  /** The "Authors" line, as written. Null when the card has none. */
+  maker: string | null
+  /** True when the card says the release includes open-weights models. */
+  openWeights: boolean | null
+  /** The header's "Hugging Face" link, only with `openWeights`. */
+  weightsUrl: string | null
+}
+
+/**
+ * Maker and weights from the card header (issue #710): `Authors : Google
+ * DeepMind`, the "includes open-weights models" sentence, and the header's
+ * Hugging Face link. Nothing here is inferred from the name Gemma.
+ */
+export function parseGemmaCardFacts(html: string): GemmaCardFacts {
+  const maker =
+    /<strong>Authors<\/strong>\s*:\s*(?:<a [^>]*>)?([^<|]+)/i
+      .exec(html)?.[1]
+      ?.trim() ?? ''
+  const openWeights = /includes open-weights models/i.test(
+    html.replace(/\s+/g, ' '),
+  )
+    ? true
+    : null
+  const weightsUrl = openWeights
+    ? (/<a href="(https:\/\/huggingface\.co\/[^"]+)">Hugging Face<\/a>/.exec(
+        html,
+      )?.[1] ?? null)
+    : null
+  return { maker: maker === '' ? null : maker, openWeights, weightsUrl }
+}
+
 export interface GeminiDeprecationFacts {
   routes: Record<string, string>
   /** Model id → `YYYY-MM-DD`. Empty when a cached doc predates the column. */
@@ -328,6 +361,8 @@ export interface GeminiPublishedBindings {
   changelog: { url: string; hash: string }
   /** Null when the model card could not be read. */
   gemma: Record<string, GemmaModalities> | null
+  /** Null when the model card could not be read. */
+  gemmaCard: GemmaCardFacts | null
   gemmaSource: { url: string; hash: string }
   docsFailures: DocsFailures
 }
@@ -356,6 +391,7 @@ export async function geminiPublishedBindings(
           modalities: Object.fromEntries(
             parseGemmaModalities(htmlTables(markdown)),
           ),
+          card: parseGemmaCardFacts(markdown),
           hash: await sha256Text(markdown),
         }
       }),
@@ -368,6 +404,7 @@ export async function geminiPublishedBindings(
       hash: changelog?.hash ?? '',
     },
     gemma: gemma ? gemma.modalities : null,
+    gemmaCard: gemma ? gemma.card : null,
     gemmaSource: { url: GEMMA_MODEL_CARD_URL, hash: gemma?.hash ?? '' },
     docsFailures: docsReport(run),
   }
@@ -378,6 +415,9 @@ interface FactRow {
   modalities?: unknown
   aliases?: Array<string> | null
   aliasOf?: string | null
+  maker?: string | null
+  openWeights?: boolean | null
+  weightsUrl?: string | null
   pricing?: unknown
   factSources?: ModelFactSources
   absent?: Partial<Record<ModelFact, FactAbsence>>
@@ -402,6 +442,47 @@ export function attachGeminiPublishedFacts<T extends FactRow>(
   }
 
   const rawIds = Array.from(byId.keys())
+  if (bindings.gemma && bindings.gemmaCard) {
+    // The card's header speaks for every size its table binds.
+    const card = bindings.gemmaCard
+    const source = (path: string) => ({
+      derivation: 'docs-derived' as const,
+      sourceUrl: bindings.gemmaSource.url,
+      ...sourceHash(bindings.gemmaSource.hash),
+      path,
+    })
+    for (const rawId of rawIds) {
+      const model = byId.get(rawId)
+      if (!model || !(rawId in bindings.gemma)) continue
+      put({
+        ...model,
+        maker: card.maker,
+        openWeights: card.openWeights,
+        weightsUrl: card.weightsUrl,
+        factSources: {
+          ...model.factSources,
+          maker: source(card.maker === null ? 'unstated' : 'Authors'),
+          ...(card.openWeights === null
+            ? {}
+            : { openWeights: source('open-weights models; Hugging Face') }),
+        },
+      })
+    }
+  } else if (!bindings.gemma) {
+    // No card: keep what it stated before on every row it may bind.
+    for (const rawId of rawIds) {
+      const model = byId.get(rawId)
+      if (!model) continue
+      put({
+        ...model,
+        absent: {
+          ...model.absent,
+          maker: 'unavailable',
+          openWeights: 'unavailable',
+        },
+      })
+    }
+  }
   if (bindings.gemma) {
     for (const rawId of rawIds) {
       const model = byId.get(rawId)

@@ -181,6 +181,7 @@ function ModelDetail() {
     ['knowledgeCutoff', model.knowledgeCutoff],
     ['openWeights', model.openWeights],
     ['weightsUrl', model.weightsUrl],
+    ['maker', model.maker],
     ['requestMap', model.requestMap],
     ['providerMetadata', model.providerMetadata],
   ]
