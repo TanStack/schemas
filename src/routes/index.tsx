@@ -92,9 +92,9 @@ function completenessNote(c: Completeness): string {
   // Defensive: nothing `/v1/status` sends may throw in render.
   const silent = Array.isArray(c.silent) ? c.silent.join(', ') : ''
   if (c.needed === 0) {
-    return `Nothing to fill across ${c.chat} chat models: this provider does not publish ${silent}`
+    return `Nothing to fill across ${c.rows} models: this provider does not publish ${silent}`
   }
-  return `${c.filled} of ${c.needed} facts filled across ${c.chat} chat models${silent ? `; not published by this provider: ${silent}` : ''}`
+  return `${c.filled} of ${c.needed} facts filled across ${c.rows} models${silent ? `; not published by this provider: ${silent}` : ''}`
 }
 
 function Landing() {
@@ -275,9 +275,9 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Chat completeness: the share of the chat facts @tanstack/ai-models needs that are filled for this provider's chat models: context window, max output, modalities, price, cache price, capabilities, reasoning, effort levels, request map, endpoint. Facts the provider does not publish are left out."
+                    title="Completeness: the share of the facts @tanstack/ai-models needs that are filled for this provider's models. Chat rows are scored on the chat facts; image, video and audio rows on price, endpoint and input and output modalities; a row with no activity is a gap; a row whose id another provider also lists needs an origin link. Facts the provider does not publish are left out."
                   >
-                    chat
+                    complete
                   </th>
                   <th className="num">polled</th>
                   <th className="num">synced</th>

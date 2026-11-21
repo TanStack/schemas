@@ -29,6 +29,7 @@ import {
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
 import { keepValidReasoning } from '#/server/providers/reasoning-config.ts'
+import { withProbedFacts } from '#/server/providers/probes/index.ts'
 import { KNOWLEDGE_CUTOFF } from '#/server/providers/types.ts'
 import { chatRequestMap } from '#/server/providers/request-map.ts'
 import {
@@ -145,10 +146,16 @@ function usableReleasedAt(info: ModelInfo, before: number): number | null {
   return releasedAt
 }
 
-/** Stable reasoning provenance. A silent docs read must be stored, not dropped. */
-function reasoningSourcePath(sources: unknown): string | null {
+/**
+ * Stable provenance of one fact. A silent docs read must be stored, not
+ * dropped: an alias statement that leaves `aliases` null is still news.
+ */
+function sourcePath(
+  sources: unknown,
+  fact: 'reasoning' | 'aliasOf' | 'aliases',
+): string | null {
   if (typeof sources !== 'object' || sources === null) return null
-  const path = (sources as ModelFactSources).reasoning?.path
+  const path = (sources as ModelFactSources)[fact]?.path
   return typeof path === 'string' ? path : null
 }
 
@@ -160,6 +167,20 @@ function requestMapFor(providerId: string, info: ModelInfo) {
   return info.requestMap !== undefined
     ? info.requestMap
     : chatRequestMap(providerId, info.rawId, info.activity ?? null)
+}
+
+/** Probe records fill the gaps a row still has (issue #717). */
+function probed(
+  info: ModelInfo,
+  providerId: string,
+  bound: string | null,
+): ModelInfo {
+  return withProbedFacts(
+    info,
+    providerId,
+    bound,
+    requestMapFor(providerId, info),
+  )
 }
 
 /**
@@ -185,10 +206,13 @@ function comparable(
     pricing: info.pricing ?? null,
     capabilities: info.capabilities ?? null,
     reasoning: info.reasoning ?? null,
-    reasoningSource: reasoningSourcePath(info.factSources),
+    reasoningSource: sourcePath(info.factSources, 'reasoning'),
     serverTools: info.serverTools ?? null,
     requestMap: requestMapFor(providerId, info),
     aliases: storedAliases(info.aliases),
+    aliasesSource: sourcePath(info.factSources, 'aliases'),
+    aliasOf: info.aliasOf ?? null,
+    aliasOfSource: sourcePath(info.factSources, 'aliasOf'),
     schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
     releasedAt: info.releasedAt ?? null,
@@ -553,6 +577,7 @@ function storedFacts(
     serverTools: row?.serverTools ?? null,
     requestMap: row?.requestMap ?? null,
     aliases: row?.aliases ?? null,
+    aliasOf: row?.aliasOf ?? null,
     schemaEndpointId: row?.schemaEndpointId ?? null,
     releasedAt: row?.releasedAt ?? null,
     knowledgeCutoff: row?.knowledgeCutoff ?? null,
@@ -573,6 +598,8 @@ const SOURCED_FACTS = [
   'knowledgeCutoff',
   'openWeights',
   'trainsOnRequestData',
+  'aliases',
+  'aliasOf',
 ] as const
 
 /** The facts `enrichListed` fills from the bound request schema. */
@@ -884,7 +911,11 @@ export async function pollProviderModels(
       provider,
       keepValidReasoning(
         provider.id,
-        { ...enriched, pricing: card, factSources: factSources ?? undefined },
+        probed(
+          { ...enriched, pricing: card, factSources: factSources ?? undefined },
+          provider.id,
+          bound,
+        ),
         existing,
       ),
       existing,
@@ -946,6 +977,7 @@ export async function pollProviderModels(
         serverTools: info.serverTools ?? null,
         requestMap: requestMapFor(provider.id, info),
         aliases: storedAliases(info.aliases),
+        aliasOf: info.aliasOf ?? null,
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         releasedAt: info.releasedAt ?? null,
@@ -980,10 +1012,13 @@ export async function pollProviderModels(
       pricing: existing.pricing,
       capabilities: existing.capabilities,
       reasoning: existing.reasoning,
-      reasoningSource: reasoningSourcePath(existing.factSources),
+      reasoningSource: sourcePath(existing.factSources, 'reasoning'),
       serverTools: existing.serverTools,
       requestMap: existing.requestMap,
       aliases: storedAliases(existing.aliases),
+      aliasesSource: sourcePath(existing.factSources, 'aliases'),
+      aliasOf: existing.aliasOf,
+      aliasOfSource: sourcePath(existing.factSources, 'aliasOf'),
       schemaEndpointId: existing.schemaEndpointId,
       deprecated: existing.deprecatedAt !== null,
       releasedAt: existing.releasedAt,
@@ -1070,6 +1105,7 @@ export async function pollProviderModels(
         serverTools: info.serverTools ?? null,
         requestMap: requestMapFor(provider.id, info),
         aliases: storedAliases(info.aliases),
+        aliasOf: info.aliasOf ?? null,
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         releasedAt: info.releasedAt ?? null,

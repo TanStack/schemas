@@ -53,7 +53,7 @@ const getCatalog = createServerFn({ method: 'GET' })
     const { getDb } = await import('#/db/index.ts')
     const { listModelsCatalog, knownProviderIds } =
       await import('#/server/catalog.ts')
-    const { FACT_KEYS, buildReport } = await import('#/lib/completeness.ts')
+    const { rowCompleteness, scoreRow } = await import('#/lib/completeness.ts')
     const { sourceSilentLedger } = await import('#/server/source-silent.ts')
     const db = getDb(env, { replica: true })
     // The second read carries full rate cards: the score reads them, and the
@@ -66,23 +66,13 @@ const getCatalog = createServerFn({ method: 'GET' })
     const completeness: Record<string, RowCompleteness> = {}
     for (const row of scored.models.slice(0, MAX_ROWS)) {
       if (row.activity !== 'chat') continue
-      // Same scorer as the front page and `pnpm run gap:report`, one row at a time.
-      const [report] = buildReport(
-        [row as unknown as ModelRow],
-        sourceSilentLedger,
-      ).providers
-      if (!report) continue
-      const counted = FACT_KEYS.filter(
-        (key) =>
-          !report.silent.includes(key) &&
-          report.facts[key].need - (report.modelSilent?.[key] ?? 0) > 0,
+      // Same scorer as the front page and `pnpm run gap:report`, one row at a
+      // time. Origin links need the whole catalog, so this column leaves them out.
+      completeness[row.id] = rowCompleteness(
+        scoreRow(row as unknown as ModelRow, sourceSilentLedger).filter(
+          (fact) => fact.fact !== 'originLink',
+        ),
       )
-      const missing = counted.filter((key) => report.facts[key].have === 0)
-      completeness[row.id] = {
-        filled: counted.length - missing.length,
-        needed: counted.length,
-        missing,
-      }
     }
     return {
       count: result.count,

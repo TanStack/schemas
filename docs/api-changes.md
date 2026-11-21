@@ -4,6 +4,26 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
+**Breaking:** `completeness` on `GET /v1/status` and `GET /v1/providers`
+scores every live model, not only chat (#714). `chat` is replaced by
+`rows` (live models scored), and the entry gains `activities` (per
+activity `{ rows, score, filled, needed }`, plus `unclassified` for a
+null activity) and `originLink` (`{ have, need }`). Image, video and audio
+rows are scored on `priced`, `endpoint`, `modalities` and
+`outputModalities`; a null activity counts as one missing fact; a model
+whose id another provider also lists needs an origin link. `score` is
+null only when nothing is scored, so an audio-only provider now has one.
+Scores are null until the first models poll after the deploy.
+
+**Changed (0.1.x):** model rows gain `aliasOf` (#709), and `aliases` can
+now name ids that are rows of their own. Mistral rows list their whole
+alias group, an OpenAI dated snapshot lists the undated alias that
+resolves to it, and a Gemini target lists its `-latest` alias. A lookup
+by an id that is a row still returns that row. Code that treated every
+`aliases` entry as "not a row" should check `aliasOf` instead.
+`factSources` gains `aliases` and `aliasOf` (README, "Aliases at the same
+provider"). Needs D1 migration `0019`: migrate first, then deploy.
+
 **Breaking:** `GET /v1/openapi/{provider}` has no `{path}#stream`
 operations. JSON and `text/event-stream` share one operation's `200`, and
 schemas live in `components.schemas` (every `$ref` resolves). hey-api

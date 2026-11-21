@@ -28,6 +28,29 @@ describe('groq listModels', () => {
   })
 })
 
+describe('groq upstream identity', () => {
+  it('states the maker an id names, and nothing for a bare id', () => {
+    // Ids from the live listing, 2026-11-21.
+    expect(provider.upstreamModelIdentity?.('openai/gpt-oss-120b')).toEqual({
+      providerNamespace: 'openai',
+      rawId: 'gpt-oss-120b',
+      source: {
+        derivation: 'listing',
+        sourceUrl: 'https://api.groq.com/openai/v1/models',
+        path: 'data[].id',
+      },
+    })
+    expect(
+      provider.upstreamModelIdentity?.('meta-llama/llama-prompt-guard-2-86m'),
+    ).toMatchObject({
+      providerNamespace: 'meta-llama',
+      rawId: 'llama-prompt-guard-2-86m',
+    })
+    expect(provider.upstreamModelIdentity?.('whisper-large-v3')).toBeNull()
+    expect(provider.upstreamModelIdentity?.('allam-2-7b')).toBeNull()
+  })
+})
+
 describe('groq fetchSpec', () => {
   const spec = {
     openapi: '3.0.1',

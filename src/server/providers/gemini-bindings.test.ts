@@ -9,7 +9,12 @@ import {
   parseGemmaModalities,
 } from './gemini-bindings.ts'
 import type { GeminiPublishedBindings } from './gemini-bindings.ts'
-import type { ModelInfo } from './types.ts'
+import type {
+  FactAbsence,
+  ModelFact,
+  ModelFactSources,
+  ModelInfo,
+} from './types.ts'
 
 const CHANGELOG = `This page documents updates to the Gemini API.
 
@@ -48,22 +53,10 @@ interface Listed {
   rawId: string
   modalities: { input: Array<string>; output: Array<string> } | null
   aliases?: Array<string> | null
+  aliasOf?: string | null
   pricing?: unknown
-  factSources?: {
-    modalities?: {
-      derivation: 'docs-derived'
-      sourceUrl?: string
-      sourceHash?: string
-      path?: string
-    }
-    pricing?: {
-      derivation: 'docs-derived'
-      sourceUrl?: string
-      sourceHash?: string
-      path?: string
-    }
-  }
-  absent?: { modalities?: 'unavailable'; pricing?: 'cleared' }
+  factSources?: ModelFactSources
+  absent?: Partial<Record<ModelFact, FactAbsence>>
 }
 
 function bindings(
@@ -245,9 +238,30 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
       sourceHash: 'page',
       path: 'Supported data types; alias of gemini-3.5-flash',
     })
+    const target = models.find((model) => model.rawId === 'gemini-3.5-flash')
+    expect(target?.aliases).toEqual(['gemini-flash-latest'])
+    expect(target?.factSources?.aliases?.path).toBe('latest alias')
+    // Issue #709: each named alias points at its stated target, listed or
+    // not; a `-latest` row the changelog names nothing for says so.
+    expect(flash?.aliasOf).toBe('gemini-3.5-flash')
+    expect(flash?.factSources?.aliasOf).toEqual({
+      derivation: 'docs-derived',
+      sourceUrl: 'https://aistudio.google.com/docs/changelog.md',
+      sourceHash: 'changelog',
+      path: 'latest alias',
+    })
     expect(
-      models.find((model) => model.rawId === 'gemini-3.5-flash')?.aliases,
-    ).toEqual(['gemini-flash-latest'])
+      models.find((model) => model.rawId === 'gemini-pro-latest')?.aliasOf,
+    ).toBe('gemini-3-pro-preview')
+    const lite = models.find(
+      (model) => model.rawId === 'gemini-flash-lite-latest',
+    )
+    expect(lite?.aliasOf).toBeNull()
+    expect(lite?.factSources?.aliasOf?.path).toBe('unstated')
+    expect(
+      models.find((model) => model.rawId === 'gemma-4-31b-it')?.factSources
+        ?.aliasOf,
+    ).toBeUndefined()
     expect(
       models.find((model) => model.rawId === 'gemini-pro-latest')?.modalities,
     ).toEqual({ input: ['text'], output: ['text'] })
@@ -318,9 +332,19 @@ Requests to \`gemini-2.0-flash\` are shut down. The recommended replacement is \
       models.find((model) => model.rawId === 'gemini-flash-latest')?.absent
         ?.modalities,
     ).toBe('unavailable')
+    // Every alias link is the changelog's: a failed read keeps them all.
+    expect(
+      models.find((model) => model.rawId === 'gemini-flash-latest')?.absent,
+    ).toEqual({
+      modalities: 'unavailable',
+      aliases: 'unavailable',
+      aliasOf: 'unavailable',
+      // Its tools are the changelog target's too (#707).
+      serverTools: 'unavailable',
+    })
     expect(
       models.find((model) => model.rawId === 'gemini-3.5-flash')?.absent,
-    ).toBeUndefined()
+    ).toEqual({ aliases: 'unavailable' })
     expect(
       models.find((model) => model.rawId === 'gemma-4-31b-it')?.absent
         ?.modalities,

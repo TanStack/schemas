@@ -99,6 +99,42 @@ const haiku: ModelInfo = {
 }
 
 describe('pollProviderModels', () => {
+  it('fills a gap from a probe record, dated and probe-verified (#717)', async () => {
+    const id = 'groq'
+    const deps = await freshDeps(id)
+    const rawId = 'openai/gpt-oss-safeguard-20b'
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId,
+          activity: 'chat',
+          schemaEndpointId: 'openai/v1/chat/completions',
+          reasoning: {
+            mode: 'effort',
+            mandatory: null,
+            efforts: ['low', 'medium', 'high'],
+          },
+        },
+      ]),
+    )
+    const [row] = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, rawId)))
+    const sources = row?.factSources as ModelFactSources
+    expect(row?.maxOutput).toBe(65536)
+    expect(row?.reasoning).toMatchObject({ mandatory: true })
+    expect(row?.requestMap).toMatchObject({ replayReasoningContent: false })
+    expect(sources.maxOutput).toMatchObject({
+      derivation: 'probe-verified',
+      verifiedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as string,
+    })
+    expect(sources.reasoningMandatory?.derivation).toBe('probe-verified')
+    expect(sources.requestMapFields?.replayReasoningContent?.derivation).toBe(
+      'probe-verified',
+    )
+  })
   it('clears a stored heuristic map when the native listing explicitly reports unknown', async () => {
     const id = 'openai'
     const deps = await freshDeps(id)
@@ -1690,6 +1726,104 @@ describe('reasoning and server tools (issue #77)', () => {
       stubProvider(id, [{ ...listed, serverTools: ['bash_20250124'] }]),
     )
     expect(outcome.updated).toBe(1)
+  })
+})
+
+describe('alias links (issue #709)', () => {
+  it('stores the stated target, and a stated silence, with model.updated', async () => {
+    const id = 'poll-alias'
+    const deps = await freshDeps(id)
+    const source = (path: string) => ({
+      derivation: 'listing' as const,
+      sourceUrl: 'https://example.com/models',
+      path,
+    })
+    const alias: ModelInfo = { ...fable, rawId: 'fable-latest' }
+    await pollProviderModels(deps, stubProvider(id, [fable, alias]))
+
+    const linked: ModelInfo = {
+      ...alias,
+      aliases: [fable.rawId],
+      aliasOf: fable.rawId,
+      factSources: { aliases: source('aliases'), aliasOf: source('name') },
+    }
+    const target: ModelInfo = {
+      ...fable,
+      aliases: [alias.rawId],
+      factSources: { aliases: source('aliases') },
+    }
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [target, linked]),
+    )
+    expect(outcome.updated).toBe(2)
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, alias.rawId)),
+    })
+    expect(row?.aliasOf).toBe(fable.rawId)
+    expect(row?.aliases).toEqual([fable.rawId])
+    expect((row?.factSources as ModelFactSources | null)?.aliasOf).toEqual(
+      source('name'),
+    )
+
+    // A source that now names no target is news even though aliasOf was
+    // null before and after: the stated silence must be written.
+    const silent: ModelInfo = {
+      ...alias,
+      aliasOf: null,
+      factSources: { aliasOf: source('unstated') },
+    }
+    const again = await pollProviderModels(
+      deps,
+      stubProvider(id, [target, silent]),
+    )
+    expect(again.updated).toBe(1)
+    const after = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, alias.rawId)),
+    })
+    expect(after?.aliasOf).toBeNull()
+    expect((after?.factSources as ModelFactSources | null)?.aliasOf?.path).toBe(
+      'unstated',
+    )
+    const updates = await deps.db
+      .select()
+      .from(changes)
+      .where(eq(changes.subjectId, modelDbId(id, alias.rawId)))
+    expect(
+      updates
+        .filter((change) => change.type === 'model.updated')
+        .map(
+          (change) => (change.payload as { changed: Array<string> }).changed,
+        ),
+    ).toEqual([
+      ['aliasOf', 'aliasOfSource', 'aliases', 'aliasesSource'],
+      ['aliasOf', 'aliasOfSource', 'aliases', 'aliasesSource'],
+    ])
+  })
+
+  it('keeps a stored link when the source is unavailable', async () => {
+    const id = 'poll-alias-kept'
+    const deps = await freshDeps(id)
+    const linked: ModelInfo = {
+      ...fable,
+      rawId: 'fable-latest',
+      aliasOf: fable.rawId,
+      factSources: {
+        aliasOf: { derivation: 'docs-derived', path: 'Default snapshot' },
+      },
+    }
+    await pollProviderModels(deps, stubProvider(id, [linked]))
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, rawId: 'fable-latest', ...unavailable('aliasOf') },
+      ]),
+    )
+    expect(outcome.updated).toBe(0)
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'fable-latest')),
+    })
+    expect(row?.aliasOf).toBe(fable.rawId)
   })
 })
 

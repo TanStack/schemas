@@ -16,10 +16,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 9,
-  hash: '5591ebc85597cefbd738785bfecac8d330f942a908d2d4437f311dbac8fa7ec5',
+  version: 11,
+  hash: '7a9a7f1b54e3bd952891b06763aacd052af44f3b451871ea48befb71e50ef687',
   notes:
-    'Activity gained search for web search endpoints that take no model (Perplexity POST /search, issue #660).',
+    'ModelFactSources gained reasoningMandatory: the source of reasoning.mandatory when a probe-verified record filled it (issue #717). Version 10 added aliasOf and factSources.aliases/aliasOf (#709).',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

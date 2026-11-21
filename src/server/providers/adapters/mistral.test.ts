@@ -7,7 +7,7 @@ import {
   mistralModelPage,
   tip,
 } from '../fixtures/mistral-model-page.ts'
-import { provider } from './mistral.ts'
+import { mistralAliasFacts, provider } from './mistral.ts'
 import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
 import {
   MISTRAL_WEBSEARCH_URL,
@@ -430,5 +430,55 @@ describe('mistral provider metadata', () => {
     expect(provider.defaultDerivation).toBe('upstream-spec')
     expect(provider.specSourceUrl).toBe('https://docs.mistral.ai/openapi.yaml')
     expect(provider.modelsEndpoint).toBe('https://api.mistral.ai/v1/models')
+  })
+})
+
+describe('mistral alias links (#709)', () => {
+  // Trimmed `GET /v1/models` (id, name, aliases), 2026-11-21.
+  const listing = JSON.parse(
+    readFileSync(
+      new URL('../fixtures/mistral-models-aliases.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { data: Array<{ id: string; name: string; aliases: Array<string> }> }
+  const facts = new Map(
+    listing.data.map((row) => [row.id, mistralAliasFacts(row)]),
+  )
+
+  it('lists the stated group and never reads name as a target', () => {
+    // The listing's name is `mistral-large-4` on every member: not a target.
+    const large = facts.get('mistral-large-latest')
+    expect(large?.aliasOf).toBeNull()
+    expect(large?.aliases).toEqual(['mistral-large-4', 'mistral-large-4-0'])
+    expect(large?.factSources).toEqual({
+      aliases: {
+        derivation: 'listing',
+        sourceUrl: 'https://api.mistral.ai/v1/models',
+        path: 'aliases',
+      },
+      aliasOf: {
+        derivation: 'listing',
+        sourceUrl: 'https://api.mistral.ai/v1/models',
+        path: 'unstated',
+      },
+    })
+    // A dated snapshot does not resolve to a moving alias.
+    const dated = facts.get('mistral-medium-2604')
+    expect(dated?.aliasOf).toBeNull()
+    expect(dated?.aliases).toContain('mistral-medium-latest')
+  })
+
+  it('leaves a row with no aliases bare', () => {
+    expect(facts.get('mistral-large-2512')).toEqual({})
+  })
+
+  it('links every -latest row through its group, target unstated', () => {
+    const latest = [...facts].filter(([id]) => id.endsWith('-latest'))
+    expect(latest).toHaveLength(18)
+    for (const [, row] of latest) {
+      expect(row.aliases?.length).toBeGreaterThan(0)
+      expect(row.aliasOf).toBeNull()
+      expect(row.factSources?.aliasOf?.path).toBe('unstated')
+    }
   })
 })

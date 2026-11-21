@@ -77,7 +77,9 @@ register→execute), `pnpm run client-smoke` (typed client),
 `pnpm run cli -- <cmd>` (CLI), `pnpm run rederive -- <provider>`
 (re-derive schema content hashes from the upstream spec — no service/db;
 shares `classifyAndBundle` with the sync engine), `pnpm run gap:report -- --table`
-(per-provider score for the chat facts `@tanstack/ai-models` needs; one
+(per-provider score for the facts `@tanstack/ai-models` needs: chat, image,
+video and audio rows on their own fact sets, null-activity rows as a gap,
+and origin links; one
 `/v1/models` request; `docs/source-silent/<provider>.md` lists facts a provider does not
 publish; `--check` exits 1 below `--target`). Admin sync:
 `curl -X POST localhost:3100/v1/admin/sync/openrouter -H "X-Admin-Key: $ADMIN_KEY"`.
@@ -240,9 +242,18 @@ ones).
   `verifiedAt`. The adapter binds that fact only for the exact model and
   route the record names. A record older than 90 days stays served;
   `GET /v1/status` counts it on `staleProbes`. Re-run with
-  `pnpm run probe -- <provider> [--write]` (not CI, not the 15-minute
+  `pnpm run probe -- <provider> [--write]` (not the 15-minute
   poll). The script reads the provider key from the environment or Doppler
-  and never prints it.
+  and never prints it. The generic `chat/completions` probe
+  (`probes/chat-completions.ts`, #717) states `maxOutput`,
+  `replayReasoningContent` and `reasoning.mandatory` only from a 400/422
+  whose message a rule reads (fixtures of real bodies); a 2xx, auth, 429,
+  5xx or unread message records nothing. `reasoning.mandatory` needs the
+  provider's `mandatoryRule` opt-in (per-model level list, no other
+  reasoning control). No rule writes `contextWindow` yet. `--write` writes
+  `probes/records/<provider>.ts` (never by hand); the poller fills only
+  empty facts from it (`withProbedFacts`). `.source/workflows/probe.ts`
+  runs it weekly and opens a PR on `probe/weekly` when a record changed.
 - **sameAs links** (issue #199, `src/server/ingest/model-identity.ts`): a
   reseller row links to the upstream row its own provider names — never
   inferred from a similar name alone, and never a copied fact. Adapters
