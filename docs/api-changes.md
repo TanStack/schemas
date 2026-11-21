@@ -4,6 +4,17 @@ Non-additive changes to the catalog and estimate API. Package release
 steps stay in the README under "Releasing on npm". npm package changelogs
 are written by changesets.
 
+**Breaking:** `completeness` on `GET /v1/status` and `GET /v1/providers`
+scores every live model, not only chat (#714). `chat` is replaced by
+`rows` (live models scored), and the entry gains `activities` (per
+activity `{ rows, score, filled, needed }`, plus `unclassified` for a
+null activity) and `originLink` (`{ have, need }`). Image, video and audio
+rows are scored on `priced`, `endpoint`, `modalities` and
+`outputModalities`; a null activity counts as one missing fact; a model
+whose id another provider also lists needs an origin link. `score` is
+null only when nothing is scored, so an audio-only provider now has one.
+Scores are null until the first models poll after the deploy.
+
 **Breaking:** `GET /v1/openapi/{provider}` has no `{path}#stream`
 operations. JSON and `text/event-stream` share one operation's `200`, and
 schemas live in `components.schemas` (every `$ref` resolves). hey-api

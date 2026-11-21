@@ -247,7 +247,8 @@ describe('getServiceStatus', () => {
   ) => ({
     id: `${providerId}-${rawId}`,
     providerId,
-    rawId,
+    // Unique across providers, so no row needs an origin link by accident.
+    rawId: `${providerId}:${rawId}`,
     activity: 'chat' as const,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
@@ -291,7 +292,7 @@ describe('getServiceStatus', () => {
       chat: 0,
       deprecated: 2,
     })
-    expect(gone?.completeness).toMatchObject({ score: null, chat: 0 })
+    expect(gone?.completeness).toMatchObject({ score: null, rows: 0 })
     expect(part?.counts).toMatchObject({
       models: 2,
       priced: 1,
@@ -299,7 +300,7 @@ describe('getServiceStatus', () => {
       chat: 1,
       deprecated: 1,
     })
-    expect(part?.completeness.chat).toBe(1)
+    expect(part?.completeness.rows).toBe(2)
     expect((await listModelsCatalog(db, { provider: 'part' })).count).toBe(
       part?.counts.models,
     )
@@ -363,31 +364,40 @@ describe('getServiceStatus', () => {
     const [noChat, allSilent, mixed] = ids.map(
       (id) => status.providers.find((p) => p.id === id)?.completeness,
     )
-    // Nothing to score is not a score of zero.
+    // An image row is scored on its own facts: priced only.
     expect(noChat).toEqual({
-      score: null,
-      chat: 0,
-      filled: 0,
-      needed: 0,
+      score: 1 / 4,
+      rows: 1,
+      filled: 1,
+      needed: 4,
       silent: [],
+      activities: { image: { rows: 1, score: 1 / 4, filled: 1, needed: 4 } },
+      originLink: { have: 0, need: 0 },
     })
     // Chat rows with every fact on the ledger have nothing left to fill.
     expect(allSilent).toEqual({
       score: 1,
-      chat: 1,
+      rows: 1,
       filled: 0,
       needed: 0,
       silent: [...FACT_KEYS],
+      activities: { chat: { rows: 1, score: 1, filled: 0, needed: 0 } },
+      originLink: { have: 0, need: 0 },
     })
     // full: 10 of 10. thin: contextWindow and capabilities of 7 (no
     // OpenAI-compat route, so requestMap and replay are not scored).
-    // borrowed: 0 of 6.
+    // borrowed: 0 of 6. image: 0 of 4.
     expect(mixed).toEqual({
-      score: 12 / 23,
-      chat: 3,
+      score: 12 / 27,
+      rows: 4,
       filled: 12,
-      needed: 23,
+      needed: 27,
       silent: ['cacheRead'],
+      activities: {
+        chat: { rows: 3, score: 12 / 23, filled: 12, needed: 23 },
+        image: { rows: 1, score: 0, filled: 0, needed: 4 },
+      },
+      originLink: { have: 0, need: 0 },
     })
 
     // The same rows as `pnpm run gap:report` reads them, off the API.
@@ -397,11 +407,11 @@ describe('getServiceStatus', () => {
       const scored = report.providers.find((p) => p.provider === id)
       const listed = status.providers.find((p) => p.id === id)
       expect(listed?.completeness.score).toBe(scored?.score)
-      expect(listed?.completeness.chat).toBe(scored?.chat)
+      expect(listed?.completeness.rows).toBe(scored?.rows)
     }
   })
 
-  const KEY = 'status:completeness:v2'
+  const KEY = 'status:completeness:v3'
   const scoreOf = async (db: ReturnType<typeof getDb>, id: string) => {
     const status = await getServiceStatus(db, NOW)
     return {
@@ -410,7 +420,7 @@ describe('getServiceStatus', () => {
     }
   }
 
-  it('serves the stored score only while it matches the live chat rows', async () => {
+  it('serves the stored score only while it matches the live rows', async () => {
     const db = getDb(env)
     await db.insert(providers).values(provider('stored'))
     await db.insert(models).values(model('stored', 'a'))
@@ -418,27 +428,27 @@ describe('getServiceStatus', () => {
     expect(await scoreOf(db, 'stored')).toMatchObject({
       computedAt: NOW,
       score: 0,
-      chat: 1,
+      rows: 1,
       needed: 7,
     })
 
-    // A chat row the record never scored: no number over a different set.
+    // A row the record never scored: no number over a different set.
     await db.insert(models).values(model('stored', 'b'))
     expect(await scoreOf(db, 'stored')).toMatchObject({
       computedAt: NOW,
       score: null,
-      chat: 0,
+      rows: 0,
     })
     // The next poll's record scores both, and says when.
     await recordCompleteness(db, NOW + 900)
     expect(await scoreOf(db, 'stored')).toMatchObject({
       computedAt: NOW + 900,
       score: 0,
-      chat: 2,
+      rows: 2,
     })
-    // No live chat row left: null at once, before any rescore.
+    // No live row left: null at once, before any rescore.
     await db.update(models).set({ deprecatedAt: NOW })
-    expect(await scoreOf(db, 'stored')).toMatchObject({ score: null, chat: 0 })
+    expect(await scoreOf(db, 'stored')).toMatchObject({ score: null, rows: 0 })
   })
 
   it('answers with null scores when the record cannot be used', async () => {
@@ -447,7 +457,7 @@ describe('getServiceStatus', () => {
     await db.insert(models).values(model('broken', 'a'))
     await recordCompleteness(db, NOW)
     expect(await scoreOf(db, 'broken')).toMatchObject({ score: 0 })
-    const none = { computedAt: null, score: null, chat: 0 }
+    const none = { computedAt: null, score: null, rows: 0 }
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     // Corrupt JSON, JSON of the wrong shape, an entry of the wrong shape.
@@ -458,13 +468,26 @@ describe('getServiceStatus', () => {
         .where(eq(cacheMeta.key, KEY))
       expect(await scoreOf(db, 'broken')).toMatchObject(none)
     }
-    // Entries that are not a whole `Completeness`, though the chat count
+    // Entries that are not a whole `Completeness`, though the row count
     // matches the live one: never served, and no usable record at all.
+    const whole = {
+      score: 0,
+      rows: 1,
+      filled: 0,
+      needed: 8,
+      silent: [],
+      activities: {},
+      originLink: { have: 0, need: 0 },
+    }
     for (const entry of [
       7,
-      { chat: 1 },
-      { score: 'high', chat: 1, filled: 0, needed: 8, silent: 'x' },
-      { score: 0, chat: 1, filled: 0, needed: 8, silent: [1] },
+      { rows: 1 },
+      { ...whole, score: 'high', silent: 'x' },
+      { ...whole, silent: [1] },
+      { ...whole, activities: { chat: { rows: 1 } } },
+      { ...whole, originLink: null },
+      // The chat-only shape stored before per-activity scores.
+      { score: 0, chat: 1, filled: 0, needed: 8, silent: [] },
     ]) {
       await db
         .update(cacheMeta)
@@ -473,22 +496,29 @@ describe('getServiceStatus', () => {
       expect(await scoreOf(db, 'broken')).toEqual({
         computedAt: null,
         score: null,
-        chat: 0,
+        rows: 0,
         filled: 0,
         needed: 0,
         silent: [],
+        activities: {},
+        originLink: { have: 0, need: 0 },
       })
     }
     // An array is not a record. One bad entry does not cost the good ones.
     await db
       .update(cacheMeta)
-      .set({ lastError: '[{"chat":1}]' })
+      .set({ lastError: '[{"rows":1}]' })
       .where(eq(cacheMeta.key, KEY))
     expect(await scoreOf(db, 'broken')).toMatchObject(none)
-    const good = { score: 0.5, chat: 1, filled: 4, needed: 8, silent: [] }
+    const good = {
+      ...whole,
+      score: 0.5,
+      filled: 4,
+      activities: { chat: { rows: 1, score: 0.5, filled: 4, needed: 8 } },
+    }
     await db
       .update(cacheMeta)
-      .set({ lastError: JSON.stringify({ broken: good, other: { chat: 1 } }) })
+      .set({ lastError: JSON.stringify({ broken: good, other: { rows: 1 } }) })
       .where(eq(cacheMeta.key, KEY))
     expect(await scoreOf(db, 'broken')).toEqual({ computedAt: NOW, ...good })
 
@@ -531,7 +561,7 @@ describe('getServiceStatus', () => {
     expect(await scoreOf(db, 'kept')).toMatchObject({
       computedAt: NOW,
       score: 0,
-      chat: 1,
+      rows: 1,
     })
   })
 })
@@ -576,6 +606,6 @@ it('scores only the exact raw model covered by a scoped silence entry', async ()
   })
   const report = buildReport(served.models as Array<ModelRow>, ledger)
     .providers[0]!
-  expect(report.modelSilent).toEqual({ maxOutput: 1 })
+  expect(report.activities.chat?.modelSilent).toEqual({ maxOutput: 1 })
   expect(result?.score).toBe(report.score)
 })
