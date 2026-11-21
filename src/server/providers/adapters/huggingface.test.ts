@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
+import { providerRegistry } from '#/server/providers/index.ts'
 
 import {
   buildHuggingFaceSpec,
@@ -625,6 +626,44 @@ describe('huggingface listing', () => {
     await expect(parseHuggingFaceModels('<html>')).rejects.toThrow(
       'no data array',
     )
+  })
+})
+
+// Ids from the live router listing (2026-11-21), where `owned_by` equals the
+// id's owner on all 159 rows.
+describe('huggingface upstream identity', () => {
+  it('names the repo owner, through its namespace', () => {
+    const stated = (rawId: string) => {
+      const identity = provider.upstreamModelIdentity?.(rawId)
+      if (!identity) return null
+      const target = providerRegistry.find(
+        (p) =>
+          p.id === identity.providerNamespace ||
+          p.modelNamespaces?.includes(identity.providerNamespace),
+      )
+      return [target?.id ?? null, identity.rawId]
+    }
+    expect(stated('CohereLabs/command-a-vision-07-2025')).toEqual([
+      'cohere',
+      'command-a-vision-07-2025',
+    ])
+    expect(stated('inclusionAI/Ling-3.1-flash')).toEqual([
+      'ant-ling',
+      'Ling-3.1-flash',
+    ])
+    // A publisher with no API row here is still stated; it resolves nowhere.
+    expect(stated('cyankiwi/Qwen3.5-9B-AWQ-4bit')).toEqual([
+      null,
+      'Qwen3.5-9B-AWQ-4bit',
+    ])
+    expect(provider.upstreamModelIdentity?.('Qwen3.8-27B')).toBeNull()
+    expect(
+      provider.upstreamModelIdentity?.('Qwen/Qwen3.8-27B')?.source,
+    ).toEqual({
+      derivation: 'listing',
+      sourceUrl: HUGGINGFACE_MODELS_URL,
+      path: 'data[].id',
+    })
   })
 })
 
