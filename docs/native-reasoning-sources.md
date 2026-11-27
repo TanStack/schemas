@@ -100,11 +100,12 @@ source URL, fixture or output; they make no inference calls.
 
 ## Mistral
 
-https://docs.mistral.ai/inference/conversations/reasoning
+https://docs.mistral.ai/llms/inference/conversations/reasoning/llms.txt
 
-Checked 2026-11-19. `llms.txt` links the `.md` twin of this page, and the old
-`/studio/conversations/reasoning.md` path redirects to that twin, but the twin
-404s. The HTML page is the guide.
+Checked 2026-11-27. The HTML page at
+`/inference/conversations/reasoning` no longer keeps the `reasoning_effort`
+bullets once it is converted to text. `/inference/conversations/reasoning.md`
+redirects to this `llms.txt` document, which is the guide.
 
 The guide scopes adjustable reasoning to named model IDs, followed by a normative
 parameter-value section describing high and none. These values apply to that

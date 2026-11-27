@@ -23,13 +23,15 @@
  * scale the listing uses (262144 shown as 256k).
  *
  * A model Mistral drops from the pricing table keeps its page. The HTML
- * widget is often gone; the page's markdown twin still states `Pricing:`.
- * That line is the card (#543). The models overview pairs the API name
- * with the page slug, including deprecated rows the index-slug rules miss
+ * widget is often gone. The catalog record states `pricing`, and the
+ * markdown twin's `Pricing:` line is the older statement (#543). The
+ * models overview pairs each API id with the page slug, including
+ * deprecated rows the index-slug rules miss
  * (`mistral-medium-3-5` → `mistral-medium-3-5-26-04`).
  *
- * The markdown twin's `Release date:` line is the model's `releasedAt`
- * (#708). The listing's `created` is the request time, not a date.
+ * `releasedAt` is the catalog record's `releasedAt` (#708). The markdown
+ * twin's `Release date:` line is the older statement. The listing's
+ * `created` is the request time, not a date.
  */
 import {
   cardPrice,
@@ -39,6 +41,12 @@ import {
 import type { Expr, RateCard } from '@modelschemas/rate-card'
 
 import { MISTRAL_DEPRECATIONS_URL } from './deprecations.ts'
+import type { MistralCatalogModel } from './mistral-catalog.ts'
+import {
+  mistralCatalogInstant,
+  mistralPageCatalog,
+  parseMistralCatalog,
+} from './mistral-catalog.ts'
 import { serverToolsSilent, tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
 import { mistralDocsMarkdown } from './reasoning-config.ts'
@@ -55,6 +63,14 @@ const MISTRAL_MODEL_PAGE = (slug: string) =>
 /** A docs twin that Mistral does not publish. Any other status still throws. */
 function isMissingDocsPage(error: unknown): boolean {
   return error instanceof Error && /→ 404\b/.test(error.message)
+}
+
+/**
+ * `.md` now redirects to the HTML page (checked 2026-11-27). That document
+ * is not the markdown twin: a missing line there is not "no price".
+ */
+function isHtmlDocument(body: string): boolean {
+  return /<!doctype html|<html[\s>]/i.test(body)
 }
 
 export interface MistralTokenRates {
@@ -307,6 +323,8 @@ export function mistralRateCard(
  * shares nothing is no mapping.
  */
 export function parseMistralApiIds(html: string, slug: string): Array<string> {
+  const catalog = mistralPageCatalog(html, slug)
+  if (catalog) return catalog.modelIds
   // The page embeds the array as JSON (`"names":["id"]`) and, in the RSC
   // payload, with escaped quotes (`names\":["id"]`).
   const blocks = [
@@ -483,6 +501,34 @@ function blockModalities(rows: RscRows, block: Json): MistralModalities | null {
     const medium = MISTRAL_MEDIA[word]
     if (!medium) return null
     found[side].add(medium)
+  }
+  if (found.input.size === 0 || found.output.size === 0) return null
+  const ordered = (have: Set<string>) =>
+    Object.values(MISTRAL_MEDIA).filter((medium) => have.has(medium))
+  return { input: ordered(found.input), output: ordered(found.output) }
+}
+
+/**
+ * Modalities a catalog record states. `reasoning` on the output is the
+ * thinking marker, not a medium. An unknown word, or a side with no known
+ * medium, is null: a shorter list would read as the whole answer.
+ */
+export function mistralCatalogModalities(
+  model: MistralCatalogModel,
+): MistralModalities | null {
+  const found = { input: new Set<string>(), output: new Set<string>() }
+  const read = (words: Array<string>, side: 'input' | 'output'): boolean => {
+    for (const word of words) {
+      const key = word.toLowerCase()
+      if (key === 'reasoning' && side === 'output') continue
+      const medium = MISTRAL_MEDIA[key]
+      if (!medium) return false
+      found[side].add(medium)
+    }
+    return true
+  }
+  if (!read(model.inputs, 'input') || !read(model.outputs, 'output')) {
+    return null
   }
   if (found.input.size === 0 || found.output.size === 0) return null
   const ordered = (have: Set<string>) =>
@@ -904,6 +950,73 @@ export function parseMistralPagePrice(html: string): MistralListedPrice | null {
   return priced[0] ?? null
 }
 
+function catalogMeter(row: MistralCatalogModel['pricing'][number]): {
+  side: 'input' | 'output'
+  label?: string
+  denominator: string
+  amount: number
+} {
+  const embedded = /^(input|output|cached input) \(([^)]+)\)$/i.exec(
+    row.label.trim(),
+  )
+  if (row.unit === null) {
+    const name = embedded?.[1]?.toLowerCase()
+    const denominator = embedded?.[2]
+    if (!name || !denominator) {
+      throw new Error(
+        `mistral model page pricing: unreadable catalog meter ${JSON.stringify(row.label)}`,
+      )
+    }
+    return {
+      side: name === 'output' ? 'output' : 'input',
+      ...(name === 'cached input' ? { label: 'Cached input' } : {}),
+      denominator,
+      amount: row.priceUsd,
+    }
+  }
+  const name = row.label.trim().toLowerCase()
+  if (name !== 'input' && name !== 'output' && name !== 'cached input') {
+    throw new Error(
+      `mistral model page pricing: unknown label ${JSON.stringify(row.label)}`,
+    )
+  }
+  if (
+    (name === 'output' && row.direction !== 'output') ||
+    (name !== 'output' && row.direction !== 'input')
+  ) {
+    throw new Error(
+      `mistral model page pricing: label ${JSON.stringify(row.label)} disagrees with ${row.direction}`,
+    )
+  }
+  return {
+    side: row.direction,
+    ...(name === 'cached input' ? { label: 'Cached input' } : {}),
+    denominator: row.unit,
+    amount: row.priceUsd,
+  }
+}
+
+/** The catalog record's USD price. An all-zero or empty list is no card. */
+export function mistralCatalogPrice(
+  model: MistralCatalogModel,
+): MistralListedPrice | null {
+  if (model.isFree && model.pricing.some((row) => row.priceUsd > 0)) {
+    throw new Error(
+      'mistral model page pricing: free catalog row has a positive price',
+    )
+  }
+  const meters = []
+  for (const row of model.pricing) {
+    if (row.priceUsd < 0) {
+      throw new Error('mistral model page pricing: negative amount')
+    }
+    if (row.priceUsd === 0) continue
+    meters.push(catalogMeter(row))
+  }
+  if (meters.length === 0) return null
+  return listedFromMeters(meters)
+}
+
 /**
  * The model page markdown's `Pricing:` line. One line, meters separated by
  * `;`. `Free` or an all-zero line is no card. A line that is present and
@@ -1018,7 +1131,34 @@ export function parseMistralMarkdownReleaseDate(
  * tables. A name two rows send to different slugs is omitted. An overview
  * that pairs nothing throws: the tables moved.
  */
+function slugsFromCatalog(
+  models: Array<MistralCatalogModel>,
+): Map<string, string> {
+  const out = new Map<string, string>()
+  const ambiguous = new Set<string>()
+  for (const model of models) {
+    for (const id of model.modelIds) {
+      const prior = out.get(id)
+      if (prior && prior !== model.slug) {
+        ambiguous.add(id)
+        continue
+      }
+      out.set(id, model.slug)
+    }
+  }
+  for (const id of ambiguous) out.delete(id)
+  if (out.size === 0) {
+    throw new Error('mistral models overview: parsed 0 API slugs')
+  }
+  return out
+}
+
 export function parseMistralApiSlugs(markdown: string): Map<string, string> {
+  const catalog = parseMistralCatalog(markdown)
+  if (catalog.length > 0) return slugsFromCatalog(catalog)
+  if (markdown.includes('__next_f')) {
+    throw new Error('mistral models overview: parsed 0 API slugs')
+  }
   const out = new Map<string, string>()
   const ambiguous = new Set<string>()
   for (const match of markdown.matchAll(
@@ -1077,6 +1217,25 @@ export function parseMistralMakers(markdown: string): {
   makers: Map<string, string>
   named: Set<string>
 } {
+  const catalog = parseMistralCatalog(markdown)
+  if (catalog.length > 0) {
+    parseMistralApiSlugs(markdown)
+    const makers = new Map<string, string>()
+    const named = new Set<string>()
+    for (const model of catalog) {
+      const maker = mistralSummaryMaker(model.shortDescription)
+      for (const id of model.modelIds) {
+        named.add(id)
+        if (!maker) continue
+        const prior = makers.get(id)
+        if (prior && prior !== maker) {
+          throw new Error(`mistral models overview: ${id} names two makers`)
+        }
+        makers.set(id, maker)
+      }
+    }
+    return { makers, named }
+  }
   parseMistralApiSlugs(markdown)
   const makers = new Map<string, string>()
   const named = new Set<string>()
@@ -1109,8 +1268,10 @@ export interface MistralModelPage {
    * card the source could not be read for.
    */
   priceUnread?: boolean
-  /** The markdown twin's `Release date`, epoch seconds. */
+  /** The markdown twin's `Release date`, or the catalog timestamp, epoch seconds. */
   releasedAt?: number | null
+  /** The HTML page, when `releasedAt` was read from the catalog record. */
+  releaseUrl?: string
   /** Hash of the markdown twin `releasedAt` was read from. */
   markdownHash?: string
   /** The markdown twin 404'd: its release date was not read. */
@@ -1327,12 +1488,12 @@ export interface MistralPricingLookup {
 }
 
 /**
- * The rendered web-search guide. `llms.txt` still links
- * `https://docs.mistral.ai/studio/agents/agent-tools/websearch.md`, which
- * 404s (checked 2026-11-19). This HTML page is what serves the guide.
+ * The web-search guide as markdown. `/studio/agents/agent-tools/websearch.md`
+ * redirects to this `llms.txt` document (checked 2026-11-27). The HTML page
+ * is the same move as the reasoning guide.
  */
 export const MISTRAL_WEBSEARCH_URL =
-  'https://docs.mistral.ai/studio/agents/agent-tools/websearch'
+  'https://docs.mistral.ai/llms/studio/agents/agent-tools/websearch/llms.txt'
 
 /**
  * The web search guide's tool ids (#409). It states the tool "allows any
@@ -1401,50 +1562,80 @@ export async function mistralModelPricing(
     const url = MISTRAL_MODEL_PAGE(slug)
     const page = await cached(kv, url, async () => {
       const body = await fetchText(url)
-      const ids = parseMistralApiIds(body, slug)
-      const features = parseMistralPageFeatures(body)
+      const catalog = mistralPageCatalog(body, slug)
+      const ids = catalog ? catalog.modelIds : parseMistralApiIds(body, slug)
+      const features = catalog
+        ? catalog.features
+        : parseMistralPageFeatures(body)
       if (ids.length === 0) {
         throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
       }
       let pagePrice = parseMistralPagePrice(body)
+      if (!pagePrice && catalog) pagePrice = mistralCatalogPrice(catalog)
       let priceUrl: string | undefined
       let priceHash: string | undefined
       let priceUnread = false
-      // The markdown twin states the release date on every page, and the
-      // price when the HTML widget is gone. A 404 leaves both unread.
-      const mdUrl = `${url}.md`
-      let markdown: string | null = null
-      try {
-        markdown = await fetchText(mdUrl)
-      } catch (error) {
-        if (!isMissingDocsPage(error)) throw error
-      }
-      const markdownHash = markdown ? await sha256Text(markdown) : undefined
-      // The pricing table already priced this slug. Its page's markdown
-      // is a second statement of the same card, not a replacement.
-      if (!pagePrice && !bySlug.has(slug)) {
-        // The twin is the price source. A 404 is not "no price".
-        if (markdown === null) priceUnread = true
-        const stated = markdown ? parseMistralMarkdownPrice(markdown) : null
-        if (stated && markdownHash) {
-          pagePrice = stated
-          priceUrl = mdUrl
-          priceHash = markdownHash
+      const hash = await sha256Text(body)
+      let releasedAt: number | null = null
+      let releaseUrl: string | undefined
+      let markdownHash: string | undefined
+      let markdownUnread = false
+      if (catalog) {
+        releasedAt = mistralCatalogInstant(
+          catalog.releasedAt,
+          'mistral model page release date',
+        )
+        releaseUrl = url
+        if (pagePrice) {
+          priceUrl = url
+          priceHash = hash
+        }
+      } else {
+        // The markdown twin states the release date, and the price when
+        // the HTML widget is gone. A 404 leaves both unread. An HTML
+        // redirect is the same as a missing twin.
+        const mdUrl = `${url}.md`
+        let markdown: string | null = null
+        try {
+          markdown = await fetchText(mdUrl)
+        } catch (error) {
+          if (!isMissingDocsPage(error)) throw error
+        }
+        if (markdown && isHtmlDocument(markdown)) markdown = null
+        markdownHash = markdown ? await sha256Text(markdown) : undefined
+        markdownUnread = markdown === null
+        releasedAt = markdown ? parseMistralMarkdownReleaseDate(markdown) : null
+        // The pricing table already priced this slug. Its page's markdown
+        // is a second statement of the same card, not a replacement.
+        if (!pagePrice && !bySlug.has(slug)) {
+          // The twin is the price source. A 404 is not "no price".
+          if (markdown === null) priceUnread = true
+          const stated = markdown ? parseMistralMarkdownPrice(markdown) : null
+          if (stated && markdownHash) {
+            pagePrice = stated
+            priceUrl = mdUrl
+            priceHash = markdownHash
+          }
         }
       }
       return {
-        releasedAt: markdown ? parseMistralMarkdownReleaseDate(markdown) : null,
+        releasedAt,
+        ...(releaseUrl ? { releaseUrl } : {}),
         ...(markdownHash ? { markdownHash } : {}),
-        ...(markdown === null ? { markdownUnread: true } : {}),
+        ...(markdownUnread ? { markdownUnread: true } : {}),
         ids,
-        hash: await sha256Text(body),
+        hash,
         serverTools: parseMistralPageTools(body),
         modalities: withDocumentInput(
-          parseMistralPageModalities(body),
+          catalog
+            ? mistralCatalogModalities(catalog)
+            : parseMistralPageModalities(body),
           features,
         ),
         features,
-        maxOutput: parseMistralPageMaxOutput(body),
+        maxOutput: catalog
+          ? catalog.maxOutputTokens
+          : parseMistralPageMaxOutput(body),
         pagePrice,
         ...(priceUrl && priceHash ? { priceUrl, priceHash } : {}),
         ...(priceUnread ? { priceUnread: true } : {}),
@@ -1525,7 +1716,7 @@ export async function mistralModelPricing(
     pages,
     (page) => page.releasedAt,
     (page) => ({
-      url: `${MISTRAL_MODEL_PAGE(page.slug)}.md`,
+      url: page.releaseUrl ?? `${MISTRAL_MODEL_PAGE(page.slug)}.md`,
       hash: page.markdownHash ?? page.hash,
     }),
   )

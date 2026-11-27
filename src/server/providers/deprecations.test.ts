@@ -148,3 +148,121 @@ describe('mistral deprecations table', () => {
     ).toThrow(/no API name/)
   })
 })
+
+function catalogHtml(models: Array<unknown>): string {
+  const stream = `1:${JSON.stringify(models)}\n`
+  return `<html><script>self.__next_f.push([1,${JSON.stringify(stream)}])</script></html>`
+}
+
+function catalogRow(overrides: Record<string, unknown> = {}) {
+  return {
+    slug: 'pixtral-12b-24-09',
+    status: 'deprecated',
+    modelIds: ['pixtral-12b-2409'],
+    shortDescription: 'Vision model.',
+    deprecatedAt: '2025-12-02T00:00:00.000Z',
+    retiredAt: '2025-12-31T00:00:00.000Z',
+    replacedBy: { modelIds: ['ministral-14b-2512'] },
+    inputs: ['text', 'image'],
+    outputs: ['text'],
+    features: [],
+    maxOutputTokens: null,
+    releasedAt: '2024-09-17T00:00:00.000Z',
+    pricing: [],
+    isFree: false,
+    ...overrides,
+  }
+}
+
+describe('mistral deprecations catalog', () => {
+  it('reads one entry per API id, with the successor primary id', () => {
+    const rows = new Map(
+      parseMistralDeprecations(
+        catalogHtml([
+          catalogRow(),
+          catalogRow({
+            slug: 'mistral-medium-3-5-26-04',
+            modelIds: ['mistral-medium-3-5', 'mistral-medium-latest'],
+            deprecatedAt: '2026-10-31T00:00:00.000Z',
+            retiredAt: '2027-04-30T00:00:00.000Z',
+            replacedBy: {
+              modelIds: ['mistral-large-4', 'mistral-large-4-0'],
+            },
+          }),
+          catalogRow({
+            slug: 'leanstral-1-5',
+            modelIds: ['labs-leanstral-1-5'],
+            replacedBy: null,
+          }),
+          catalogRow({
+            slug: 'voxtral-mini-25-07',
+            status: 'retired',
+            modelIds: [],
+          }),
+          catalogRow({
+            slug: 'mistral-small-4',
+            status: 'ga',
+            modelIds: ['mistral-small-2603'],
+          }),
+        ]),
+      ).map((row) => [row.rawId, row]),
+    )
+    expect(rows.get('pixtral-12b-2409')).toEqual({
+      rawId: 'pixtral-12b-2409',
+      deprecatedAt: day('2025-12-02'),
+      retiresAt: day('2025-12-31'),
+      replacedBy: ['ministral-14b-2512'],
+      sourceUrl: MISTRAL_DEPRECATIONS_URL,
+    })
+    expect(rows.get('mistral-medium-latest')?.replacedBy).toEqual([
+      'mistral-large-4',
+    ])
+    expect(rows.get('labs-leanstral-1-5')?.replacedBy).toBeNull()
+    expect(rows.has('mistral-small-2603')).toBe(false)
+    expect([...rows.keys()].some((id) => id === '')).toBe(false)
+  })
+
+  it('throws when the payload has no deprecated rows, or a replacement names no API id', () => {
+    expect(() =>
+      parseMistralDeprecations(
+        catalogHtml([
+          catalogRow({ status: 'ga', modelIds: ['mistral-large-4'] }),
+        ]),
+      ),
+    ).toThrow(/parsed 0 model rows/)
+    expect(() =>
+      parseMistralDeprecations(
+        '<html><script>self.__next_f.push([1,"1:[]\\n"])</script></html>',
+      ),
+    ).toThrow(/parsed 0 model rows/)
+    expect(() =>
+      parseMistralDeprecations(
+        catalogHtml([catalogRow({ replacedBy: { modelIds: [] } })]),
+      ),
+    ).toThrow(/no API name/)
+    expect(() =>
+      parseMistralDeprecations(catalogHtml([catalogRow({ replacedBy: 100 })])),
+    ).toThrow(/no API name/)
+    const populated = catalogRow()
+    expect(
+      parseMistralDeprecations(
+        catalogHtml([catalogRow({ replacedBy: 100 }), populated]),
+      ).find((row) => row.rawId === 'pixtral-12b-2409')?.replacedBy,
+    ).toEqual(['ministral-14b-2512'])
+    expect(() =>
+      parseMistralDeprecations(
+        catalogHtml([
+          catalogRow({
+            modelIds: ['same-id'],
+            retiredAt: '2025-12-31T00:00:00.000Z',
+          }),
+          catalogRow({
+            slug: 'other',
+            modelIds: ['same-id'],
+            retiredAt: '2026-01-01T00:00:00.000Z',
+          }),
+        ]),
+      ),
+    ).toThrow(/listed twice/)
+  })
+})

@@ -22,14 +22,13 @@ import { fetchText, reasoningViolation, sha256Text } from './types.ts'
 import type { ModelFactSources, ModelInfo, ModelReasoning } from './types.ts'
 
 /**
- * The rendered reasoning guide. `https://docs.mistral.ai/llms.txt` links
- * `https://docs.mistral.ai/inference/conversations/reasoning.md`, and the
- * old `/studio/conversations/reasoning.md` redirects there, but that
- * markdown twin 404s (checked 2026-11-19). This HTML page is what serves
- * the guide.
+ * The reasoning guide as markdown. The HTML page's converted text no longer
+ * keeps the `reasoning_effort` bullets (checked 2026-11-27). `llms.txt`
+ * links this document, and `/inference/conversations/reasoning.md` redirects
+ * here.
  */
 export const MISTRAL_REASONING_URL =
-  'https://docs.mistral.ai/inference/conversations/reasoning'
+  'https://docs.mistral.ai/llms/inference/conversations/reasoning/llms.txt'
 
 /**
  * Mistral's docs site returns a full HTML document where `llms.txt` still

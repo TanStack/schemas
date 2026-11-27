@@ -7,26 +7,31 @@ import {
   mistralModelPage,
   tip,
 } from './fixtures/mistral-model-page.ts'
+import { mistralPageCatalog, parseMistralCatalog } from './mistral-catalog.ts'
+import type { MistralCatalogModel } from './mistral-catalog.ts'
 import {
+  MISTRAL_WEBSEARCH_URL,
   copyMistralAliasFacts,
   indexMistralApiIds,
   indexMistralModalities,
+  mistralCatalogModalities,
+  mistralCatalogPrice,
   mistralConversationTools,
   mistralIndexSlugFor,
   mistralModelPricing,
   mistralRateCard,
   parseMistralApiIds,
   parseMistralApiSlugs,
+  parseMistralMakers,
   parseMistralMarkdownPrice,
   parseMistralModelIndex,
-  parseMistralPageMaxOutput,
   parseMistralPageFeatures,
+  parseMistralPageMaxOutput,
   parseMistralPageModalities,
   parseMistralPagePrice,
   parseMistralPricing,
   parseMistralSamePrice,
   parseMistralWebSearchTools,
-  MISTRAL_WEBSEARCH_URL,
   withDocumentInput,
 } from './mistral-pricing.ts'
 
@@ -740,10 +745,8 @@ describe('mistral model page price and max output', () => {
 <tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
 </table>`,
       'https://docs.mistral.ai/resources/changelogs': '',
-      'https://docs.mistral.ai/models.md':
-        '| [Medium 3.5](/models/mistral-medium-3-5-26-04) | `mistral-medium-3-5` | Deprecated |',
       'https://docs.mistral.ai/models':
-        '<a href="/models/not-a-listed-id">x</a>',
+        '| [Medium 3.5](/models/mistral-medium-3-5-26-04) | `mistral-medium-3-5` | Deprecated |',
       'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
         mistralModelPage(
           ['mistral-small-2603'],
@@ -811,10 +814,8 @@ describe('mistral model page price and max output', () => {
 <tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
 </table>`,
       'https://docs.mistral.ai/resources/changelogs': '',
-      'https://docs.mistral.ai/models.md': `| [TTS](/models/voxtral-tts-26-03) | \`voxtral-mini-tts-2603\` | Deprecated |
+      'https://docs.mistral.ai/models': `| [TTS](/models/voxtral-tts-26-03) | \`voxtral-mini-tts-2603\` | Deprecated |
 | [Leanstral](/models/leanstral-1-5) | \`labs-leanstral-1-5\` | Deprecated |`,
-      'https://docs.mistral.ai/models':
-        '<a href="/models/not-a-listed-id">x</a>',
       'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
         mistralModelPage(
           ['mistral-small-2603'],
@@ -972,7 +973,6 @@ describe('mistral model page features', () => {
 <tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
 </table>`,
       'https://docs.mistral.ai/resources/changelogs': '',
-      'https://docs.mistral.ai/models.md': '',
       'https://docs.mistral.ai/models': '',
       [small]: page([feature('function-calling')], {}, ['mistral-small-2603']),
       [`${small}.md`]: '- Release date: 2026-03-16\n',
@@ -1101,5 +1101,342 @@ describe('mistral web search tools', () => {
     )
     expect(mistralConversationTools(['chat-completions'], tools)).toEqual([])
     expect(mistralConversationTools(null, tools)).toEqual([])
+  })
+})
+
+/** RSC payload holding catalog records, the shape of the live overview. */
+function catalogHtml(models: Array<unknown>): string {
+  const stream = `1:${JSON.stringify(models)}\n`
+  return `<html><script>self.__next_f.push([1,${JSON.stringify(stream)}])</script></html>`
+}
+
+function catalogModel(
+  overrides: Record<string, unknown> = {},
+): MistralCatalogModel {
+  return {
+    slug: 'mistral-large-4-0',
+    status: 'ga',
+    modelIds: ['mistral-large-4', 'mistral-large-4-0'],
+    shortDescription: 'Flagship.',
+    deprecatedAt: null,
+    retiredAt: null,
+    replacedBy: null,
+    replacementIds: null,
+    inputs: ['text'],
+    outputs: ['text'],
+    features: ['function-calling'],
+    maxOutputTokens: 128000,
+    releasedAt: '2026-10-05T12:00:00.000Z',
+    pricing: [
+      { direction: 'input', label: 'Input', unit: '/M Tokens', priceUsd: 0.7 },
+      {
+        direction: 'input',
+        label: 'Cached input',
+        unit: '/M Tokens',
+        priceUsd: 0.07,
+      },
+      {
+        direction: 'output',
+        label: 'Output',
+        unit: '/M Tokens',
+        priceUsd: 2.1,
+      },
+    ],
+    isFree: false,
+    ...overrides,
+  } as MistralCatalogModel
+}
+
+describe('mistral catalog records', () => {
+  it('maps each API id to one slug and drops an id used twice', () => {
+    const html = catalogHtml([
+      catalogModel({ slug: 'left', modelIds: ['one', 'shared'] }),
+      catalogModel({ slug: 'right', modelIds: ['shared', 'two'] }),
+    ])
+    const slugs = parseMistralApiSlugs(html)
+    expect(slugs.get('one')).toBe('left')
+    expect(slugs.get('two')).toBe('right')
+    expect(slugs.has('shared')).toBe(false)
+    expect(() =>
+      parseMistralApiSlugs(catalogHtml([{ slug: 'not-a-record' }])),
+    ).toThrow(/parsed 0 API slugs/)
+    expect(() =>
+      parseMistralCatalog(
+        catalogHtml([
+          catalogModel(),
+          catalogModel({ shortDescription: 'A different copy.' }),
+        ]),
+      ),
+    ).toThrow(/models disagree/)
+  })
+
+  it('throws on a status or date it cannot read', () => {
+    expect(() =>
+      parseMistralCatalog(catalogHtml([catalogModel({ status: 'gone' })])),
+    ).toThrow(/status/)
+    expect(() =>
+      parseMistralCatalog(catalogHtml([catalogModel({ releasedAt: 'soon' })])),
+    ).toThrow(/releasedAt/)
+  })
+
+  it('names a third-party maker and lists every API id', () => {
+    const { makers, named } = parseMistralMakers(
+      catalogHtml([
+        catalogModel({
+          slug: 'zai-glm-5-3',
+          modelIds: ['zai-glm-5-3', 'zai-glm-latest'],
+          shortDescription: 'A third-party model from Z.ai.',
+        }),
+        catalogModel(),
+      ]),
+    )
+    expect(makers.get('zai-glm-5-3')).toBe('Z.ai')
+    expect(makers.get('zai-glm-latest')).toBe('Z.ai')
+    expect(named.has('mistral-large-4')).toBe(true)
+    expect(makers.has('mistral-large-4')).toBe(false)
+    expect(
+      parseMistralCatalog(
+        catalogHtml([catalogModel({ shortDescription: null })]),
+      )[0]?.shortDescription,
+    ).toBe('')
+  })
+
+  it('reads modalities, a token card, and a unit written inside the label', () => {
+    const ocr = catalogModel({
+      slug: 'ocr-4-1',
+      inputs: ['image', 'document'],
+      outputs: ['reasoning', 'text'],
+      features: ['ocr', 'document-qna'],
+    })
+    expect(mistralCatalogModalities(ocr)).toEqual({
+      input: ['image', 'file'],
+      output: ['text'],
+    })
+    expect(
+      mistralCatalogModalities(
+        catalogModel({ inputs: ['timeseries'], outputs: ['text'] }),
+      ),
+    ).toBeNull()
+    expect(mistralCatalogPrice(ocr)).toEqual({
+      kind: 'tokens',
+      rates: {
+        input_tokens: 0.7 / 1e6,
+        cache_read_tokens: 0.07 / 1e6,
+        output_tokens: 2.1 / 1e6,
+      },
+    })
+    expect(
+      mistralCatalogPrice(
+        catalogModel({
+          pricing: [
+            {
+              direction: 'input',
+              label: 'Output (/M tokens)',
+              unit: null,
+              priceUsd: 3,
+            },
+          ],
+        }),
+      ),
+    ).toEqual({ kind: 'tokens', rates: { output_tokens: 3 / 1e6 } })
+    expect(
+      mistralCatalogPrice(
+        catalogModel({
+          isFree: true,
+          pricing: [
+            {
+              direction: 'input',
+              label: 'Input',
+              unit: '/M Tokens',
+              priceUsd: 0,
+            },
+            {
+              direction: 'output',
+              label: 'Output',
+              unit: '/M Tokens',
+              priceUsd: 0,
+            },
+          ],
+        }),
+      ),
+    ).toBeNull()
+    expect(() =>
+      mistralCatalogPrice(
+        catalogModel({
+          isFree: true,
+          pricing: [
+            {
+              direction: 'input',
+              label: 'Input',
+              unit: '/M Tokens',
+              priceUsd: 1,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/positive price/)
+  })
+
+  it('reads the matching page and throws when the catalog names another slug', () => {
+    const html = catalogHtml([catalogModel()])
+    expect(parseMistralApiIds(html, 'mistral-large-4-0')).toEqual([
+      'mistral-large-4',
+      'mistral-large-4-0',
+    ])
+    expect(mistralPageCatalog(html, 'mistral-large-4-0')?.maxOutputTokens).toBe(
+      128000,
+    )
+    expect(() => mistralPageCatalog(html, 'other-page')).toThrow(
+      /catalog names 0 matching models/,
+    )
+    expect(parseMistralCatalog('<html>no payload</html>')).toEqual([])
+  })
+
+  it('prices a dropped row from the catalog and does not fetch the markdown twin', async () => {
+    const medium = catalogModel({
+      slug: 'mistral-medium-3-5-26-04',
+      modelIds: ['mistral-medium-3-5', 'mistral-medium-latest'],
+      inputs: ['text'],
+      outputs: ['text'],
+      features: ['document-qna'],
+      maxOutputTokens: null,
+      releasedAt: '2026-04-28T12:00:00.000Z',
+      pricing: [
+        {
+          direction: 'input',
+          label: 'Input',
+          unit: '/M Tokens',
+          priceUsd: 1.5,
+        },
+        {
+          direction: 'output',
+          label: 'Output',
+          unit: '/M Tokens',
+          priceUsd: 7.5,
+        },
+      ],
+    })
+    const original = globalThis.fetch
+    const calls: Array<string> = []
+    const docs: Record<string, string> = {
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/models': catalogHtml([medium]),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
+        mistralModelPage(
+          ['mistral-small-2603'],
+          [[tip('Text input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        '- Release date: 2026-03-16\n',
+      'https://docs.mistral.ai/models/mistral-medium-3-5-26-04': catalogHtml([
+        medium,
+      ]),
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+    }
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      calls.push(href)
+      const body = docs[href]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const lookup = await mistralModelPricing(undefined, [
+        'mistral-small-2603',
+        'mistral-medium-3-5',
+        'mistral-medium-latest',
+      ])
+      const row = lookup('mistral-medium-3-5')
+      const card = row.pricing
+      if (!card) throw new Error('expected a medium card')
+      expect(
+        price(
+          card as RateCard,
+          {},
+          { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        ),
+      ).toBeCloseTo(9, 6)
+      expect(row.factSources?.pricing).toMatchObject({
+        sourceUrl: 'https://docs.mistral.ai/models/mistral-medium-3-5-26-04',
+      })
+      expect(row.releasedAt).toBe(Date.parse('2026-04-28T12:00:00.000Z') / 1000)
+      expect(row.factSources?.releasedAt).toMatchObject({
+        sourceUrl: 'https://docs.mistral.ai/models/mistral-medium-3-5-26-04',
+        path: 'Release date',
+      })
+      expect(row.modalities).toEqual({
+        input: ['text', 'file'],
+        output: ['text'],
+      })
+      expect(lookup('mistral-medium-latest').pricing).toEqual(card)
+      expect(lookup.seen.has('mistral-medium-3-5')).toBe(true)
+      expect(
+        calls.some((href) => href.endsWith('mistral-medium-3-5-26-04.md')),
+      ).toBe(false)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('treats an HTML body at the markdown twin as a missing page', async () => {
+    const original = globalThis.fetch
+    const docs: Record<string, string> = {
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/models':
+        '| [Twin](/models/html-twin) | `html-twin-id` | GA |',
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
+        mistralModelPage(
+          ['mistral-small-2603'],
+          [[tip('Text input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        '- Release date: 2026-03-16\n',
+      'https://docs.mistral.ai/models/html-twin': mistralModelPage(
+        ['html-twin-id'],
+        [[tip('Text input'), tip('Text output')]],
+      ),
+      'https://docs.mistral.ai/models/html-twin.md':
+        '<!DOCTYPE html><html><body>moved</body></html>',
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+    }
+    globalThis.fetch = ((url: string) => {
+      const body = docs[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const lookup = await mistralModelPricing(undefined, [
+        'mistral-small-2603',
+        'html-twin-id',
+      ])
+      expect(lookup.seen.has('html-twin-id')).toBe(false)
+      expect(lookup('html-twin-id').pricing).toBeUndefined()
+      expect(lookup('html-twin-id').absent).toEqual({
+        pricing: 'unavailable',
+        releasedAt: 'unavailable',
+      })
+      expect(lookup('html-twin-id').modalities).toEqual({
+        input: ['text'],
+        output: ['text'],
+      })
+    } finally {
+      globalThis.fetch = original
+    }
   })
 })
