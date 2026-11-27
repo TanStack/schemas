@@ -299,7 +299,11 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v49: a Gemini model page entry gained `guide`, the guide its
 // Documentation section links (#707). A v48 entry has none, so agent rows
 // would read no guide tools for six hours.
-const DOCS_CACHE_VERSION = 'v49'
+// v50: a Gemini guide caches the Supported tools catalog only (#773). A v49
+// Deep Research entry is missing (the MCP field table's JSON `string` threw
+// before the write) or is the catalog from before that table; either way the
+// next poll must parse the page again instead of failing for six hours.
+const DOCS_CACHE_VERSION = 'v50'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

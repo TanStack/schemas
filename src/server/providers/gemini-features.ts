@@ -112,17 +112,31 @@ const GUIDE_TOOL_FIELDS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * A guide's `## Supported tools` table: each backticked Type value is the
+ * The first pipe table in `text`. A later table in the same section is a
+ * different statement (Deep Research types the MCP `type` field as JSON
+ * `string` under `### MCP servers`, #773).
+ */
+function firstMarkdownTable(text: string): Array<Array<string>> {
+  const lines: Array<string> = []
+  for (const line of text.split('\n')) {
+    if (line.startsWith('|')) lines.push(line)
+    else if (lines.length > 0) break
+  }
+  return markdownTableRows(lines.join('\n'))
+}
+
+/**
+ * A guide's `## Supported tools` catalog: each backticked Type value is the
  * Interactions API name of a generateContent `Tool` field
- * (`google_search` → `googleSearch`). A guide with no such section states
- * nothing; a section that yields no Type value, or a Type value outside the
- * known fields, throws (#707).
+ * (`google_search` → `googleSearch`). Only that first table is the catalog.
+ * A guide with no such section states nothing; a catalog that yields no
+ * Type value, or a Type value outside the known fields, throws (#707).
  */
 export function parseGuideTools(markdown: string): Array<string> {
   const start = markdown.search(/^## Supported tools\b/m)
   if (start < 0) return []
   const section = markdown.slice(start).split(/^## /m)[1] ?? ''
-  const [header, ...rows] = markdownTableRows(section)
+  const [header, ...rows] = firstMarkdownTable(section)
   const column = header?.findIndex((cell) => /^type value$/i.test(cell)) ?? -1
   if (column < 0)
     throw new Error('gemini guide: Supported tools has no Type value column')

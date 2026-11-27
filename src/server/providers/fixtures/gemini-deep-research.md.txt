@@ -23,6 +23,16 @@ specify tools to restrict or extend the agent's capabilities.
 | MCP Server | `mcp_server` | Connect to remote MCP servers for external tool access. |
 | File Search | `file_search` | Search your uploaded document corpora. |
 
-### Google Search  {% id="google-search" %}
+### MCP servers  {% id="mcp-servers" %}
+
+The Field column is the request field. Type is its JSON type, not a tool.
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `type` | `string` | Yes | Must be `"mcp_server"`. |
+| `name` | `string` | No | A display name for the MCP server. |
+| `headers` | `object` | No | Key-value pairs sent as HTTP headers. |
+| `allowed_tools` | `array` | No | Restrict which tools from the server the agent may call. |
+
 ## Steerability and formatting  {% id="steerability-and-formatting" %}
 
