@@ -867,6 +867,136 @@ describe('mistral model page price and max output', () => {
   })
 })
 
+describe('voxtral small page gone (#787)', () => {
+  const overview = `| [Small](/models/mistral-small-4-0-26-03) | \`mistral-small-2603\` | GA | 256k | text |
+| [Voxtral Small Transcribe 3](/models/voxtral-small-transcribe-3-0) | \`voxtral-small-transcribe-3-0\` | Preview | 32k | text |
+
+## Deprecated and retired models
+
+| Model | API name | Status | Context | Summary | Deprecation | Retirement | Replacement |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [Pixtral](/models/pixtral-large) | \`pixtral-12b-2409\` | Deprecated | 128k | x | 2025-12-02 | 2025-12-31 | [Small](/models/mistral-small-4-0-26-03) |
+`
+
+  it('keeps the id unread when every candidate page 404s and does not take the successor price', async () => {
+    const original = globalThis.fetch
+    const docs: Record<string, string> = {
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>
+<h2>Audio models</h2>
+<p>Prices as marked</p>
+<table>
+<tr><td><a href="/models/voxtral-small-transcribe-3-0">Voxtral 3</a></td><td>$0.004 /Min</td><td>—</td><td>—</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/models': overview,
+      'https://docs.mistral.ai/models/voxtral-small-transcribe-3-0':
+        mistralModelPage(
+          ['voxtral-small-transcribe-3-0', 'voxtral-small-transcribe-latest'],
+          [[tip('Audio input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/voxtral-small-transcribe-3-0.md':
+        '- Release date: 2026-11-18\n',
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
+        mistralModelPage(
+          ['mistral-small-2603'],
+          [[tip('Text input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        '- Release date: 2026-03-16\n',
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+    }
+    globalThis.fetch = ((url: string) => {
+      const body = docs[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const lookup = await mistralModelPricing(
+        undefined,
+        ['voxtral-small-2507', 'voxtral-small-transcribe-3-0'],
+        undefined,
+        ['voxtral-small-2507'],
+      )
+      const successor = lookup('voxtral-small-transcribe-3-0')
+      expect(successor.pricing).toBeTruthy()
+      expect(
+        price(successor.pricing as RateCard, {}, { audio_minutes: 1 }),
+      ).toBeCloseTo(0.004, 6)
+      const old = lookup('voxtral-small-2507')
+      expect(old.pricing).toBeUndefined()
+      expect(old.absent).toEqual({ pricing: 'unavailable' })
+      expect(lookup.seen.has('voxtral-small-2507')).toBe(false)
+      expect(old.pricing).not.toEqual(successor.pricing)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('reads a candidate page that is still published', async () => {
+    const original = globalThis.fetch
+    const docs: Record<string, string> = {
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/models': overview,
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
+        mistralModelPage(
+          ['mistral-small-2603'],
+          [[tip('Text input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        '- Release date: 2026-03-16\n',
+      'https://docs.mistral.ai/models/voxtral-small-25-07': mistralModelPage(
+        ['voxtral-small-2507', 'voxtral-small-latest'],
+        [[tip('Audio input'), tip('Text output')]],
+      ),
+      'https://docs.mistral.ai/models/voxtral-small-25-07.md':
+        '- Release date: 2025-07-16\n- Pricing: Input $0.001 /Min\n',
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+    }
+    globalThis.fetch = ((url: string) => {
+      const body = docs[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const lookup = await mistralModelPricing(
+        undefined,
+        ['voxtral-small-2507'],
+        undefined,
+        ['voxtral-small-2507'],
+      )
+      expect(
+        price(
+          lookup('voxtral-small-2507').pricing as RateCard,
+          {},
+          {
+            audio_minutes: 1,
+          },
+        ),
+      ).toBeCloseTo(0.001, 6)
+      expect(lookup('voxtral-small-2507').absent?.pricing).toBeUndefined()
+      expect(lookup.seen.has('voxtral-small-2507')).toBe(true)
+      expect(lookup.seen.has('voxtral-small-latest')).toBe(true)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
 describe('mistral alias facts', () => {
   it('copies one agreed fact onto mutual aliases and skips a conflict', () => {
     const source = {

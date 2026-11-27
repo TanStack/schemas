@@ -10,7 +10,10 @@ import {
   tip,
 } from '../fixtures/mistral-model-page.ts'
 import { mistralAliasFacts, provider } from './mistral.ts'
-import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
+import {
+  MISTRAL_DEPRECATIONS_URL,
+  MISTRAL_VOXTRAL_MIGRATION_URL,
+} from '../deprecations.ts'
 import {
   MISTRAL_WEBSEARCH_URL,
   mistralSummaryMaker,
@@ -21,6 +24,10 @@ import { MISTRAL_REASONING_URL } from '../reasoning-config.ts'
 
 const MODELS_PAGE = readFileSync(
   new URL('../fixtures/mistral-models.md.txt', import.meta.url),
+  'utf8',
+)
+const VOXTRAL_MIGRATION = readFileSync(
+  new URL('../fixtures/mistral-voxtral-migration.md.txt', import.meta.url),
   'utf8',
 )
 // https://docs.mistral.ai/models/mistral-small-4-0-26-03.md, 2026-11-21.
@@ -78,6 +85,9 @@ describe('mistral listModels', () => {
       })
       if (href === MISTRAL_DEPRECATIONS_URL) {
         return Promise.resolve(new Response(MODELS_PAGE))
+      }
+      if (href === MISTRAL_VOXTRAL_MIGRATION_URL) {
+        return Promise.resolve(new Response(VOXTRAL_MIGRATION))
       }
       // Docs stay off the network. A live pricing table plus one page
       // per slug blows the 5s test limit once missing ids pull markdown.
@@ -565,6 +575,110 @@ describe('parseMistralMarkdownReleaseDate', () => {
     expect(() =>
       parseMistralMarkdownReleaseDate('- Release date: 2026-02-30\n'),
     ).toThrow(/release date/)
+  })
+})
+
+describe('voxtral small after its page 404s (#787)', () => {
+  it('keeps both listing ids unread and records the guide replacement', async () => {
+    const overview = `| Model | API name | Status | Context | Summary |
+| --- | --- | --- | --- | --- |
+| [Voxtral Small Transcribe 3](/models/voxtral-small-transcribe-3-0) | \`voxtral-small-transcribe-3-0\` | Preview | 32k | text |
+| [Small](/models/mistral-small-4-0-26-03) | \`mistral-small-2603\` | GA | 256k | text |
+
+## Deprecated and retired models
+
+| Model | API name | Status | Context | Summary | Deprecation | Retirement | Replacement |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [Pixtral](/models/pixtral-large) | \`pixtral-12b-2409\` | Deprecated | 128k | x | 2025-12-02 | 2025-12-31 | [Small](/models/mistral-small-4-0-26-03) |
+`
+    const pages: Record<string, string> = {
+      'https://api.mistral.ai/v1/models': JSON.stringify({
+        data: [
+          {
+            id: 'voxtral-small-2507',
+            aliases: ['voxtral-small-latest'],
+            capabilities: { audio_transcription: true },
+          },
+          {
+            id: 'voxtral-small-latest',
+            aliases: ['voxtral-small-2507'],
+            capabilities: { audio_transcription: true },
+          },
+          {
+            id: 'voxtral-small-transcribe-3-0',
+            capabilities: { audio_transcription: true },
+          },
+        ],
+      }),
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>
+<h2>Audio models</h2>
+<p>Prices as marked</p>
+<table>
+<tr><td><a href="/models/voxtral-small-transcribe-3-0">Voxtral 3</a></td><td>$0.004 /Min</td><td>—</td><td>—</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      [MISTRAL_DEPRECATIONS_URL]: overview,
+      [MISTRAL_VOXTRAL_MIGRATION_URL]: VOXTRAL_MIGRATION,
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+      'https://docs.mistral.ai/models/voxtral-small-transcribe-3-0':
+        mistralModelPage(
+          ['voxtral-small-transcribe-3-0'],
+          [[tip('Audio input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/voxtral-small-transcribe-3-0.md':
+        '- Release date: 2026-11-18\n',
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
+        mistralModelPage(
+          ['mistral-small-2603'],
+          [[tip('Text input'), tip('Text output')]],
+        ),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03.md':
+        '- Release date: 2026-03-16\n',
+    }
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const body = pages[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const { models, deprecations } = await provider.listModels({
+        MISTRAL_API_KEY: 'k',
+      })
+      const byId = new Map(models.map((model) => [model.rawId, model]))
+      const successor = byId.get('voxtral-small-transcribe-3-0')
+      expect(successor?.pricing).toBeTruthy()
+      expect(
+        price(successor?.pricing as RateCard, {}, { audio_minutes: 1 }),
+      ).toBeCloseTo(0.004, 6)
+      for (const id of ['voxtral-small-2507', 'voxtral-small-latest']) {
+        expect(byId.get(id)?.pricing).toBeUndefined()
+        expect(byId.get(id)?.absent?.pricing).toBe('unavailable')
+      }
+      expect(
+        deprecations?.find((entry) => entry.rawId === 'voxtral-small-2507'),
+      ).toEqual({
+        rawId: 'voxtral-small-2507',
+        deprecatedAt: null,
+        retiresAt: null,
+        replacedBy: ['voxtral-small-transcribe-latest'],
+        sourceUrl: MISTRAL_VOXTRAL_MIGRATION_URL,
+      })
+      expect(
+        deprecations?.some(
+          (entry) => entry.rawId === 'voxtral-small-transcribe-3-0',
+        ),
+      ).toBe(false)
+    } finally {
+      globalThis.fetch = original
+    }
   })
 })
 

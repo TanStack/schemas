@@ -28,6 +28,9 @@
  * models overview pairs each API id with the page slug, including
  * deprecated rows the index-slug rules miss
  * (`mistral-medium-3-5` → `mistral-medium-3-5-26-04`).
+ * An id the Voxtral migration guide names, whose candidate pages all
+ * 404, keeps its stored card (`unavailable`). The successor's price is
+ * not copied onto it (#787).
  * A listing alias the page does not name takes that page's card when
  * the listing `name` is an id the page does name. A mutual alias with
  * its own different card keeps that card (`magistral-medium-latest`).
@@ -1433,6 +1436,16 @@ export function parseMistralModelIndex(html: string): Array<string> {
 }
 
 /**
+ * Slug spellings a listed id might have had: itself, a trailing `-MMDD`
+ * unfolded to `-MM-DD`, and the id with a `labs-` prefix removed.
+ */
+function mistralPageCandidates(id: string): Array<string> {
+  const unfolded = id.replace(/-(\d{2})(\d{2})$/, '-$1-$2')
+  const stripped = id.startsWith('labs-') ? id.slice('labs-'.length) : id
+  return [...new Set([id, unfolded, stripped])]
+}
+
+/**
  * The one index slug a listed id is. Null when none or more than one of
  * the exact slug, the unfolded date, and the `labs-`-stripped id match.
  */
@@ -1440,11 +1453,7 @@ export function mistralIndexSlugFor(
   id: string,
   slugs: ReadonlySet<string>,
 ): string | null {
-  const unfolded = id.replace(/-(\d{2})(\d{2})$/, '-$1-$2')
-  const stripped = id.startsWith('labs-') ? id.slice('labs-'.length) : id
-  const hits = [...new Set([id, unfolded, stripped])].filter((name) =>
-    slugs.has(name),
-  )
+  const hits = mistralPageCandidates(id).filter((name) => slugs.has(name))
   return hits.length === 1 ? (hits[0] ?? null) : null
 }
 
@@ -1540,11 +1549,20 @@ export function mistralConversationTools(
   return features?.includes('agents-conversations') ? [...webSearch] : []
 }
 
-/** Card lookup by API model id. */
+/**
+ * Card lookup by API model id.
+ *
+ * `retiredIds` are ids a migration guide still names after the overview
+ * dropped them. Each candidate page is fetched. A 404 is that page gone.
+ * When every candidate 404s, the id is not in `seen`: the source did not
+ * state that the price is gone, so the lookup marks it `unavailable`.
+ * Any other status still throws.
+ */
 export async function mistralModelPricing(
   kv?: KVNamespace,
   listedIds: ReadonlyArray<string> = [],
   cached: typeof cachedDocs = cachedDocs,
+  retiredIds: ReadonlyArray<string> = [],
 ): Promise<MistralPricingLookup> {
   const table = await cached(kv, MISTRAL_PRICING_URL, async () => {
     const [html, changelog] = await Promise.all([
@@ -1689,6 +1707,39 @@ export async function mistralModelPricing(
   }
   const extraPages = await mapConcurrent(extraSlugs, 6, loadPage)
   const pages = [...tablePages, ...extraPages]
+  const gone = new Set<string>()
+  const knownSlugs = new Set([
+    ...pages.map((page) => page.slug),
+    ...bySlug.keys(),
+  ])
+  const named = new Set(pages.flatMap((page) => page.ids))
+  const probes = [
+    ...new Set(
+      retiredIds
+        .filter((id) => !named.has(id))
+        .flatMap((id) => mistralPageCandidates(id))
+        .filter((slug) => !knownSlugs.has(slug)),
+    ),
+  ]
+  const probed = await mapConcurrent(probes, 6, async (slug) => {
+    try {
+      return await loadPage(slug)
+    } catch (error) {
+      if (!isMissingDocsPage(error)) throw error
+      gone.add(slug)
+      return null
+    }
+  })
+  for (const page of probed) {
+    if (page) pages.push(page)
+  }
+  const pageGone = new Set(
+    retiredIds.filter((id) => {
+      if (pages.some((page) => page.ids.includes(id))) return false
+      const candidates = mistralPageCandidates(id)
+      return candidates.length > 0 && candidates.every((slug) => gone.has(slug))
+    }),
+  )
   const byId = indexMistralApiIds(bySlug, pages)
   for (const [from, to] of Object.entries(table.samePrice)) {
     const rates = byId.get(to)
@@ -1852,7 +1903,10 @@ export async function mistralModelPricing(
       ...maxFacts,
       ...releaseFacts,
     }
-    const pricingUnread = !pricing && priceUnread.has(rawId) && !seen.has(rawId)
+    const pricingUnread =
+      !pricing &&
+      !seen.has(rawId) &&
+      (priceUnread.has(rawId) || pageGone.has(rawId))
     const releasedUnread = !release && releaseUnread.has(rawId)
     const absent = {
       ...(pricingUnread ? { pricing: 'unavailable' as const } : {}),

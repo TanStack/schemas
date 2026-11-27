@@ -23,6 +23,14 @@ export const GROQ_DEPRECATIONS_URL =
  */
 export const MISTRAL_DEPRECATIONS_URL = 'https://docs.mistral.ai/models'
 
+/**
+ * Voxtral 2 → Voxtral 3 mapping. The models overview dropped Voxtral
+ * Small 25.07 when its page 404'd (#787). This guide still names the old
+ * id. The Deprecation timeline section is empty, so it states no dates.
+ */
+export const MISTRAL_VOXTRAL_MIGRATION_URL =
+  'https://docs.mistral.ai/llms/studio/audio/migrate-from-voxtral-2/llms.txt'
+
 const MONTHS = [
   'january',
   'february',
@@ -305,6 +313,107 @@ export function parseMistralDeprecations(
     })
   }
   if (out.size === 0) throw new Error(`${source}: parsed 0 model rows`)
+  return [...out.values()]
+}
+
+const MIGRATION_HEADER =
+  'Voxtral 2 model | Voxtral 3 model | Model ID | Aliases'
+const ONE_ID = /^`([^`]+)`$/
+
+/** One row of the Voxtral migration guide's Model mapping table. */
+export interface MistralVoxtralMove {
+  from: string
+  /** The Model ID cell, as written. Not the successor's other aliases. */
+  to: string
+}
+
+/**
+ * The guide's Model mapping table. The Deprecation timeline section
+ * states no dates today; any text there is unread and throws, so a
+ * published date is not dropped. A missing table or a changed header
+ * throws. Other sections are ignored.
+ */
+export function parseMistralVoxtralMigration(
+  markdown: string,
+): Array<MistralVoxtralMove> {
+  const source = 'mistral voxtral migration'
+  const mapping = markdown.split(/^### Model mapping$/m)[1]
+  if (mapping === undefined) {
+    throw new Error(`${source}: no Model mapping section`)
+  }
+  const table = mapping.split(/^### /m)[0] ?? ''
+  const header = table
+    .split('\n')
+    .find((line) => line.startsWith('|'))
+    ?.split('|')
+    .map((cell) => cell.trim())
+    .filter(Boolean)
+    .join(' | ')
+  if (header !== MIGRATION_HEADER) {
+    throw new Error(`${source}: table header ${JSON.stringify(header)}`)
+  }
+  const timeline = markdown.split(/^### Deprecation timeline$/m)[1]
+  if (timeline === undefined) {
+    throw new Error(`${source}: no Deprecation timeline section`)
+  }
+  const timelineBody = (timeline.split(/^### /m)[0] ?? '').trim()
+  if (timelineBody !== '') {
+    throw new Error(`${source}: deprecation timeline is unread`)
+  }
+  const out: Array<MistralVoxtralMove> = []
+  for (const row of tableRows(table)) {
+    if (row.length !== 4) {
+      throw new Error(`${source}: row has ${String(row.length)} cells`)
+    }
+    const from = ONE_ID.exec(row[0] ?? '')?.[1]
+    const to = ONE_ID.exec(row[2] ?? '')?.[1]
+    if (!from || !to) {
+      throw new Error(
+        `${source}: row ${JSON.stringify(row[0])} / ${JSON.stringify(row[2])}`,
+      )
+    }
+    requireId(from, source)
+    requireReplacement(to, source)
+    const prior = out.find((move) => move.from === from)
+    if (prior && prior.to !== to) {
+      throw new Error(`${source}: ${from} is listed twice`)
+    }
+    if (!prior) out.push({ from, to })
+  }
+  if (out.length === 0) throw new Error(`${source}: parsed 0 model rows`)
+  return out
+}
+
+/**
+ * Catalog entries win when they name the same id: they carry the dates
+ * the guide does not. A guide row the catalog does not list is added
+ * with null dates and the guide's Model ID. A different replacement
+ * throws. The caller skips the merge when either source failed, so a
+ * short list cannot wipe stored entries.
+ */
+export function mergeMistralDeprecations(
+  catalog: Array<ModelDeprecation>,
+  moves: Array<MistralVoxtralMove>,
+): Array<ModelDeprecation> {
+  const out = new Map(catalog.map((entry) => [entry.rawId, entry]))
+  for (const move of moves) {
+    const prior = out.get(move.from)
+    if (prior) {
+      if (prior.replacedBy?.[0] !== move.to) {
+        throw new Error(
+          `mistral voxtral migration: ${move.from} replacement ${move.to} disagrees with the catalog ${JSON.stringify(prior.replacedBy)}`,
+        )
+      }
+      continue
+    }
+    out.set(move.from, {
+      rawId: move.from,
+      deprecatedAt: null,
+      retiresAt: null,
+      replacedBy: [move.to],
+      sourceUrl: MISTRAL_VOXTRAL_MIGRATION_URL,
+    })
+  }
   return [...out.values()]
 }
 
