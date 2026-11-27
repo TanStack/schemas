@@ -1,7 +1,8 @@
 /**
  * OpenCode Zen prices from OpenCode's own console models page (issue #314).
  * Token rows are the Pricing table. Image models are the Image pricing
- * table (issue #100007). It is the only Zen price source: models.dev
+ * table (issue #100007). Embedding models are the Embedding pricing table,
+ * input tokens only (issue #774). It is the only Zen price source: models.dev
  * `cost` is not read, and an id the page does not price states no price.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
@@ -16,6 +17,7 @@ export const OPENCODE_PRICING_URL =
 
 const PRICE_HEADER = ['Model', 'Input', 'Output', 'Cached Read', 'Cached Write']
 const IMAGE_HEADER = ['Model', 'Price', 'Notes']
+const EMBEDDING_HEADER = ['Model', 'Input']
 const PRICE_LEVERS = [
   'input_tokens',
   'output_tokens',
@@ -308,6 +310,27 @@ export function parseOpenCodePricing(
     }
   }
 
+  // "Embedding models charge for input tokens only", per 1M tokens.
+  const embeddingTable = sectionTable(doc.text, 'Embedding pricing', 3)
+  const embeddingRows = new Map<string, number>()
+  if (embeddingTable) {
+    if (embeddingTable[0]!.join('|') !== EMBEDDING_HEADER.join('|')) {
+      throw new Error('opencode: pricing page Embedding pricing header changed')
+    }
+    for (const [name, input, ...rest] of embeddingTable.slice(2)) {
+      const rate = input === undefined ? undefined : usd(input, name ?? '')
+      if (!name || rate === undefined || rest.length > 0) {
+        throw new Error(
+          `opencode: unreadable embedding price row ${name ?? ''}`,
+        )
+      }
+      if (embeddingRows.has(name) || rows.has(name) || imageRows.has(name)) {
+        throw new Error(`opencode: ${name} is priced twice`)
+      }
+      embeddingRows.set(name, rate)
+    }
+  }
+
   const source = {
     url: OPENCODE_PRICING_URL,
     hash: doc.hash,
@@ -328,6 +351,13 @@ export function parseOpenCodePricing(
       : []
     cards.set(id, compileOpenCodeCost(row.base, tiers, id, source))
   }
+  for (const [name, rate] of embeddingRows) {
+    const id = idByName.get(name)
+    if (!id) throw new Error(`opencode: price row ${name} names no model id`)
+    const card = compileTokenCard({ input_tokens: rate / 1e6 }, [], source)
+    if (!card) throw new Error(`opencode: unreadable price for ${id}`)
+    cards.set(id, card)
+  }
   const imagePriced = new Set<string>()
   const unverified = new Set<string>()
   for (const [name, cells] of imageRows) {
@@ -342,10 +372,16 @@ export function parseOpenCodePricing(
   }
   // The Endpoints table names the model set. A price table that ends early
   // (a blank line, a split table) would otherwise clear the rows after it.
-  // An image model is priced in Image pricing, not in the token table.
+  // An image model is priced in Image pricing, an embedding model in
+  // Embedding pricing, not in the token table.
   // An unverified image row is an explicit absence, not a missing row.
   for (const name of idByName.keys()) {
-    if (!rows.has(name) && !imagePriced.has(name) && !unverified.has(name)) {
+    if (
+      !rows.has(name) &&
+      !embeddingRows.has(name) &&
+      !imagePriced.has(name) &&
+      !unverified.has(name)
+    ) {
       throw new Error(`opencode: ${name} has an endpoint but no price row`)
     }
   }

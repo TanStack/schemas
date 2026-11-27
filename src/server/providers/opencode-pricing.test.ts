@@ -64,6 +64,28 @@ const IMAGE_PAGE = PAGE.replace(
 `,
 )
 
+/** Two live Embedding pricing rows (issue #774), on the fixture page. */
+const EMBEDDING_PAGE = PAGE.replace(
+  '| Pickle          | pickle       |',
+  `| text-embedding-3-small | text-embedding-3-small | \`https://opencode.ai/inference/openai/v1/embeddings\` | \`@ai-sdk/openai-compatible\` |
+| Qwen3 Embedding 8B     | qwen3-embedding-8b     | \`https://opencode.ai/inference/openai/v1/embeddings\` | \`@ai-sdk/openai-compatible\` |
+| Pickle          | pickle       |`,
+).replace(
+  '\n## Privacy\n',
+  `
+### Embedding pricing
+
+Embedding models charge for input tokens only. Prices are **per 1M tokens**.
+
+| Model                  | Input |
+| ---------------------- | ----- |
+| text-embedding-3-small | $0.02 |
+| Qwen3 Embedding 8B     | $0.01 |
+
+## Privacy
+`,
+)
+
 const doc = (text: string) => ({
   text,
   hash: 'a'.repeat(64),
@@ -175,7 +197,41 @@ describe('parseOpenCodePricing', () => {
     ).toBeCloseTo(39)
   })
 
+  it('prices embedding rows on input tokens only', () => {
+    const cards = parseOpenCodePricing(doc(EMBEDDING_PAGE))
+    const small = cards.get('text-embedding-3-small') as Card
+    expect(small.tables.rate).toEqual({ base: { input_tokens: 0.02 / 1e6 } })
+    expect(Object.keys(small.inputs)).toEqual(['input_tokens'])
+    expect(price(small, {}, { input_tokens: 1_000_000 })).toBeCloseTo(0.02)
+    expect((cards.get('qwen3-embedding-8b') as Card).tables.rate.base).toEqual({
+      input_tokens: 0.01 / 1e6,
+    })
+  })
+
   it.each([
+    [
+      'an embedding row removed',
+      EMBEDDING_PAGE.replace(/\| Qwen3 Embedding 8B {5}\| \$0\.01 \|\n/, ''),
+      /Qwen3 Embedding 8B has an endpoint but no price row/,
+    ],
+    [
+      'a changed embedding header',
+      EMBEDDING_PAGE.replace('| Input |', '| Price |'),
+      /Embedding pricing header changed/,
+    ],
+    [
+      'an unreadable embedding price',
+      EMBEDDING_PAGE.replace('| $0.02 |', '| TBD   |'),
+      /unreadable price TBD/,
+    ],
+    [
+      'an embedding model priced in both tables',
+      EMBEDDING_PAGE.replace(
+        '| Pickle                            | Free',
+        '| Qwen3 Embedding 8B                | $0.01           | Free            | -               | -            |\n| Pickle                            | Free',
+      ),
+      /Qwen3 Embedding 8B is priced twice/,
+    ],
     [
       'an unreadable cell',
       PAGE.replace('$4.00 ', 'TBD   '),
