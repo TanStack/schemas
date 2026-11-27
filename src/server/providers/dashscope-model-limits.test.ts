@@ -61,6 +61,45 @@ const DECISION_FIXTURE = `# decision-model-preview
 <table><thead><tr><th>Parameter</th><th>Value</th><th>Parameter</th><th>Value</th></tr></thead><tbody><tr><td><p>Max Input Length</p></td><td><p>65,536</p></td><td><p>Max Output Length</p></td><td><p>0</p></td></tr><tr><td><p>Context Window</p></td><td><p>65,536</p></td><td /><td /></tr></tbody></table>
 `
 
+/** decision-model.md, fetched 2026-11-27 (#772): an overview page. */
+const DECISION_INDEX = `# Decision Model
+
+> Overview of Alibaba Cloud Model Studio decision models.
+
+- [Decision Model API Reference](/help/en/model-studio/decision-model-api): Call via the System One protocol.
+- [decision-model Model Info](/help/en/model-studio/decision-model-stable): Model capabilities, context limits, pricing, and rate limits.
+`
+
+/** decision-model-stable.md, fetched 2026-11-27 (#772), trimmed. */
+const DECISION_STABLE = `# decision-model
+
+## Model Capabilities <span id="h-dm-cap" />
+
+<table><thead><tr><th>Capability</th><th>Support</th><th>Capability</th><th>Support</th></tr></thead><tbody><tr><td><p>Input Modality</p></td><td><p><strong>Text, image</strong></p></td><td><p>Output Modality</p></td><td><p><strong>Text (structured decision result)</strong></p></td></tr></tbody></table>
+
+## Context Limits <span id="h-dm-ctx" />
+
+<table><thead><tr><th>Parameter</th><th>Value</th><th>Parameter</th><th>Value</th></tr></thead><tbody><tr><td><p>Max Input Length</p></td><td><p>268,288</p></td><td><p>Max Output Length</p></td><td><p>—</p></td></tr><tr><td><p>Context Window</p></td><td><p>268,288</p></td><td /><td /></tr></tbody></table>
+
+## Pricing <span id="h-dm-price" />
+`
+
+/** qwen-audio-3-1-live.md, fetched 2026-11-27 (#772), trimmed: no Context limits section. */
+const AUDIO_LIVE = `# qwen-audio-3.1-live
+
+## Model capabilities
+
+| Capability        | Supported     | Capability        | Supported     |
+| ----------------- | ------------- | ----------------- | ------------- |
+| Input Modalities  | Text, Audio   | Output Modalities | Text, Audio   |
+
+## Input limits
+
+The combined length of system instructions and function configuration text for the frontend model is limited to at most 65,536 tokens.
+
+## Model Pricing
+`
+
 describe('dashscope model limits', () => {
   it('reads context and non-thinking max output, including snapshot sections', () => {
     const models = parseDashscopeModelLimits(OMNI_FIXTURE)
@@ -91,6 +130,49 @@ describe('dashscope model limits', () => {
 
   it('throws when the page has no context-limit row', () => {
     expect(() => parseDashscopeModelLimits('# qwen-plus\n\nno table')).toThrow(
+      /parsed 0 context-limit rows/,
+    )
+  })
+
+  it('gives a model page with no Context limits section null limits', () => {
+    expect(parseDashscopeModelLimits(AUDIO_LIVE)).toEqual({
+      'qwen-audio-3.1-live': { contextWindow: null, maxOutput: null },
+    })
+  })
+
+  it('throws when the limits table sits under a renamed heading', () => {
+    expect(() =>
+      parseDashscopeModelLimits(
+        OMNI_FIXTURE.replaceAll('Context Limits', 'Token Limits'),
+      ),
+    ).toThrow(/parsed 0 context-limit rows/)
+  })
+
+  it('still throws when a Context limits section parses nothing', () => {
+    expect(() =>
+      parseDashscopeModelLimits(
+        `${AUDIO_LIVE}\n## Context limits\n\nSee the table below.\n`,
+      ),
+    ).toThrow(/parsed 0 context-limit rows/)
+  })
+
+  it('follows an overview page to the model info page it links', async () => {
+    const fetched: Array<string> = []
+    const doc = await loadDashscopeModelLimits(DECISION_INDEX, (url) => {
+      fetched.push(url)
+      return Promise.resolve(DECISION_STABLE)
+    })
+    expect(fetched).toEqual([
+      'https://www.alibabacloud.com/help/en/model-studio/decision-model-stable.md',
+    ])
+    expect(doc.sourceUrl).toBe(fetched[0])
+    expect(doc.models).toEqual({
+      'decision-model': { contextWindow: 268288, maxOutput: null },
+    })
+  })
+
+  it('throws on an overview page when not given a fetch', async () => {
+    await expect(loadDashscopeModelLimits(DECISION_INDEX)).rejects.toThrow(
       /parsed 0 context-limit rows/,
     )
   })
