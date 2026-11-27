@@ -908,6 +908,61 @@ describe('mistral alias facts', () => {
     })
     expect(models[4]?.pricing).toBeUndefined()
   })
+
+  it('copies the listing name when the alias group disagrees', () => {
+    const mediumSource = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://docs.mistral.ai/models/mistral-medium-3-5-26-04',
+      path: 'Pricing',
+    }
+    const magistralSource = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://docs.mistral.ai/models/magistral-medium-1-2-25-09',
+      path: 'Pricing',
+    }
+    const medium = { price: 1.5 }
+    const magistral = { price: 2 }
+    const models = [
+      {
+        rawId: 'mistral-medium-latest',
+        pricing: medium,
+        factSources: { pricing: mediumSource },
+      },
+      {
+        rawId: 'magistral-medium-latest',
+        pricing: magistral,
+        factSources: { pricing: magistralSource },
+      },
+      { rawId: 'mistral-medium-2604' },
+      { rawId: 'mistral-vibe-cli-latest' },
+      { rawId: 'display-name' },
+    ]
+    const group = [
+      'mistral-medium-latest',
+      'magistral-medium-latest',
+      'mistral-medium-2604',
+      'mistral-vibe-cli-latest',
+      'display-name',
+    ]
+    copyMistralAliasFacts(
+      models,
+      new Map(group.map((id) => [id, group.filter((other) => other !== id)])),
+      new Map([
+        ['mistral-medium-2604', 'mistral-medium-latest'],
+        ['mistral-vibe-cli-latest', 'mistral-medium-latest'],
+        ['magistral-medium-latest', 'mistral-medium-latest'],
+        ['display-name', 'Mistral Medium'],
+      ]),
+    )
+    expect(models[0]?.pricing).toEqual(medium)
+    expect(models[1]?.pricing).toEqual(magistral)
+    expect(models[2]).toMatchObject({
+      pricing: medium,
+      factSources: { pricing: mediumSource },
+    })
+    expect(models[3]?.pricing).toEqual(medium)
+    expect(models[4]?.pricing).toBeUndefined()
+  })
 })
 
 describe('usdExpr', () => {

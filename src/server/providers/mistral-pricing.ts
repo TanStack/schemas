@@ -28,6 +28,9 @@
  * models overview pairs each API id with the page slug, including
  * deprecated rows the index-slug rules miss
  * (`mistral-medium-3-5` → `mistral-medium-3-5-26-04`).
+ * A listing alias the page does not name takes that page's card when
+ * the listing `name` is an id the page does name. A mutual alias with
+ * its own different card keeps that card (`magistral-medium-latest`).
  *
  * `releasedAt` is the catalog record's `releasedAt` (#708). The markdown
  * twin's `Release date:` line is the older statement. The listing's
@@ -1894,11 +1897,15 @@ const ALIAS_FACTS = [
 
 /**
  * Copy a fact onto mutual listing aliases when every member that has it
- * agrees. A conflict copies nothing. The copy keeps the donor's docs URL.
+ * agrees. When they do not, an id whose listing `name` is another member
+ * of the group still takes that member's fact, and a member that already
+ * has its own fact keeps it. A `name` that is not a listed id copies
+ * nothing. The copy keeps the donor's docs URL.
  */
 export function copyMistralAliasFacts(
   models: Array<ModelInfo>,
   aliases: ReadonlyMap<string, ReadonlyArray<string>>,
+  namedAs: ReadonlyMap<string, string> = new Map(),
 ): void {
   const byId = new Map(models.map((model) => [model.rawId, model]))
   const parent = new Map<string, string>()
@@ -1943,14 +1950,19 @@ export function copyMistralAliasFacts(
       const first = donors[0]
       if (!first) continue
       const serialized = JSON.stringify(first[fact])
-      if (donors.some((donor) => JSON.stringify(donor[fact]) !== serialized)) {
-        continue
-      }
+      const agreed = donors.every(
+        (donor) => JSON.stringify(donor[fact]) === serialized,
+      )
       for (const id of group) {
         const target = byId.get(id)
         if (!target || target[fact] != null) continue
-        Object.assign(target, { [fact]: first[fact] })
-        const source = first.factSources?.[fact]
+        const named = namedAs.get(id)
+        const namedDonor =
+          named && group.includes(named) ? byId.get(named) : undefined
+        const donor = agreed ? first : namedDonor
+        if (!donor || donor[fact] == null) continue
+        Object.assign(target, { [fact]: donor[fact] })
+        const source = donor.factSources?.[fact]
         if (!source) continue
         target.factSources = { ...target.factSources, [fact]: source }
       }

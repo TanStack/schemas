@@ -179,6 +179,8 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels: async (env, kv): Promise<ListModelsResult> => {
     const aliases = new Map<string, Array<string>>()
+    // Listing `name` when it is another row's id. A display string is not.
+    const namedAs = new Map<string, string>()
     const listed = await listOpenAiCompatibleModels({
       providerId: 'mistral',
       url: MISTRAL_MODELS_URL,
@@ -190,6 +192,7 @@ export const provider: ProviderConfig = {
           (id) => typeof id === 'string' && id.length > 0,
         )
         if (names && names.length > 0) aliases.set(row.id, names)
+        if (row.name && row.name !== row.id) namedAs.set(row.id, row.name)
         // `created` is the request time on every row, not a release date
         // (#708). The date comes from the model page's catalog record.
         return Promise.resolve({ releasedAt: null, ...mistralAliasFacts(row) })
@@ -251,7 +254,7 @@ export const provider: ProviderConfig = {
           : unavailable('maker'),
       ),
     )
-    copyMistralAliasFacts(models, aliases)
+    copyMistralAliasFacts(models, aliases, namedAs)
     if (wire) {
       for (const model of models) {
         if (model.activity !== 'chat') continue

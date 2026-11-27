@@ -133,6 +133,12 @@ export interface OpenAiCompatModelRow {
   capabilities?: Record<string, boolean | undefined>
   /** mistral: other ids that resolve to this same row. */
   aliases?: Array<string>
+  /**
+   * mistral: the listed id this row is (`mistral-medium-2604` names
+   * `mistral-medium-latest`). A display string that matches no listed id
+   * is ignored.
+   */
+  name?: string
   /** groq: the maker's name (`OpenAI`, `Alibaba Cloud`). */
   owned_by?: string
   /** fireworks: `HF_BASE_MODEL`, `EMBEDDING_MODEL`, `ROUTER`, `CUSTOM_MODEL`. */
