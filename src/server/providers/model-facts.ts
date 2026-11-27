@@ -300,9 +300,10 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // Documentation section links (#707). A v48 entry has none, so agent rows
 // would read no guide tools for six hours.
 // v50: a Gemini guide caches the Supported tools catalog only (#773). A v49
-// Deep Research entry is missing (the MCP field table's JSON `string` threw
-// before the write) or is the catalog from before that table; either way the
-// next poll must parse the page again instead of failing for six hours.
+// entry was parsed from every table under the heading. Deep Research never
+// stored one after the MCP field table arrived (its JSON `string` threw, and
+// a failed load is not cached). The bump drops a v49 catalog stored before
+// that table.
 const DOCS_CACHE_VERSION = 'v50'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
