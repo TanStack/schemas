@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
 
+import { price } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -243,6 +245,239 @@ describe('mistral listModels modalities', () => {
       expect(unpriced?.modalities).toBeUndefined()
       expect(unpriced?.factSources?.modalities).toBeUndefined()
       expect(unpriced?.absent).toBeUndefined()
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
+describe('mistral medium 3.5 alias prices (#785)', () => {
+  it('gives listing aliases the named id’s catalog card when another alias disagrees', async () => {
+    const record = (overrides: Record<string, unknown>) => ({
+      slug: 'mistral-medium-3-5-26-04',
+      status: 'deprecated',
+      modelIds: ['mistral-medium-3-5', 'mistral-medium-latest'],
+      shortDescription: '',
+      deprecatedAt: '2026-10-31T00:00:00.000Z',
+      retiredAt: null,
+      replacedBy: null,
+      inputs: ['text'],
+      outputs: ['text'],
+      features: [],
+      maxOutputTokens: null,
+      releasedAt: '2026-04-28T00:00:00.000Z',
+      pricing: [
+        {
+          direction: 'input',
+          label: 'Input',
+          unit: '/M Tokens',
+          priceUsd: 1.5,
+        },
+        {
+          direction: 'output',
+          label: 'Output',
+          unit: '/M Tokens',
+          priceUsd: 7.5,
+        },
+      ],
+      isFree: false,
+      ...overrides,
+    })
+    const catalogHtml = (models: Array<unknown>) => {
+      const stream = `1:${JSON.stringify(models)}\n`
+      return `<html><a href="/models/mistral-medium-3-5-26-04">Medium</a><script>self.__next_f.push([1,${JSON.stringify(stream)}])</script></html>`
+    }
+    const medium = record({})
+    const successor = record({
+      slug: 'mistral-large-4-0',
+      status: 'ga',
+      modelIds: ['mistral-large-4', 'mistral-large-latest'],
+      deprecatedAt: null,
+      pricing: [
+        {
+          direction: 'input',
+          label: 'Input',
+          unit: '/M Tokens',
+          priceUsd: 0.7,
+        },
+        {
+          direction: 'output',
+          label: 'Output',
+          unit: '/M Tokens',
+          priceUsd: 2.1,
+        },
+      ],
+    })
+    const magistral = record({
+      slug: 'magistral-medium-1-2-25-09',
+      status: 'ga',
+      modelIds: ['magistral-medium-latest'],
+      deprecatedAt: null,
+      releasedAt: '2025-09-18T00:00:00.000Z',
+      pricing: [
+        {
+          direction: 'input',
+          label: 'Input',
+          unit: '/M Tokens',
+          priceUsd: 2,
+        },
+        {
+          direction: 'output',
+          label: 'Output',
+          unit: '/M Tokens',
+          priceUsd: 5,
+        },
+      ],
+    })
+    const small = record({
+      slug: 'mistral-small-4-0-26-03',
+      status: 'ga',
+      modelIds: ['mistral-small-latest'],
+      deprecatedAt: null,
+      pricing: [
+        {
+          direction: 'input',
+          label: 'Input',
+          unit: '/M Tokens',
+          priceUsd: 0.15,
+        },
+        {
+          direction: 'output',
+          label: 'Output',
+          unit: '/M Tokens',
+          priceUsd: 0.6,
+        },
+      ],
+    })
+    const magistralSmall = record({
+      slug: 'magistral-small-1-2-25-09',
+      status: 'ga',
+      modelIds: ['magistral-small-latest'],
+      deprecatedAt: null,
+      pricing: [
+        {
+          direction: 'input',
+          label: 'Input',
+          unit: '/M Tokens',
+          priceUsd: 0.5,
+        },
+        {
+          direction: 'output',
+          label: 'Output',
+          unit: '/M Tokens',
+          priceUsd: 1.5,
+        },
+      ],
+    })
+    const alias = (id: string, name: string, aliases: Array<string>) => ({
+      id,
+      name,
+      aliases,
+      capabilities: { completion_chat: true },
+    })
+    const mediumAliases = [
+      'mistral-medium-latest',
+      'mistral-medium-2604',
+      'mistral-vibe-cli-latest',
+      'magistral-medium-latest',
+    ]
+    const smallAliases = [
+      'mistral-small-latest',
+      'mistral-vibe-cli-fast',
+      'magistral-small-latest',
+    ]
+    const pages: Record<string, string> = {
+      'https://api.mistral.ai/v1/models': JSON.stringify({
+        data: [
+          alias(
+            'mistral-medium-latest',
+            'mistral-medium-latest',
+            mediumAliases,
+          ),
+          alias('mistral-medium-2604', 'mistral-medium-latest', mediumAliases),
+          alias(
+            'mistral-vibe-cli-latest',
+            'mistral-medium-latest',
+            mediumAliases,
+          ),
+          alias(
+            'magistral-medium-latest',
+            'mistral-medium-latest',
+            mediumAliases,
+          ),
+          alias('mistral-small-latest', 'mistral-small-latest', smallAliases),
+          alias('mistral-vibe-cli-fast', 'mistral-small-latest', smallAliases),
+          alias('magistral-small-latest', 'mistral-small-latest', smallAliases),
+        ],
+      }),
+      'https://docs.mistral.ai/openapi.yaml': `components:
+  schemas:
+    ChatCompletionRequest:
+      properties:
+        max_tokens: { type: integer }
+`,
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.15</td><td>—</td><td>$0.6</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      [MISTRAL_WEBSEARCH_URL]: MISTRAL_WEBSEARCH_GUIDE,
+      'https://docs.mistral.ai/models': catalogHtml([
+        medium,
+        magistral,
+        magistralSmall,
+      ]),
+      'https://docs.mistral.ai/models/mistral-medium-3-5-26-04': catalogHtml([
+        medium,
+        successor,
+      ]),
+      'https://docs.mistral.ai/models/magistral-medium-1-2-25-09': catalogHtml([
+        magistral,
+      ]),
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03': catalogHtml([
+        small,
+      ]),
+      'https://docs.mistral.ai/models/magistral-small-1-2-25-09': catalogHtml([
+        magistralSmall,
+      ]),
+    }
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const body = pages[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('missing', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const { models } = await provider.listModels({
+        MISTRAL_API_KEY: 'k',
+      })
+      const byId = new Map(models.map((model) => [model.rawId, model]))
+      const isCard = (value: unknown): value is RateCard =>
+        typeof value === 'object' && value !== null && 'price' in value
+      const perMillion = (id: string): number => {
+        const card = byId.get(id)?.pricing
+        if (!isCard(card)) throw new Error(`${id} has no card`)
+        return price(
+          card,
+          {},
+          { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        )
+      }
+      expect(perMillion('mistral-medium-latest')).toBeCloseTo(9, 6)
+      expect(perMillion('mistral-medium-2604')).toBeCloseTo(9, 6)
+      expect(perMillion('mistral-vibe-cli-latest')).toBeCloseTo(9, 6)
+      expect(
+        byId.get('mistral-medium-2604')?.factSources?.pricing?.sourceUrl,
+      ).toBe('https://docs.mistral.ai/models/mistral-medium-3-5-26-04')
+      expect(perMillion('magistral-medium-latest')).toBeCloseTo(7, 6)
+      // Live listing names vibe-cli-fast as small, so the medium card is wrong.
+      expect(perMillion('mistral-vibe-cli-fast')).toBeCloseTo(0.75, 6)
+      expect(perMillion('magistral-small-latest')).toBeCloseTo(2, 6)
+      expect(perMillion('mistral-small-latest')).toBeCloseTo(0.75, 6)
     } finally {
       globalThis.fetch = original
     }
