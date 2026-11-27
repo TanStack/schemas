@@ -61,6 +61,11 @@ export interface BedrockPriceBook {
   pageByName: Map<string, Record<string, number>>
   /** Only prices explicitly published for global cross-region inference. */
   globalPageByName?: Map<string, Record<string, number>>
+  /**
+   * Model names in a standard token table, including a row whose meter
+   * did not resolve. A name that is absent was removed, not misread.
+   */
+  pageMentioned?: Set<string>
   offerHash: string
   pageHash: string
 }
@@ -370,6 +375,7 @@ export function parseBedrockPricingPage(
   html: string,
   meter: MeterFile,
   scope: 'regional' | 'global' = 'regional',
+  mentioned?: Set<string>,
 ): Map<string, Record<string, number>> {
   const region = meter.regions?.[USE1]
   if (!region) {
@@ -440,6 +446,8 @@ export function parseBedrockPricingPage(
     }
     // A tab names the model. Rows are tiers. US CRIS is the standard rate.
     if (head.some((cell) => /inference option/i.test(cell))) {
+      const labelKey = bedrockNameKey(pendingLabel)
+      if (labelKey) mentioned?.add(labelKey)
       const chosen = rows.slice(1).find((row) => {
         const tier = row[0] ?? ''
         return scope === 'global'
@@ -465,6 +473,7 @@ export function parseBedrockPricingPage(
       if (!name || /long context/i.test(name)) continue
       const rates = ratesOf(row)
       const key = bedrockNameKey(name)
+      if (key) mentioned?.add(key)
       if (scope === 'global' && !complete(rates)) {
         throw new Error(
           `amazon-bedrock global pricing: unreadable quote ${key}`,
@@ -568,14 +577,21 @@ export async function fetchBedrockPriceBook(): Promise<BedrockPriceBook> {
   ])
   const offer = parseBedrockOffer(JSON.parse(offerText) as OfferFile)
   const meter = JSON.parse(meterText) as MeterFile
-  const page = parseBedrockPricingPage(html, meter)
-  const globalPage = parseBedrockPricingPage(html, meter, 'global')
+  const pageMentioned = new Set<string>()
+  const page = parseBedrockPricingPage(html, meter, 'regional', pageMentioned)
+  const globalPage = parseBedrockPricingPage(
+    html,
+    meter,
+    'global',
+    pageMentioned,
+  )
   return {
     offerById: offer.byId,
     offerByName: offer.byName,
     offerBySlug: offer.bySlug,
     pageByName: page,
     globalPageByName: globalPage,
+    pageMentioned,
     offerHash: await sha256Text(offerText),
     pageHash: await sha256Text(`${html}\n${meterText}`),
   }
