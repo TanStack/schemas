@@ -578,9 +578,10 @@ describe('gemini features (issue #77)', () => {
 
     it('reads a guide Supported tools table as generateContent fields (#707)', () => {
       // https://aistudio.google.com/docs/antigravity-agent.md and
-      // deep-research.md, 2026-11-21, cut down. `function` is a client
-      // tool; `mcp_server` becomes `mcpServer` by the same rule; Filesystem
-      // has no type value.
+      // deep-research.md, catalog from 2026-11-21, MCP field table from
+      // 2026-11-27, both cut down. `function` is a client tool;
+      // `mcp_server` becomes `mcpServer` by the same rule; Filesystem has
+      // no type value. The field table's JSON `string` is not a tool type.
       expect(
         parseGuideTools(fixture('gemini-antigravity-agent.md.txt')),
       ).toEqual(['codeExecution', 'googleSearch', 'urlContext', 'mcpServer'])
@@ -601,6 +602,11 @@ describe('gemini features (issue #77)', () => {
       expect(() =>
         parseGuideTools(guide.replace('`file_search`', '`file_lookup`')),
       ).toThrow(/file_lookup/)
+      // A catalog cell of `string` is an unknown tool type. The same word
+      // in the MCP field table, already in the fixture, is not.
+      expect(() =>
+        parseGuideTools(guide.replace('`file_search`', '`string`')),
+      ).toThrow(/unknown Supported tools type "string"/)
       // A table that is there but yields no Type value is a changed format.
       expect(() =>
         parseGuideTools(guide.replace(/`([a-z_]+)` \|/g, '$1 |')),
