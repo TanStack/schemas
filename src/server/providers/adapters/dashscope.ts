@@ -398,7 +398,7 @@ function applyModelLimits(
   const absent = { ...model.absent }
   const source = (path: string): FactSource => ({
     derivation: 'docs-extracted',
-    sourceUrl: url,
+    sourceUrl: doc?.sourceUrl ?? url,
     ...(doc ? { sourceHash: doc.sourceHash } : {}),
     path,
   })
@@ -482,7 +482,9 @@ async function listModels(
       url,
       await tryDocs(run, url, (cached) =>
         cached(kv, url, async () =>
-          loadDashscopeModelLimits(await fetchText(url, DOCS_INIT)),
+          loadDashscopeModelLimits(await fetchText(url, DOCS_INIT), (linked) =>
+            fetchText(linked, DOCS_INIT),
+          ),
         ),
       ),
     )

@@ -175,13 +175,55 @@ describe('goListingRoutes', () => {
           {
             id: 'grok-4.7',
             api: {
-              embeddings: {
+              speech: {
                 base_url: 'https://opencode.ai/inference/go/openai/v1',
               },
             },
           },
         ],
       }),
-    ).toThrow('opencode-go: grok-4.7 has unknown api protocol embeddings')
+    ).toThrow('opencode-go: grok-4.7 has unknown api protocol speech')
+  })
+
+  it('reads the live systemone and embeddings routes (issue #776)', () => {
+    // Rows trimmed from GET /inference/go/v1/models (2026-11-27). The Go
+    // page states both paths: .../systemone/v1/systemone and
+    // .../openai/v1/embeddings.
+    expect(
+      goListingRoutes({
+        object: 'list',
+        data: [
+          {
+            id: 'jev-1.14',
+            type: 'decision',
+            api: {
+              systemone: {
+                base_url: 'https://opencode.ai/inference/go/systemone/v1',
+                sdk: {
+                  aisdk: '@ai-sdk/typesafe-ai',
+                  opencodeai: '@opencode/ai/providers/opencode/decisions',
+                },
+              },
+            },
+          },
+          {
+            id: 'text-embedding-3-small',
+            type: 'embedding',
+            api: {
+              embeddings: {
+                base_url: 'https://opencode.ai/inference/go/openai/v1',
+                sdk: {
+                  aisdk: '@ai-sdk/openai',
+                  opencodeai: '@opencode/ai/providers/openai/embeddings',
+                },
+              },
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      '/inference/go/openai/v1/embeddings',
+      '/inference/go/systemone/v1/systemone',
+    ])
   })
 })

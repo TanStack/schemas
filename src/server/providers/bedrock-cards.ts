@@ -4,8 +4,11 @@
  * inference-profile ids, limits, modalities, lifecycle, and reasoning. A few
  * cards (OpenAI, xAI, Moonshot) also state token prices. A card with no
  * dollars is filled from the AWS price list, then the pricing page
- * (`bedrock-pricing.ts`). Every card is fetched as the `.md` twin AWS
- * publishes next to the HTML.
+ * (`bedrock-pricing.ts`). An Anthropic chat model the page's Claude
+ * tables do not name is cleared: the row was removed, and a stored
+ * card must not be kept. A name the table still lists, with a meter
+ * that does not resolve, stays a parser miss. Every card is fetched
+ * as the `.md` twin AWS publishes next to the HTML.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -641,7 +644,26 @@ export async function bedrockCardListing(
           model.rawId,
           model.displayName ?? null,
         )
-        if (!hit) continue
+        if (!hit) {
+          // The Claude tables parsed, and this name is not in them. EOL
+          // rows (Claude Sonnet 4, Claude 3 Haiku) left the page; the
+          // us-east-1 offer has no complete rate either (#775).
+          const mentioned = book.pageMentioned
+          const name = bedrockNameKey(model.displayName ?? '')
+          const claudeTablesRead = [...(mentioned ?? [])].some((key) =>
+            key.startsWith('claude '),
+          )
+          if (
+            model.activity === 'chat' &&
+            model.rawId.startsWith('anthropic.') &&
+            name.startsWith('claude ') &&
+            claudeTablesRead &&
+            mentioned?.has(name) === false
+          ) {
+            model.absent = { ...model.absent, pricing: 'cleared' }
+          }
+          continue
+        }
         const pricing = compileTokenCard(hit.rates, [], {
           url: hit.url,
           hash: hit.hash,

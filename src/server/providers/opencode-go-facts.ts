@@ -22,9 +22,12 @@ const OPENCODE_ORIGIN = 'https://opencode.ai'
  * method: the model id is one path segment, the same shape as
  * `:generateContent` on the probe records. `interactions` is Google's
  * Interactions API: `POST {base}/interactions`, and the model id is a
- * request-body field, not a path segment. OpenCode publishes no request
- * schema for either route, so both stay route-only (`opencode-routes.ts`).
- * A key this map does not name is an unknown shape.
+ * request-body field, not a path segment. `systemone` is OpenCode's
+ * decision API (`POST {base}/systemone`) and `embeddings` is OpenAI's
+ * (`POST {base}/embeddings`); the Go page states both paths (issue #776).
+ * OpenCode publishes no request schema for any of these routes, so they
+ * stay route-only (`opencode-routes.ts`). A key this map does not name is
+ * an unknown shape.
  */
 const GO_PROTOCOL_PATH: Record<string, (id: string) => string> = {
   'chat-completions': () => 'chat/completions',
@@ -37,6 +40,8 @@ const GO_PROTOCOL_PATH: Record<string, (id: string) => string> = {
     return `models/${id}:generateContent`
   },
   interactions: () => 'interactions',
+  systemone: () => 'systemone',
+  embeddings: () => 'embeddings',
 }
 
 export const OPENCODE_GO_REQUIRED_HEADERS: Array<RequiredHeader> = [

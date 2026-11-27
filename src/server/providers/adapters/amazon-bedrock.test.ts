@@ -563,6 +563,71 @@ describe('amazon-bedrock', () => {
     )
   })
 
+  it('clears an Anthropic chat model the pricing page no longer names', async () => {
+    const dropped = (title: string, rawId: string) =>
+      SONNET.replace('# Claude Sonnet 4.5', `# ${title}`).replaceAll(
+        'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        rawId,
+      )
+    serve({
+      ...PAGES,
+      [BEDROCK_CARDS_URL]: `# Models at a glance
+| Logo | Provider | Supported models |
+| --- | --- | --- |
+| x | [Anthropic](model-cards-anthropic.md) | [Claude Haiku 4.5](model-card-anthropic-claude-haiku-4-5.md), [Claude Sonnet 4.5](model-card-anthropic-claude-sonnet-4-5.md), [Claude Sonnet 4](model-card-anthropic-claude-sonnet-4.md), [Claude 3 Haiku](model-card-anthropic-claude-3-haiku.md) |
+`,
+      [`${DOCS}model-card-anthropic-claude-haiku-4-5.md`]: dropped(
+        'Claude Haiku 4.5',
+        'anthropic.claude-haiku-4-5-20251001-v1:0',
+      ),
+      [`${DOCS}model-card-anthropic-claude-sonnet-4-5.md`]: dropped(
+        'Claude Sonnet 4.5',
+        'anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ),
+      [`${DOCS}model-card-anthropic-claude-sonnet-4.md`]: dropped(
+        'Claude Sonnet 4',
+        'anthropic.claude-sonnet-4-20250514-v1:0',
+      ),
+      [`${DOCS}model-card-anthropic-claude-3-haiku.md`]: dropped(
+        'Claude 3 Haiku',
+        'anthropic.claude-3-haiku-20240307-v1:0',
+      ),
+      [BEDROCK_PRICING_PAGE_URL]: `<h2>Pricing examples</h2>
+<h3>Model evaluation example 1:</h3>
+<table><tr><th>Item</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Claude 3 Haiku</td><td>$0.25</td><td>$1.25</td></tr></table>
+<h2>Anthropic</h2>
+<table><tr><th>Anthropic models</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Claude Haiku 4.5</td><td>$1.00</td><td>$5.00</td></tr>
+<tr><td>Claude Sonnet 4.5</td><td>{priceOf!bedrock/bedrock!missing}</td><td>{priceOf!bedrock/bedrock!missing}</td></tr>
+</table>`,
+    })
+    const { models } = await provider.listModels({})
+    const row = (rawId: string) => models.find((model) => model.rawId === rawId)
+    const haiku = row('anthropic.claude-haiku-4-5-20251001-v1:0')
+    expect(
+      price(
+        haiku?.pricing as RateCard,
+        {},
+        { input_tokens: 1e6, output_tokens: 1e6 },
+      ),
+    ).toBeCloseTo(6)
+    expect(haiku?.absent?.pricing).toBeUndefined()
+    // Still named in the table; the meter did not resolve. Keep a stored card.
+    const stillNamed = row('anthropic.claude-sonnet-4-5-20250929-v1:0')
+    expect(stillNamed?.pricing).toBeNull()
+    expect(stillNamed?.absent?.pricing).toBeUndefined()
+    for (const rawId of [
+      'anthropic.claude-sonnet-4-20250514-v1:0',
+      'anthropic.claude-3-haiku-20240307-v1:0',
+    ]) {
+      expect(row(rawId)).toMatchObject({
+        pricing: null,
+        absent: { pricing: 'cleared' },
+      })
+    }
+  })
+
   it('fails the poll when most cards stop stating a model id', async () => {
     const blank = '# Card\n'
     serve({

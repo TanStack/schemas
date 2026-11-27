@@ -621,3 +621,30 @@ it('resolves Global prices from provider-published encoded public meter paths', 
     ),
   ).toEqual({ input_tokens: 7 / 1e6, output_tokens: 19 / 1e6 })
 })
+
+it('remembers a Claude row whose meter does not resolve, and ignores example prose', () => {
+  const html = `<h2>Pricing examples</h2>
+<h3>Model evaluation example 1:</h3>
+<table><tr><th>Item</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Claude 3 Haiku</td><td>$0.25</td><td>$1.25</td></tr></table>
+<h2>Anthropic</h2>
+<table><tr><th>Anthropic models</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Claude Haiku 4.5</td><td>$1</td><td>$5</td></tr>
+<tr><td>Claude Sonnet 4.5</td><td>{priceOf!bedrock/bedrock!missing}</td><td>{priceOf!bedrock/bedrock!missing}</td></tr>
+</table>`
+  const mentioned = new Set<string>()
+  const page = parseBedrockPricingPage(
+    html,
+    { regions: { 'US East (N. Virginia)': {} } },
+    'regional',
+    mentioned,
+  )
+  expect(page.get(bedrockNameKey('Claude Haiku 4.5'))).toEqual({
+    input_tokens: 1 / 1e6,
+    output_tokens: 5 / 1e6,
+  })
+  expect(page.has(bedrockNameKey('Claude Sonnet 4.5'))).toBe(false)
+  expect(mentioned.has(bedrockNameKey('Claude Sonnet 4.5'))).toBe(true)
+  expect(mentioned.has(bedrockNameKey('Claude 3 Haiku'))).toBe(false)
+  expect(mentioned.has(bedrockNameKey('Claude Sonnet 4'))).toBe(false)
+})
