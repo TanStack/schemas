@@ -6,8 +6,11 @@ import type { Activity } from '#/db/schema.ts'
 import { listOpenAiCompatibleModels } from '../openai-compat.ts'
 import {
   MISTRAL_DEPRECATIONS_URL,
+  MISTRAL_VOXTRAL_MIGRATION_URL,
   loadDeprecations,
+  mergeMistralDeprecations,
   parseMistralDeprecations,
+  parseMistralVoxtralMigration,
 } from '../deprecations.ts'
 import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import {
@@ -94,6 +97,41 @@ function clearUnpriced(
     if (!clique.some((other) => seen.has(other))) continue
     if (clique.some((other) => byId.get(other)?.pricing != null)) continue
     for (const other of clique) clear(byId.get(other))
+  }
+}
+
+/**
+ * A mutual alias of an id whose price could not be read keeps the stored
+ * card too. A member the source priced, or one it cleared, stays as it is.
+ */
+function shareUnreadPrice(
+  models: Array<ModelInfo>,
+  aliases: ReadonlyMap<string, ReadonlyArray<string>>,
+): void {
+  const byId = new Map(models.map((model) => [model.rawId, model]))
+  for (const [id, names] of aliases) {
+    const clique = [id, ...names].filter(
+      (other) =>
+        byId.has(other) && (other === id || aliases.get(other)?.includes(id)),
+    )
+    if (
+      !clique.some(
+        (other) => byId.get(other)?.absent?.pricing === 'unavailable',
+      )
+    ) {
+      continue
+    }
+    if (clique.some((other) => byId.get(other)?.pricing != null)) continue
+    if (
+      clique.some((other) => byId.get(other)?.absent?.pricing === 'cleared')
+    ) {
+      continue
+    }
+    for (const other of clique) {
+      const model = byId.get(other)
+      if (!model || model.pricing != null) continue
+      model.absent = { ...model.absent, pricing: 'unavailable' }
+    }
   }
 }
 
@@ -201,21 +239,38 @@ export const provider: ProviderConfig = {
     if (listed.models.length === 0) return listed
     const chat = listed.models.some((model) => model.activity === 'chat')
     const docs = docsRun()
-    const deprecations = await loadDeprecations(
-      docs,
-      kv,
-      MISTRAL_DEPRECATIONS_URL,
-      parseMistralDeprecations,
-    )
+    // Either source failing keeps the stored deprecations. A merged list
+    // that omitted one of them would wipe the rows that source names.
+    const [catalogDeprecations, migration] = await Promise.all([
+      loadDeprecations(
+        docs,
+        kv,
+        MISTRAL_DEPRECATIONS_URL,
+        parseMistralDeprecations,
+      ),
+      tryDocs(docs, MISTRAL_VOXTRAL_MIGRATION_URL, (cached) =>
+        cached(kv, MISTRAL_VOXTRAL_MIGRATION_URL, async () =>
+          parseMistralVoxtralMigration(
+            await fetchText(MISTRAL_VOXTRAL_MIGRATION_URL),
+          ),
+        ),
+      ),
+    ])
+    const deprecations =
+      catalogDeprecations && migration
+        ? mergeMistralDeprecations(catalogDeprecations, migration)
+        : null
     // The pricing load reads the pricing table, changelog, models index,
     // model pages and web search guide; a failing docs page keeps the
-    // stored facts instead of failing the poll.
+    // stored facts instead of failing the poll. Ids the migration guide
+    // names are probed at their old slugs: a 404 keeps the stored card.
     const [pricing, reasoning, wire, makers] = await Promise.all([
       tryDocs(docs, MISTRAL_PRICING_URL, (cached) =>
         mistralModelPricing(
           kv,
           listed.models.map((model) => model.rawId),
           cached,
+          migration?.map((move) => move.from) ?? [],
         ),
       ),
       tryDocs(docs, MISTRAL_REASONING_URL, (cached) =>
@@ -276,7 +331,10 @@ export const provider: ProviderConfig = {
         }
       }
     }
-    if (pricing) clearUnpriced(models, pricing.seen, aliases)
+    if (pricing) {
+      clearUnpriced(models, pricing.seen, aliases)
+      shareUnreadPrice(models, aliases)
+    }
     return {
       ...listed,
       models,

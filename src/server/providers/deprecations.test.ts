@@ -5,8 +5,11 @@ import { describe, expect, it } from 'vitest'
 import {
   GROQ_DEPRECATIONS_URL,
   MISTRAL_DEPRECATIONS_URL,
+  MISTRAL_VOXTRAL_MIGRATION_URL,
+  mergeMistralDeprecations,
   parseGroqDeprecations,
   parseMistralDeprecations,
+  parseMistralVoxtralMigration,
 } from './deprecations.ts'
 
 // Fetched 2026-10-22: https://console.groq.com/docs/deprecations.md and
@@ -17,6 +20,10 @@ const GROQ = readFileSync(
 )
 const MISTRAL = readFileSync(
   new URL('./fixtures/mistral-models.md.txt', import.meta.url),
+  'utf8',
+)
+const VOXTRAL_MIGRATION = readFileSync(
+  new URL('./fixtures/mistral-voxtral-migration.md.txt', import.meta.url),
   'utf8',
 )
 
@@ -307,5 +314,70 @@ describe('mistral deprecations catalog', () => {
         ]),
       ),
     ).toThrow(/listed twice/)
+  })
+})
+
+describe('voxtral migration guide', () => {
+  it('maps each Voxtral 2 id and states no dates', () => {
+    expect(parseMistralVoxtralMigration(VOXTRAL_MIGRATION)).toEqual([
+      { from: 'voxtral-mini-2602', to: 'voxtral-mini-transcribe-3-0' },
+      {
+        from: 'voxtral-mini-transcribe-realtime-2602',
+        to: 'voxtral-mini-transcribe-realtime-3-0',
+      },
+      { from: 'voxtral-small-2507', to: 'voxtral-small-transcribe-latest' },
+      { from: 'voxtral-mini-tts-2603', to: 'voxtral-mini-tts-3-0' },
+    ])
+  })
+
+  it('throws when the timeline gains text or the table moves', () => {
+    expect(() =>
+      parseMistralVoxtralMigration(
+        VOXTRAL_MIGRATION.replace(
+          '### Deprecation timeline\n\n### Migration checklist',
+          '### Deprecation timeline\n\nRetired 2027-04-30.\n\n### Migration checklist',
+        ),
+      ),
+    ).toThrow(/deprecation timeline is unread/)
+    expect(() =>
+      parseMistralVoxtralMigration('# Migrate\n\nNo table.\n'),
+    ).toThrow(/no Model mapping section/)
+    expect(() =>
+      parseMistralVoxtralMigration(
+        VOXTRAL_MIGRATION.replace('Model ID', 'Successor'),
+      ),
+    ).toThrow(/table header/)
+  })
+
+  it('keeps a catalog row and adds an id the overview dropped', () => {
+    const catalog = parseMistralDeprecations(MISTRAL)
+    const merged = mergeMistralDeprecations(
+      catalog,
+      parseMistralVoxtralMigration(VOXTRAL_MIGRATION),
+    )
+    expect(
+      merged.find((row) => row.rawId === 'pixtral-12b-2409')?.replacedBy,
+    ).toEqual(['ministral-14b-2512'])
+    expect(merged.find((row) => row.rawId === 'voxtral-small-2507')).toEqual({
+      rawId: 'voxtral-small-2507',
+      deprecatedAt: null,
+      retiresAt: null,
+      replacedBy: ['voxtral-small-transcribe-latest'],
+      sourceUrl: MISTRAL_VOXTRAL_MIGRATION_URL,
+    })
+    expect(() =>
+      mergeMistralDeprecations(
+        [
+          {
+            rawId: 'voxtral-small-2507',
+            deprecatedAt: null,
+            retiresAt: null,
+            replacedBy: ['voxtral-small-transcribe-3-0'],
+            sourceUrl: MISTRAL_DEPRECATIONS_URL,
+          },
+        ],
+        [{ from: 'voxtral-small-2507', to: 'voxtral-small-transcribe-latest' }],
+      ),
+    ).toThrow(/disagrees with the catalog/)
   })
 })
