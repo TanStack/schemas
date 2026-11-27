@@ -1,216 +1,112 @@
-// Run one provider's live probes. Spends a key and calls the provider.
-// Never prints the key.
+// Read-only local dry run of the live probes. Spends a key and calls the
+// provider; writes nothing (no file, no D1). Never prints the key.
 //
-//   pnpm run probe -- <provider> [--write] [--skip-missing-key]
+//   pnpm run probe -- <provider> <rawId> [rawId...]   chat probe (#717)
+//   pnpm run probe -- opencode-go                     legacy route records
 //
-// Route records (opencode-go): `--write` sets `verifiedAt` to today on
-// records that still match; a mismatch exits 1 and leaves the file alone.
-//
-// Chat probes (`chatProbes`, issue #717): every model gets each check in
-// `probeChecks(probe)`. A response that states a fact is printed; `--write`
-// stores it in records/<provider>.ts. An undecided check prints why and
-// keeps the stored record as it was (printed as not reconfirmed). More than MAX_PROBE_REQUESTS planned
-// requests aborts before the first. `--skip-missing-key` (the weekly CI
-// job) reports a missing key and exits 0.
+// Chat probe: prints what each check would observe, decided or not. The
+// Worker's probe cron is what records observations (probe_observations);
+// nothing here can. Route records: prints whether each still matches.
 import { spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 
 import {
-  MAX_PROBE_REQUESTS,
   classifyProbeResponse,
-  mergeProbedRecords,
   probeBody,
   probeChecks,
+  redactKey,
+  sendProbe,
 } from '../src/server/providers/probes/chat-completions.ts'
 import type { ChatCompletionsProbe } from '../src/server/providers/probes/chat-completions.ts'
+import { observationMatches } from '../src/server/providers/probes/compare.ts'
 import {
-  bumpVerifiedAt,
-  observationMatches,
-} from '../src/server/providers/probes/compare.ts'
-import {
+  chatProbeFor,
   chatProbes,
-  probedFactFile,
-  probedFactRecords,
-  probeRecords,
   probesFor,
 } from '../src/server/providers/probes/index.ts'
-import { OPENCODE_GO_PROBE_SOURCE } from '../src/server/providers/probes/opencode-go.ts'
-import type {
-  ProbedFactRecord,
-  ProbeRecord,
-} from '../src/server/providers/probes/types.ts'
+import type { ProbeRecord } from '../src/server/providers/probes/types.ts'
 
-const ROUTE_PROBES: Record<
-  string,
-  { file: string; origin: string; keyEnv: string }
-> = {
+/** Local cap: a dry run never sends more than this many requests. */
+const MAX_DRY_RUN_REQUESTS = 12
+
+const ROUTE_PROBES: Record<string, { origin: string; keyEnv: string }> = {
   'opencode-go': {
-    file: OPENCODE_GO_PROBE_SOURCE,
     origin: 'https://opencode.ai',
     keyEnv: 'OPENCODE_GO_API_KEY',
   },
 }
 
 // pnpm 11 passes the `--` through.
-const providerId = process.argv.slice(2).find((arg) => arg !== '--')
-const write = process.argv.includes('--write')
-const skipMissingKey = process.argv.includes('--skip-missing-key')
-const chat = chatProbes.find((probe) => probe.provider === providerId)
+const args = process.argv.slice(2).filter((arg) => arg !== '--')
+const [providerId, ...modelIds] = args
+const chat = providerId ? chatProbeFor(providerId) : null
 const known = [
-  ...new Set([
-    ...probeRecords.map((record) => record.provider),
-    ...chatProbes.map((probe) => probe.provider),
-  ]),
+  ...Object.keys(ROUTE_PROBES),
+  ...chatProbes.filter((probe) => !probe.gateway).map((p) => p.provider),
 ]
 if (!providerId || !known.includes(providerId)) {
   console.error(
-    `usage: pnpm run probe -- <provider> [--write] [--skip-missing-key]\nproviders: ${known.join(', ')}`,
+    `usage: pnpm run probe -- <provider> [rawId...]\nproviders: ${known.join(', ')}`,
   )
   process.exit(1)
 }
-const today = new Date().toISOString().slice(0, 10)
 
-if (chat) await runChatProbe(chat)
-else await runRouteProbes()
+if (chat) await dryRunChat(chat, modelIds)
+else await checkRouteRecords()
 
-async function runRouteProbes(): Promise<void> {
-  const config = ROUTE_PROBES[providerId!]
-  if (!config) throw new Error(`probe: ${providerId} has no route config`)
-  const records = probesFor(providerId!)
-  const apiKey = readKey(config.keyEnv)
-  const mismatches: Array<string> = []
-  for (const record of records) {
-    const mismatch = await runRecord(record, config, apiKey)
-    if (mismatch) mismatches.push(`${record.id}: ${mismatch}`)
-    else console.log(`${record.id}: match`)
-  }
-  if (mismatches.length > 0) {
-    for (const line of mismatches) console.error(line)
-    process.exit(1)
-  }
-  if (write) {
-    const next = records.reduce(
-      (source, record) => bumpVerifiedAt(source, record.id, today),
-      readFileSync(config.file, 'utf8'),
-    )
-    writeFileSync(config.file, next)
-    console.log(`wrote verifiedAt ${today} in ${config.file}`)
-  }
-}
-
-async function runChatProbe(probe: ChatCompletionsProbe): Promise<void> {
+async function dryRunChat(
+  probe: ChatCompletionsProbe,
+  ids: Array<string>,
+): Promise<void> {
   const checks = probeChecks(probe)
-  const planned = probe.models.length * checks.length
-  if (planned > MAX_PROBE_REQUESTS) {
+  if (ids.length === 0) {
+    console.error('name at least one raw model id to probe')
+    process.exit(1)
+  }
+  if (ids.length * checks.length > MAX_DRY_RUN_REQUESTS) {
     console.error(
-      `probe: ${probe.provider} plans ${planned} requests, over the per-run cap of ${MAX_PROBE_REQUESTS}. Shorten its model list.`,
+      `would send ${ids.length * checks.length} requests, over the cap of ${MAX_DRY_RUN_REQUESTS}`,
     )
     process.exit(1)
   }
-  const apiKey = readKey(probe.keyEnv)
-  const ranBy =
-    process.env.TANSTACK_SOURCE_JOB_ID || process.env.CI
-      ? 'weekly-probe'
-      : userInfo().username
-  const found: Array<ProbedFactRecord> = []
-  let sent = 0
-  for (const model of probe.models) {
+  const key = readKey(probe.keyEnv)
+  for (const model of ids) {
     for (const check of checks) {
-      // Belt and braces: the plan above already bounds this.
-      if (++sent > MAX_PROBE_REQUESTS) throw new Error('probe: request cap hit')
-      const body = probeBody(check, model)
-      const { status, text } = await send(probe.url, body, apiKey)
+      const { status, text } = await sendProbe(
+        probe.url,
+        probeBody(check, model),
+        key,
+      )
       const outcome = classifyProbeResponse(
         check,
         status,
         text,
         probe.mandatoryRule,
       )
-      const label = `${model} ${check}`
-      if ('undecided' in outcome) {
-        console.log(
-          `${label}: undecided (${redact(outcome.undecided, apiKey)})`,
-        )
-        continue
-      }
-      console.log(`${label}: ${outcome.fact} = ${String(outcome.value)}`)
-      found.push({
-        id: `${model}:${outcome.fact}`,
-        provider: probe.provider,
-        model,
-        fact: outcome.fact,
-        value: outcome.value,
-        route: probe.route,
-        verifiedAt: today,
-        ranBy,
-        request: { url: probe.url, body },
-        evidence: { status, message: redact(outcome.message, apiKey) },
-      })
+      const said =
+        'undecided' in outcome
+          ? `undecided (${outcome.undecided})`
+          : `${outcome.fact} = ${String(outcome.value)} (${outcome.message})`
+      console.log(`${model} ${check}: ${redactKey(said, key)}`)
     }
   }
-  const { records, unconfirmed } = mergeProbedRecords(
-    probe.provider,
-    probedFactRecords,
-    found,
-    new Date(),
-  )
-  // Kept, never overwritten by an undecided check, but visible.
-  for (const record of unconfirmed) {
-    console.log(`stored record not reconfirmed: ${record.model} ${record.fact}`)
-  }
-  if (!write) return
-  const file = probedFactFile(probe.provider)
-  writeFileSync(
-    file,
-    `// Written by \`pnpm run probe -- ${probe.provider} --write\`. Do not edit by hand.\nimport type { ProbedFactRecord } from '../types.ts'\n\nexport const records: Array<ProbedFactRecord> = ${JSON.stringify(records, null, 2)}\n`,
-  )
-  const format = spawnSync('pnpm', ['exec', 'oxfmt', file], {
-    stdio: 'inherit',
-  })
-  if (format.status !== 0) throw new Error(`probe: oxfmt failed on ${file}`)
-  console.log(`wrote ${records.length} records to ${file}`)
+  console.log('dry run: nothing written')
 }
 
-/** A 2xx body is cancelled unread: it states nothing, and it bills. */
-async function send(
-  url: string,
-  body: Record<string, unknown>,
-  secret: string,
-): Promise<{ status: number; text: string }> {
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${secret}`,
-        'content-type': 'application/json',
-        'user-agent': 'modelschemas-probe/1',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    })
-    if (response.ok) {
-      await response.body?.cancel()
-      return { status: response.status, text: '' }
-    }
-    return { status: response.status, text: await response.text() }
-  } catch {
-    // The error can quote the request; report only that it failed.
-    return { status: 0, text: '' }
+async function checkRouteRecords(): Promise<void> {
+  const config = ROUTE_PROBES[providerId!]!
+  const key = readKey(config.keyEnv)
+  let failed = false
+  for (const record of probesFor(providerId!)) {
+    const mismatch = await runRecord(record, config, key)
+    if (mismatch) failed = true
+    console.log(`${record.id}: ${mismatch ?? 'match'}`)
   }
-}
-
-function redact(text: string, secret: string): string {
-  return secret ? text.replaceAll(secret, '[key]') : text
+  if (failed) process.exit(1)
 }
 
 function readKey(keyEnv: string): string {
   const fromEnv = process.env[keyEnv]?.trim()
   if (fromEnv) return fromEnv
-  if (skipMissingKey) {
-    console.log(`skip ${providerId}: ${keyEnv} is not set`)
-    process.exit(0)
-  }
   const result = spawnSync(
     'doppler',
     [
@@ -230,23 +126,9 @@ function readKey(keyEnv: string): string {
     console.error(
       `${keyEnv} is missing from the environment and from Doppler dev.`,
     )
-    const detail = result.error ? result.error.message : result.stderr.trim()
-    if (detail) console.error(detail)
     process.exit(1)
   }
   return value
-}
-
-function headersFor(
-  record: ProbeRecord,
-  keyEnv: string,
-  secret: string,
-): Record<string, string> {
-  const headers: Record<string, string> = {}
-  for (const [name, value] of Object.entries(record.request.headers)) {
-    headers[name] = value.replaceAll(`$${keyEnv}`, secret)
-  }
-  return headers
 }
 
 async function runRecord(
@@ -254,9 +136,13 @@ async function runRecord(
   config: { origin: string; keyEnv: string },
   secret: string,
 ): Promise<string | null> {
+  const headers: Record<string, string> = {}
+  for (const [name, value] of Object.entries(record.request.headers)) {
+    headers[name] = value.replaceAll(`$${config.keyEnv}`, secret)
+  }
   const response = await fetch(`${config.origin}${record.request.path}`, {
     method: record.request.method,
-    headers: headersFor(record, config.keyEnv, secret),
+    headers,
     body: JSON.stringify(record.request.body),
   })
   const text = await response.text()

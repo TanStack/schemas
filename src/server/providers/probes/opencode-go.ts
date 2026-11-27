@@ -1,6 +1,15 @@
 import type { ProbeRecord } from './types.ts'
 
 /**
+ * LEGACY, hand-written (issue #717 left it untouched): the only probe data
+ * still kept as source. These records bind the two routes below on
+ * `gemini-4-argon-contributor` (`opencode-catalog.ts`), let the spec sync
+ * keep them (`opencode-routes.ts`), and set its `trainsOnRequestData`
+ * (`opencode-go-facts.ts`). go.mdx names only the base path, so no docs
+ * read can replace them, and the Worker holds no OPENCODE_GO_API_KEY to
+ * re-observe them. Nothing re-dates them: from 2027-01-22 `/v1/status`
+ * counts them on `staleProbes`. Replace with a Worker-observed route probe.
+ *
  * OpenCode Go Gemini routes probed 2026-10-23 (issue #461).
  *
  * go.mdx lists only the base

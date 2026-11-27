@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs'
-
 import { describe, expect, it } from 'vitest'
 
-import { bumpVerifiedAt, observationMatches } from './compare.ts'
-import { probeFactSource, probedRoute, staleProbeCount } from './index.ts'
+import { observationMatches } from './compare.ts'
+import { probeFactSource, probedRoute, staleRouteRecordCount } from './index.ts'
 import { probeIsStale } from './types.ts'
 
 describe('probe records', () => {
@@ -35,25 +33,20 @@ describe('probe records', () => {
       probeIsStale('2026-10-23', new Date('2027-01-22T00:00:00.000Z')),
     ).toBe(true)
     expect(
-      staleProbeCount('opencode-go', new Date('2026-10-23T12:00:00.000Z')),
+      staleRouteRecordCount(
+        'opencode-go',
+        new Date('2026-10-23T12:00:00.000Z'),
+      ),
     ).toBe(0)
     expect(
-      staleProbeCount('opencode-go', new Date('2027-01-22T00:00:00.000Z')),
+      staleRouteRecordCount(
+        'opencode-go',
+        new Date('2027-01-22T00:00:00.000Z'),
+      ),
     ).toBe(2)
   })
 
-  it('bumps one record date and reports a mismatched body', () => {
-    const source = readFileSync(
-      new URL('./opencode-go.ts', import.meta.url),
-      'utf8',
-    )
-    const next = bumpVerifiedAt(
-      source,
-      'gemini-4-argon-contributor-stream',
-      '2026-11-01',
-    )
-    expect(next).toContain("verifiedAt: '2026-11-01'")
-    expect(next).toContain("verifiedAt: '2026-10-23'")
+  it('reports a mismatched body', () => {
     expect(
       observationMatches(
         { status: 200, jsonKeys: ['candidates'] },

@@ -18,6 +18,7 @@ export type IngestJob =
   | 'fal-pricing-extract'
   | 'vercel-pricing-extract'
   | 'same-as-reconcile'
+  | 'probe'
 
 export type IngestEvent =
   | {

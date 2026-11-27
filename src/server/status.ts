@@ -18,7 +18,8 @@ import type {
   UpdateStorm,
 } from '#/server/ingest/docs-failing.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
-import { staleProbeCount } from '#/server/providers/probes/index.ts'
+import { staleRouteRecordCount } from '#/server/providers/probes/index.ts'
+import { staleProbeCounts } from '#/server/ingest/probe-facts.ts'
 import { sourceSilentLedger } from '#/server/source-silent.ts'
 
 /** One activity's share of `Completeness`; `score` null = no fact set. */
@@ -278,8 +279,11 @@ async function readCompleteness(db: Db): Promise<{
 function staleProbeField(
   providerId: string,
   nowSeconds: number,
+  served: Map<string, number>,
 ): { staleProbes?: number } {
-  const stale = staleProbeCount(providerId, new Date(nowSeconds * 1000))
+  const stale =
+    staleRouteRecordCount(providerId, new Date(nowSeconds * 1000)) +
+    (served.get(providerId) ?? 0)
   return stale > 0 ? { staleProbes: stale } : {}
 }
 
@@ -294,6 +298,7 @@ export async function getServiceStatus(
     modelCounts,
     endpointCounts,
     schemaCounts,
+    staleServed,
   ] = await Promise.all([
     db.select().from(providers),
     // One statement for every provider's docs-failing, refused-clears, and update-storm row.
@@ -323,6 +328,8 @@ export async function getServiceStatus(
       .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
       .where(isNull(schemaVersions.supersededAt))
       .groupBy(endpoints.providerId),
+    // Served probe facts past PROBE_STALE_DAYS (probe_observations).
+    staleProbeCounts(db, new Date(now * 1000)),
   ])
 
   const toMap = (rows: Array<{ providerId: string; n: number }>) =>
@@ -360,7 +367,7 @@ export async function getServiceStatus(
       lastPolledAt: p.lastPolledAt,
       lastSyncedAt: p.lastSyncedAt,
       ...records.get(p.id),
-      ...staleProbeField(p.id, now),
+      ...staleProbeField(p.id, now, staleServed),
       completeness: completeness(p.id),
       counts: {
         models: modelsBy.get(p.id)?.models ?? 0,
@@ -382,7 +389,7 @@ export async function getServiceStatus(
       status: 'pending',
       lastPolledAt: null,
       lastSyncedAt: null,
-      ...staleProbeField(config.id, now),
+      ...staleProbeField(config.id, now, staleServed),
       completeness: completeness(config.id),
       counts: {
         models: 0,

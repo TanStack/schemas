@@ -20,16 +20,3 @@ export function observationMatches(
   }
   return null
 }
-
-/** Replace one record's verifiedAt. Throws when that id is not in the file. */
-export function bumpVerifiedAt(
-  source: string,
-  id: string,
-  date: string,
-): string {
-  const pattern = new RegExp(
-    `(id: '${id}'[\\s\\S]*?verifiedAt: ')\\d{4}-\\d{2}-\\d{2}(')`,
-  )
-  if (!pattern.test(source)) throw new Error(`probe: no verifiedAt for ${id}`)
-  return source.replace(pattern, `$1${date}$2`)
-}
