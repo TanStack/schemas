@@ -281,7 +281,7 @@ it('rejects a Go listing row with no api entry or an unknown protocol', async ()
         {
           id: 'gpt',
           api: {
-            embeddings: {
+            speech: {
               base_url: 'https://opencode.ai/inference/go/openai/v1',
             },
           },
@@ -300,7 +300,7 @@ it('rejects a Go listing row with no api entry or an unknown protocol', async ()
       { url: 'docs', text: 'docs' },
       true,
     ),
-  ).rejects.toThrow('opencode-go: gpt has unknown api protocol embeddings')
+  ).rejects.toThrow('opencode-go: gpt has unknown api protocol speech')
 })
 it('rejects a failed docs source', async () => {
   globalThis.fetch = vi.fn(async () => new Response('gone', { status: 404 }))
