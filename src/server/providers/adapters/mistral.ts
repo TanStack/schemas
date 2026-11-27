@@ -191,7 +191,7 @@ export const provider: ProviderConfig = {
         )
         if (names && names.length > 0) aliases.set(row.id, names)
         // `created` is the request time on every row, not a release date
-        // (#708). The date comes from the model page's markdown twin.
+        // (#708). The date comes from the model page's catalog record.
         return Promise.resolve({ releasedAt: null, ...mistralAliasFacts(row) })
       },
     })

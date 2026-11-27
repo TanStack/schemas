@@ -4,6 +4,11 @@
  * read off the page as written; a cell the parser cannot read throws, so a
  * reshaped page fails the source (`tryDocs`) instead of writing guesses.
  */
+import type { MistralCatalogModel } from './mistral-catalog.ts'
+import {
+  mistralCatalogInstant,
+  parseMistralCatalog,
+} from './mistral-catalog.ts'
 import type { DocsRun } from './model-facts.ts'
 import { tryDocs } from './model-facts.ts'
 import { fetchText } from './types.ts'
@@ -11,7 +16,12 @@ import type { ModelDeprecation } from './types.ts'
 
 export const GROQ_DEPRECATIONS_URL =
   'https://console.groq.com/docs/deprecations.md'
-export const MISTRAL_DEPRECATIONS_URL = 'https://docs.mistral.ai/models.md'
+/**
+ * The models overview. `/models.md` redirects to a section index with no
+ * table (checked 2026-11-27). The HTML page's catalog holds current and
+ * deprecated rows.
+ */
+export const MISTRAL_DEPRECATIONS_URL = 'https://docs.mistral.ai/models'
 
 const MONTHS = [
   'january',
@@ -173,16 +183,66 @@ const LINKED = /^\[[^\]]+\]\((\/models\/[a-z0-9-]+)\)$/
 const API_NAME = /^`([^`]+)`$/
 
 /**
- * Mistral's Models Overview: the "Deprecated and retired models" table,
- * Model | API name | Status | Context | Summary | Deprecation | Retirement
- * | Replacement. The replacement is a link to a model page; its API name is
- * the one the same page's tables give that link; a link no table names
- * throws. Rows with no API name name no callable id and are skipped. An
- * API name listed twice keeps its first (newest) row.
+ * Deprecated and retired catalog rows. Each API id on the row is one
+ * entry. The replacement is the successor's primary API id (the first
+ * `modelIds` entry). A row with no API id names nothing callable and is
+ * skipped. The same id from two rows keeps the first only when the facts
+ * agree; a disagreement throws.
+ */
+function deprecationsFromCatalog(
+  models: Array<MistralCatalogModel>,
+): Array<ModelDeprecation> {
+  const source = 'mistral deprecations'
+  const out = new Map<string, ModelDeprecation>()
+  for (const model of models) {
+    if (model.status !== 'deprecated' && model.status !== 'retired') continue
+    if (model.modelIds.length === 0) continue
+    const replacedBy = model.replacementIds?.[0]
+      ? [model.replacementIds[0]]
+      : null
+    const entry = {
+      deprecatedAt: mistralCatalogInstant(model.deprecatedAt, source),
+      retiresAt: mistralCatalogInstant(model.retiredAt, source),
+      replacedBy,
+      sourceUrl: MISTRAL_DEPRECATIONS_URL,
+    }
+    for (const rawId of model.modelIds) {
+      requireId(rawId, source)
+      const prior = out.get(rawId)
+      if (!prior) {
+        out.set(rawId, { rawId, ...entry })
+        continue
+      }
+      if (
+        prior.deprecatedAt !== entry.deprecatedAt ||
+        prior.retiresAt !== entry.retiresAt ||
+        JSON.stringify(prior.replacedBy) !== JSON.stringify(entry.replacedBy)
+      ) {
+        throw new Error(`${source}: ${rawId} is listed twice`)
+      }
+    }
+  }
+  if (out.size === 0) throw new Error(`${source}: parsed 0 model rows`)
+  return [...out.values()]
+}
+
+/**
+ * Mistral's models overview. The HTML catalog is the live page. The
+ * markdown table remains for the pre-2026-11-25 shape: "Deprecated and
+ * retired models", Model | API name | Status | Context | Summary |
+ * Deprecation | Retirement | Replacement. The replacement is a link to a
+ * model page; its API name is the one the same page's tables give that
+ * link; a link no table names throws. Rows with no API name are skipped.
+ * An API name listed twice keeps its first row.
  */
 export function parseMistralDeprecations(
   markdown: string,
 ): Array<ModelDeprecation> {
+  const catalog = parseMistralCatalog(markdown)
+  if (catalog.length > 0) return deprecationsFromCatalog(catalog)
+  if (markdown.includes('__next_f')) {
+    throw new Error('mistral deprecations: parsed 0 model rows')
+  }
   const source = 'mistral deprecations'
   const [current, retired] = markdown.split(
     /^## Deprecated and retired models$/m,

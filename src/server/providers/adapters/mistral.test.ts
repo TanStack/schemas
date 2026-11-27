@@ -173,8 +173,6 @@ describe('mistral listModels modalities', () => {
       [MISTRAL_REASONING_URL]:
         '- `mistral-small-latest`: Supports adjustable reasoning via the `reasoning_effort` parameter.',
       'https://docs.mistral.ai/models':
-        '<a href="/models/not-a-listed-id">x</a>',
-      'https://docs.mistral.ai/models.md':
         '| [Nope](/models/not-a-listed-id) | `not-a-listed-id` | GA |',
       'https://docs.mistral.ai/openapi.yaml': `components:
   schemas:

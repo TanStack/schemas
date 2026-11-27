@@ -199,7 +199,7 @@ It is never read from an id's shape.
   `GET /openai/v1/models`; BytePlus the Provider column of the
   [model list](https://docs.byteplus.com/en/docs/ModelArk/1330310);
   Mistral an overview Summary that opens "A third-party ... model from
-  Z.ai" ([models.md](https://docs.mistral.ai/models.md)), copied onto the
+  Z.ai" ([models](https://docs.mistral.ai/models)), copied onto the
   listing's alias group; Gemini the Authors line of the
   [Gemma 4 card](https://ai.google.dev/gemma/docs/core/model_card_4), which
   also fills `openWeights` and `weightsUrl` for the sizes it binds. Never

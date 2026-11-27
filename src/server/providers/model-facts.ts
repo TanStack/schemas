@@ -307,7 +307,9 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v51: a DashScope model page entry may name the info page it followed
 // (`sourceUrl`, #772), and a page with no Context limits section now
 // parses; a v50 entry is the old parse.
-const DOCS_CACHE_VERSION = 'v51'
+// v52: Mistral's overview, model pages, reasoning guide and web-search
+// guide moved (#771). A v51 model-page entry has no catalog read.
+const DOCS_CACHE_VERSION = 'v52'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {
