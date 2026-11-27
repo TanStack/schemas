@@ -304,7 +304,10 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // stored one after the MCP field table arrived (its JSON `string` threw, and
 // a failed load is not cached). The bump drops a v49 catalog stored before
 // that table.
-const DOCS_CACHE_VERSION = 'v50'
+// v51: a DashScope model page entry may name the info page it followed
+// (`sourceUrl`, #772), and a page with no Context limits section now
+// parses; a v50 entry is the old parse.
+const DOCS_CACHE_VERSION = 'v51'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

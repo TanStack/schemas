@@ -32,6 +32,8 @@ export interface DashscopeModelLimits {
 
 export interface DashscopeLimitsDoc {
   sourceHash: string
+  /** The page read when the requested one was an index linking it (#772). */
+  sourceUrl?: string
   models: Record<string, DashscopeModelLimits>
 }
 
@@ -122,9 +124,59 @@ function limitsFrom(rows: Array<Array<string>>): DashscopeModelLimits | null {
   return { contextWindow, maxOutput }
 }
 
+const LIMITS_HEADING = /^context limits$/i
+const CAPABILITIES_HEADING = /^model capabilities$/i
+const LIMIT_ROW =
+  /context window|max(?:imum)? input length|max(?:imum)? output length/i
+
+function headings(markdown: string): Array<string> {
+  return markdown.split('\n').flatMap((line) => headingText(line) ?? [])
+}
+
+/**
+ * A model page with a capabilities table, no Context limits section and
+ * no limits table anywhere states no limits (qwen-audio-3.1-live.md,
+ * 2026-11-27): its one model, the h1, gets nulls. A page that still carries
+ * limit rows under a renamed heading is not read, so it throws.
+ */
+function statesNoLimits(
+  markdown: string,
+): Record<string, DashscopeModelLimits> | null {
+  const titles = headings(markdown)
+  const h1 = /^#\s+(.*)$/m.exec(markdown)?.[1]?.trim()
+  if (!h1 || !isModelId(h1)) return null
+  if (titles.some((title) => LIMITS_HEADING.test(title))) return null
+  if (!titles.some((title) => CAPABILITIES_HEADING.test(title))) return null
+  if (LIMIT_ROW.test(markdown)) return null
+  return { [h1]: { contextWindow: null, maxOutput: null } }
+}
+
+/**
+ * An overview page that only links its model's info page
+ * (`[decision-model Model Info](/help/en/model-studio/decision-model-stable)`,
+ * decision-model.md since 2026-11-23): the `.md` URL of that link.
+ */
+export function dashscopeModelInfoLink(markdown: string): string | null {
+  const titles = headings(markdown)
+  if (
+    titles.some(
+      (title) => LIMITS_HEADING.test(title) || CAPABILITIES_HEADING.test(title),
+    )
+  ) {
+    return null
+  }
+  const slug =
+    /\[[^\]]*\bModel Info\]\(\/help\/en\/model-studio\/([a-z0-9-]+)\)/i.exec(
+      markdown,
+    )?.[1]
+  return slug ? `${PAGE_ORIGIN}/${slug}.md` : null
+}
+
 export function parseDashscopeModelLimits(
   markdown: string,
 ): Record<string, DashscopeModelLimits> {
+  const unstated = statesNoLimits(markdown)
+  if (unstated) return unstated
   const lines = markdown.split('\n')
   let current: string | null = null
   const models: Record<string, DashscopeModelLimits> = {}
@@ -132,7 +184,7 @@ export function parseDashscopeModelLimits(
     const title = headingText(lines[i] ?? '')
     if (!title) continue
     if (isModelId(title)) current = title
-    if (!/^context limits$/i.test(title) || !current) continue
+    if (!LIMITS_HEADING.test(title) || !current) continue
     const limits = limitsFrom(tableRows(sectionAfter(lines, i + 1)))
     if (limits) models[current] = limits
   }
@@ -237,12 +289,22 @@ export function dashscopeDocText(body: string, label: string): string {
   )
 }
 
+/**
+ * One model page's limits. An overview page that links its model's info
+ * page is followed once (`fetchPage`), and the doc names the page read.
+ */
 export async function loadDashscopeModelLimits(
   body: string,
+  fetchPage?: (url: string) => Promise<string>,
 ): Promise<DashscopeLimitsDoc> {
-  const markdown = dashscopeDocText(body, 'dashscope model page')
+  let markdown = dashscopeDocText(body, 'dashscope model page')
+  const linked = fetchPage ? dashscopeModelInfoLink(markdown) : null
+  if (linked && fetchPage) {
+    markdown = dashscopeDocText(await fetchPage(linked), 'dashscope model page')
+  }
   return {
     sourceHash: await sha256Text(markdown),
+    ...(linked ? { sourceUrl: linked } : {}),
     models: parseDashscopeModelLimits(markdown),
   }
 }
