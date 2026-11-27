@@ -309,7 +309,11 @@ export const DOCS_TTL_SECONDS = 6 * 60 * 60
 // parses; a v50 entry is the old parse.
 // v52: Mistral's overview, model pages, reasoning guide and web-search
 // guide moved (#771). A v51 model-page entry has no catalog read.
-const DOCS_CACHE_VERSION = 'v52'
+// v53: a Mistral `replacedBy` that is only a Payload relation id resolves
+// to the sibling record with that id (#783). A model page that never
+// embeds the successor no longer throws. A v52 entry was parsed before
+// that lookup, and a failed model-page load was not cached.
+const DOCS_CACHE_VERSION = 'v53'
 
 /** Fresh-window key for one parsed docs page. Shared with the stale copy. */
 export function docsCacheKey(url: string): string {

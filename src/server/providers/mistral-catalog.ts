@@ -155,16 +155,16 @@ function prices(value: unknown, slug: string): Array<MistralCatalogPrice> {
 
 /**
  * `null` is no successor. A record's `modelIds` are the successor's API
- * ids. A number is Payload's unpopulated relation: the same page also
- * embeds the record, and a page that never does throws.
+ * ids. A number is Payload's unpopulated relation id. The page resolves
+ * it later, from the catalog record with that `id`.
  */
 function replacementIds(
   value: unknown,
   slug: string,
-): { ids: Array<string> | null; unread: boolean } {
-  if (value === null) return { ids: null, unread: false }
+): { ids: Array<string> | null; unread: boolean; relationId: number | null } {
+  if (value === null) return { ids: null, unread: false, relationId: null }
   if (typeof value === 'number' && Number.isInteger(value)) {
-    return { ids: null, unread: true }
+    return { ids: null, unread: true, relationId: value }
   }
   if (!isRecord(value)) {
     throw new Error(`mistral catalog ${slug}: replacement has no API name`)
@@ -173,7 +173,14 @@ function replacementIds(
   if (parsed.length === 0) {
     throw new Error(`mistral catalog ${slug}: replacement has no API name`)
   }
-  return { ids: parsed, unread: false }
+  return { ids: parsed, unread: false, relationId: null }
+}
+
+/** Payload's numeric id, when the record carries one. */
+function recordId(node: Record<string, unknown>, slug: string): number | null {
+  if (!('id' in node)) return null
+  if (typeof node.id === 'number' && Number.isInteger(node.id)) return node.id
+  throw new Error(`mistral catalog ${slug}: id ${JSON.stringify(node.id)}`)
 }
 
 /** One catalog record, or null when `node` is some other RSC value. */
@@ -211,6 +218,7 @@ function readModel(node: Record<string, unknown>): CatalogDraft | null {
   const replacement = replacementIds(node.replacedBy, slug)
   return {
     slug,
+    recordId: recordId(node, slug),
     status: status as MistralCatalogModel['status'],
     modelIds: ids(node.modelIds, slug, 'modelIds'),
     shortDescription: node.shortDescription ?? '',
@@ -218,6 +226,7 @@ function readModel(node: Record<string, unknown>): CatalogDraft | null {
     retiredAt: instant(node.retiredAt, slug, 'retiredAt'),
     replacementIds: replacement.ids,
     replacementUnread: replacement.unread,
+    replacementRelationId: replacement.relationId,
     inputs: strings(node.inputs, slug, 'inputs'),
     outputs: strings(node.outputs, slug, 'outputs'),
     features: strings(node.features, slug, 'features'),
@@ -229,12 +238,18 @@ function readModel(node: Record<string, unknown>): CatalogDraft | null {
 }
 
 interface CatalogDraft extends MistralCatalogModel {
+  /** Payload id. Null when this copy of the record does not carry one. */
+  recordId: number | null
   /** True when this copy's `replacedBy` is an unpopulated relation id. */
   replacementUnread: boolean
+  /** The relation id, when `replacementUnread` is true. */
+  replacementRelationId: number | null
 }
 
 function sameReplacement(prior: CatalogDraft, model: CatalogDraft): boolean {
-  if (prior.replacementUnread && model.replacementUnread) return true
+  if (prior.replacementUnread && model.replacementUnread) {
+    return prior.replacementRelationId === model.replacementRelationId
+  }
   // An unpopulated relation id agrees with the populated record, not with
   // a copy that says there is no successor.
   if (prior.replacementUnread) return model.replacementIds !== null
@@ -246,8 +261,39 @@ function sameReplacement(prior: CatalogDraft, model: CatalogDraft): boolean {
 }
 
 function withoutReplacement(model: CatalogDraft): string {
-  const { replacementIds: _ids, replacementUnread: _unread, ...rest } = model
+  const {
+    replacementIds: _ids,
+    replacementUnread: _unread,
+    replacementRelationId: _relation,
+    ...rest
+  } = model
   return JSON.stringify(rest)
+}
+
+/**
+ * API ids of the catalog record whose Payload `id` is `relationId`.
+ * Undefined when this page embeds no such record. Two records with that
+ * id and different `modelIds` throw. An empty list is a successor the
+ * page names with no API id.
+ */
+function relationModelIds(
+  models: Array<CatalogDraft>,
+  relationId: number,
+): Array<string> | undefined {
+  let found: Array<string> | undefined
+  for (const model of models) {
+    if (model.recordId !== relationId) continue
+    if (found === undefined) {
+      found = model.modelIds
+      continue
+    }
+    if (JSON.stringify(found) !== JSON.stringify(model.modelIds)) {
+      throw new Error(
+        `mistral catalog: replacement ${String(relationId)} names two API lists`,
+      )
+    }
+  }
+  return found
 }
 
 function walk(node: unknown, out: Array<CatalogDraft>): void {
@@ -261,12 +307,26 @@ function walk(node: unknown, out: Array<CatalogDraft>): void {
   for (const value of Object.values(node)) walk(value, out)
 }
 
+export interface ParseMistralCatalogOptions {
+  /**
+   * A model page does not have to embed the successor. Deprecations are
+   * read from the overview, which stays fail-closed (this flag off).
+   * An unresolved relation id becomes `replacementIds: null`.
+   */
+  allowUnreadReplacement?: boolean
+}
+
 /**
  * Catalog records in a docs HTML page, one per slug. An HTML page with
  * no catalog record returns an empty list. Two records for one slug that
- * disagree throw.
+ * disagree throw. A `replacedBy` number is the successor's Payload id:
+ * the record with that id on the same page supplies the API ids. The
+ * overview throws when that record is absent. A model page does not.
  */
-export function parseMistralCatalog(html: string): Array<MistralCatalogModel> {
+export function parseMistralCatalog(
+  html: string,
+  options?: ParseMistralCatalogOptions,
+): Array<MistralCatalogModel> {
   if (!html.includes('__next_f')) return []
   const found: Array<CatalogDraft> = []
   for (const value of rscValues(html)) walk(value, found)
@@ -287,13 +347,34 @@ export function parseMistralCatalog(html: string): Array<MistralCatalogModel> {
       bySlug.set(model.slug, model)
     }
   }
-  return [...bySlug.values()].map((model) => {
+  const drafts = [...bySlug.values()]
+  return drafts.map((model) => {
     if (model.replacementUnread) {
-      throw new Error(
-        `mistral catalog ${model.slug}: replacement has no API name`,
-      )
+      const resolved =
+        model.replacementRelationId === null
+          ? undefined
+          : relationModelIds(drafts, model.replacementRelationId)
+      if (resolved === undefined) {
+        if (!options?.allowUnreadReplacement) {
+          throw new Error(
+            `mistral catalog ${model.slug}: replacement has no API name`,
+          )
+        }
+        model.replacementIds = null
+      } else if (resolved.length === 0) {
+        throw new Error(
+          `mistral catalog ${model.slug}: replacement has no API name`,
+        )
+      } else {
+        model.replacementIds = resolved
+      }
     }
-    const { replacementUnread: _unread, ...rest } = model
+    const {
+      recordId: _recordId,
+      replacementUnread: _unread,
+      replacementRelationId: _relation,
+      ...rest
+    } = model
     return rest
   })
 }
@@ -303,7 +384,7 @@ export function mistralPageCatalog(
   html: string,
   slug: string,
 ): MistralCatalogModel | null {
-  const models = parseMistralCatalog(html)
+  const models = parseMistralCatalog(html, { allowUnreadReplacement: true })
   if (models.length === 0) return null
   const own = models.filter((model) => model.slug === slug)
   if (own.length !== 1) {

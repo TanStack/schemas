@@ -243,6 +243,49 @@ describe('mistral deprecations catalog', () => {
     expect(() =>
       parseMistralDeprecations(catalogHtml([catalogRow({ replacedBy: 100 })])),
     ).toThrow(/no API name/)
+    const successor = catalogRow({
+      id: 100,
+      slug: 'ministral-14b-25-12',
+      status: 'ga',
+      modelIds: ['ministral-14b-2512', 'ministral-14b-latest'],
+      deprecatedAt: null,
+      retiredAt: null,
+      replacedBy: null,
+    })
+    expect(
+      parseMistralDeprecations(
+        catalogHtml([catalogRow({ replacedBy: 100 }), successor]),
+      ).find((row) => row.rawId === 'pixtral-12b-2409')?.replacedBy,
+    ).toEqual(['ministral-14b-2512'])
+    expect(() =>
+      parseMistralDeprecations(
+        catalogHtml([
+          catalogRow({ replacedBy: 100 }),
+          successor,
+          catalogRow({
+            id: 100,
+            slug: 'other-successor',
+            status: 'ga',
+            modelIds: ['other-id'],
+            replacedBy: null,
+          }),
+        ]),
+      ),
+    ).toThrow(/names two API lists/)
+    expect(() =>
+      parseMistralDeprecations(
+        catalogHtml([
+          catalogRow({ replacedBy: 100 }),
+          catalogRow({
+            id: 100,
+            slug: 'family-page',
+            status: 'ga',
+            modelIds: [],
+            replacedBy: null,
+          }),
+        ]),
+      ),
+    ).toThrow(/no API name/)
     const populated = catalogRow()
     expect(
       parseMistralDeprecations(

@@ -1292,6 +1292,39 @@ describe('mistral catalog records', () => {
     expect(parseMistralCatalog('<html>no payload</html>')).toEqual([])
   })
 
+  it('reads a model page whose replacement is only a relation id', () => {
+    const page = catalogHtml([
+      catalogModel({
+        slug: 'mistral-medium-3-5-26-04',
+        modelIds: ['mistral-medium-3-5', 'mistral-medium-latest'],
+        replacedBy: 100,
+      }),
+    ])
+    const own = mistralPageCatalog(page, 'mistral-medium-3-5-26-04')
+    expect(own?.modelIds).toEqual([
+      'mistral-medium-3-5',
+      'mistral-medium-latest',
+    ])
+    expect(own?.replacementIds).toBeNull()
+    expect(() => parseMistralCatalog(page)).toThrow(/no API name/)
+    const resolved = catalogHtml([
+      catalogModel({
+        slug: 'mistral-medium-3-5-26-04',
+        modelIds: ['mistral-medium-3-5'],
+        replacedBy: 100,
+      }),
+      catalogModel({
+        id: 100,
+        slug: 'mistral-large-4-0',
+        modelIds: ['mistral-large-4', 'mistral-large-4-0'],
+        replacedBy: null,
+      }),
+    ])
+    expect(
+      mistralPageCatalog(resolved, 'mistral-medium-3-5-26-04')?.replacementIds,
+    ).toEqual(['mistral-large-4', 'mistral-large-4-0'])
+  })
+
   it('prices a dropped row from the catalog and does not fetch the markdown twin', async () => {
     const medium = catalogModel({
       slug: 'mistral-medium-3-5-26-04',
